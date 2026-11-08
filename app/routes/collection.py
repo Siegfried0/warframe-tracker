@@ -4,10 +4,9 @@ from flask_login import current_user, login_required
 from models.db import get_db
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
+from services.collection_service import ToggleError, toggle_progress
 
 collection_bp = Blueprint('collection', __name__, url_prefix='/collection')
-
-_TOGGLE_FIELDS = {'in_possession', 'mastered', 'subsumed', 'resurgence_watch'}
 
 _FILTER_KEYS = ('owned', 'mastered', 'subsumed', 'source', 'vaulted',
                 'resurgence', 'modtype', 'polarity', 'targetmet')
@@ -99,35 +98,16 @@ def category(cat):
 @collection_bp.route('/toggle', methods=['POST'])
 @login_required
 def toggle():
-    """AJAX endpoint — toggle a boolean field on a user_progress row."""
-    data    = request.get_json(force=True)
-    item_id = data.get('item_id')
-    field   = data.get('field')
-
-    if not item_id or field not in _TOGGLE_FIELDS:
+    """AJAX endpoint — one toggle of a progress flag (the rule: services/collection_service)."""
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
         return jsonify({'ok': False, 'error': 'invalid request'}), 400
-
-    item = Item.get_by_id(item_id)
-    if not item:
-        return jsonify({'ok': False, 'error': 'item not found'}), 404
-
-    current = Progress.get_for_user(current_user.id, item_id)
-    new_val = 0 if (current and current.get(field)) else 1
-
-    # Business rules
-    if field == 'subsumed' and new_val == 1:
-        # Subsuming destroys the Warframe — set mastered but leave in_possession alone
-        Progress.upsert(current_user.id, item_id, mastered=1, subsumed=1)
-    elif field == 'mastered' and new_val == 1:
-        already_subsumed = current and current.get('subsumed')
-        if already_subsumed:
-            Progress.upsert(current_user.id, item_id, mastered=1)
-        else:
-            Progress.upsert(current_user.id, item_id, in_possession=1, mastered=1)
-    else:
-        Progress.upsert(current_user.id, item_id, **{field: new_val})
-
-    return jsonify({'ok': True, 'new_value': new_val})
+    field = data.get('field')
+    try:
+        writes = toggle_progress(current_user.id, data.get('item_id'), field)
+    except ToggleError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
+    return jsonify({'ok': True, 'new_value': writes[field], 'written': writes})
 
 
 @collection_bp.route('/note', methods=['POST'])

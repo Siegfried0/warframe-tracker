@@ -63,6 +63,15 @@ def rank_label(rank: int) -> str:
     return f'L{rank - 30}'
 
 
+def rank_for_points(total_mr: int) -> int:
+    """The rank index reached with `total_mr` points: the highest index whose threshold it meets."""
+    rank = 0
+    for i, threshold in enumerate(MR_RANK_THRESHOLDS):
+        if total_mr >= threshold:
+            rank = i
+    return rank
+
+
 class Item:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():

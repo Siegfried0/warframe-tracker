@@ -1,5 +1,5 @@
 from .db import get_db
-from .item import MR_POINTS_PER_CATEGORY, MR_RANK_THRESHOLDS, rank_label
+from .item import MR_POINTS_PER_CATEGORY, MR_RANK_THRESHOLDS, rank_for_points, rank_label
 
 
 class Progress:
@@ -74,11 +74,7 @@ class Progress:
         total_mastered = sum(by_cat.values())
         total_items = db.execute('SELECT COUNT(*) FROM items').fetchone()[0]
 
-        # Find current MR rank (highest index where total_mr meets the threshold)
-        mr_rank = 0
-        for i, threshold in enumerate(MR_RANK_THRESHOLDS):
-            if total_mr >= threshold:
-                mr_rank = i
+        mr_rank = rank_for_points(total_mr)
 
         max_rank = len(MR_RANK_THRESHOLDS) - 1
         if mr_rank < max_rank:
