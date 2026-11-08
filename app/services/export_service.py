@@ -1,10 +1,16 @@
-"""Export of one user's tracker data as a ZIP of CSV files (format 2).
+"""Export of one user's tracker data as a ZIP of CSV files (format 3).
 
 The export writes the caller's rows only: one ``<category>.csv`` per category (progress
 flags, note, arcane ranks) plus ``farming_goals.csv``, ``farming_progress.csv``,
-``farming_checklist.csv``, ``watchlist.csv`` and ``settings.csv``. Items are named by
-``(name, category)``, never by id. The format's file and column lists live here; the
-import (``services.import_service``) reads the same lists.
+``farming_checklist.csv``, ``watchlist.csv``, ``settings.csv`` and the marker
+``format.csv`` (one row ``format, 3``). Items are named by ``(name, category)``, never by
+id. The format's file and column lists and its cell escape live here; the import
+(``services.import_service``) reads the same lists and reverses the escape.
+
+Format 3 neutralises spreadsheet formulas: a text cell whose first character is one of
+``ESCAPE_TRIGGERS`` is written with one ``'`` in front, so a spreadsheet shows it as text
+instead of evaluating it. ``'`` is itself a trigger, so the escape is reversible and an
+import of a marked file restores every cell exactly.
 """
 import csv
 import io
@@ -22,6 +28,12 @@ PROGRESS_FILE = 'farming_progress.csv'
 CHECKLIST_FILE = 'farming_checklist.csv'
 WATCHLIST_FILE = 'watchlist.csv'
 SETTINGS_FILE = 'settings.csv'
+FORMAT_FILE = 'format.csv'
+FORMAT_COLUMNS = ['key', 'value']
+FORMAT_KEY = 'format'
+FORMAT_VERSION = 3
+# A text cell starting with one of these is written with one leading apostrophe.
+ESCAPE_TRIGGERS = frozenset(['=', '+', '-', '@', '\t', '\r', "'"])
 FILE_COLUMNS = {
     GOALS_FILE: ['name', 'category', 'pinned', 'display_mode', 'sort_order'],
     PROGRESS_FILE: ['name', 'category', 'row_type', 'row_key', 'acquired', 'quantity_owned',
@@ -36,10 +48,11 @@ SETTING_KEYS = [key for key, _, _ in USER_SETTINGS]
 # ── Export ──────────────────────────────────────────────────────────────────
 
 def export_user_data(user_id: int) -> bytes:
-    """The caller's data as a format-2 ZIP."""
+    """The caller's data as a format-3 ZIP."""
     db = get_db()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(FORMAT_FILE, _csv(FORMAT_COLUMNS, [[FORMAT_KEY, FORMAT_VERSION]]))
         for cat in CATEGORIES:
             rows = Progress.get_all_for_user(user_id, category=cat)
             zf.writestr(f'{cat}.csv', _csv(CATEGORY_COLUMNS,
@@ -99,10 +112,18 @@ def _export_progress_row(r) -> list:
             r['quantity_owned'], state]
 
 
+def escape_cell(value):
+    """A text cell whose first character is in ``ESCAPE_TRIGGERS`` gains one leading
+    ``'``; any other value (an integer, an empty or other text cell) is unchanged."""
+    if isinstance(value, str) and value[:1] in ESCAPE_TRIGGERS:
+        return "'" + value
+    return value
+
+
 def _csv(columns: list, rows) -> str:
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(columns)
+    writer.writerow([escape_cell(c) for c in columns])
     for row in rows:
-        writer.writerow(['' if v is None else v for v in row])
+        writer.writerow(['' if v is None else escape_cell(v) for v in row])
     return out.getvalue()

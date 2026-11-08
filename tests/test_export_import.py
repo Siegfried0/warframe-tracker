@@ -33,7 +33,8 @@ FARMING_FILES = {
     'farming_checklist.csv': 'name,category,component_name,acquired',
 }
 FARMING_VIEWS = ('goals', 'goal_rows', 'checklist')
-EXPORT_FILES = CATEGORY_FILES | set(FARMING_FILES) | {'watchlist.csv', 'settings.csv'}
+EXPORT_FILES = CATEGORY_FILES | set(FARMING_FILES) | {'watchlist.csv', 'settings.csv',
+                                                      'format.csv'}
 UNTOUCHED = ['farming_goals', 'farming_progress', 'farming_checklist',
              'user_market_watchlist', 'settings']
 
@@ -98,6 +99,7 @@ def test_export_writes_every_file_of_the_format_with_its_header(sapp, users):
     for name, header in FARMING_FILES.items():
         assert files[name].splitlines()[0] == header
     assert files['watchlist.csv'].splitlines()[0] == 'name,category'
+    assert files['format.csv'] == 'key,value\r\nformat,3\r\n'
     assert files['settings.csv'] == ('key,value\r\nbuy_threshold_plat,\r\n'
                                      'market_cache_hours,12\r\nplat_per_hour,30\r\n')
     assert 'Arcane Energize,arcane,standard,1,0,0,0,,3,5' in files['arcane.csv']
@@ -153,21 +155,23 @@ def test_export_carries_only_the_settings_pages_keys(sapp, users):
     assert 'theme' not in text and 'sync_interval_hours' not in text
 
 
-@pytest.mark.parametrize('stored', ['abc', '2.5', '-3'])
+@pytest.mark.parametrize('stored, exported', [('abc', 'abc'), ('2.5', '2.5'), ('-3', "'-3"),
+                                              ('=1', "'=1")])
 def test_a_stored_setting_that_is_not_a_whole_number_exports_as_stored_and_is_refused(
-        sapp, users, stored):
-    """The Preferences form stores any text; the export never rewrites what the user typed,
-    and the import refuses a value the app cannot use, naming the cell."""
+        sapp, users, stored, exported):
+    """The Preferences form stores any text; the export never rewrites what the user typed
+    (beyond the formula escape), and the import refuses a value the app cannot use, naming
+    the cell and showing the value as stored."""
     alice, bob = users['alice'], users['bob']
     with sapp.app_context():
         set_setting(alice, 'plat_per_hour', stored)
         data = export_user_data(alice)
-        assert f'plat_per_hour,{stored}\r\n' in read_zip(data)['settings.csv']
+        assert f'plat_per_hour,{exported}\r\n' in read_zip(data)['settings.csv']
         before = snapshot()
         with pytest.raises(ImportRefused) as refused:
             import_user_data(bob, io.BytesIO(data))
         assert snapshot() == before
-    assert 'settings.csv line 4, column value:' in str(refused.value)
+    assert f'settings.csv line 4, column value: {stored!r} is not' in str(refused.value)
 
 
 # ── Format 1 ────────────────────────────────────────────────────────────────
