@@ -16,8 +16,8 @@ import pytest
 
 APP_DIR = Path(__file__).resolve().parent.parent / 'app'
 
-# The temp root's prefix is in .claude/blueprint.lock.json `temp.prefixes`: the run-start
-# sweep removes one a killed run left behind.
+# The temp root carries the prefix `warframe-tests-`: the run-start sweep removes a root with
+# that prefix that a killed run left behind.
 _IMPORT_ROOT = Path(tempfile.mkdtemp(prefix='warframe-tests-'))
 _IMPORT_DB = _IMPORT_ROOT / 'import.db'
 os.environ['DATABASE_PATH'] = str(_IMPORT_DB)

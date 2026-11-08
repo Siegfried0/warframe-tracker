@@ -26,8 +26,8 @@ def write_plan(db, user_id: int, plan) -> dict:
 
 
 class _ItemIds:
-    """(name, category) -> (id, mod_max_rank); adds an unknown item to the catalogue
-    as the spec asks for new items found in an import."""
+    """(name, category) -> (id, mod_max_rank); an item an import names that the catalogue
+    lacks is added to the catalogue, so the import keeps the row."""
     def __init__(self, db):
         self._db, self._cache = db, {}
 

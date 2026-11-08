@@ -1,5 +1,5 @@
-"""A goal-progress write lands only in the caller's own goal (spec "User Accounts &
-Authentication": all progress data is scoped to the authenticated user).
+"""A goal-progress write lands only in the caller's own goal: all progress data is scoped
+to the authenticated user.
 
 Axis 1 over the goal id: the caller's own goal, another user's goal, no goal at all; for
 each, both row types. The write path (`farming_progress`) is checked by reading every row

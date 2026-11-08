@@ -1,8 +1,9 @@
 """MR points per category, the rank thresholds, rank labels and the rank a points total reaches.
 
-The oracle is vault/spec/TECH.md, "MR points per mastered item" and "MR rank thresholds and
-Legendary ranks": every expected value here is a literal from those tables or their formulas,
-never a value read from the code under test.
+The oracle is the game's mastery rules, written out below: the points each category awards
+for one mastered item, the rank thresholds (2 500 x n squared up to MR 30, then 147 500 more per
+Legendary rank) and their examples. Every expected value here is one of those literals or comes
+from those formulas, never a value read from the code under test.
 """
 import pytest
 
@@ -12,7 +13,7 @@ from models.item import (MR_POINTS_PER_CATEGORY, MR_RANK_THRESHOLDS, Item, rank_
 from models.progress import Progress
 from models.user import User
 
-# TECH.md, "MR points per mastered item": all 13 categories.
+# Mastery points per mastered item: all 13 categories.
 POINTS_TABLE = [
     ('warframe', 6000),
     ('companion', 6000),
@@ -29,7 +30,7 @@ POINTS_TABLE = [
     ('resource', 0),
 ]
 
-# TECH.md, the representative threshold table, MR 0 to MR 30.
+# The rank thresholds, MR 0 to MR 30.
 MR_TABLE = [
     0, 2500, 10000, 22500, 40000, 62500, 90000, 122500, 160000, 202500,
     250000, 302500, 360000, 422500, 490000, 562500, 640000, 722500, 810000, 902500,
@@ -39,14 +40,14 @@ MR_TABLE = [
 
 
 def expected_threshold(index):
-    """TECH.md's formulas: 2 500 × n² for MR 0–30, 2 250 000 + 147 500 × L for L1–L30."""
+    """The rank formulas: 2 500 × n² for MR 0–30, 2 250 000 + 147 500 × L for L1–L30."""
     if index <= 30:
         return 2500 * index * index
     return 2250000 + 147500 * (index - 30)
 
 
 @pytest.mark.parametrize('category,points', POINTS_TABLE)
-def test_each_category_awards_its_tech_md_points(category, points):
+def test_each_category_awards_its_mastery_points(category, points):
     assert MR_POINTS_PER_CATEGORY[category] == points
 
 
@@ -59,18 +60,18 @@ def test_there_are_61_thresholds_mr0_to_l30():
 
 
 @pytest.mark.parametrize('index', range(61))
-def test_each_threshold_follows_the_tech_md_formula(index):
+def test_each_threshold_follows_the_rank_formula(index):
     assert MR_RANK_THRESHOLDS[index] == expected_threshold(index)
 
 
 @pytest.mark.parametrize('index,points', list(enumerate(MR_TABLE)))
-def test_each_mr_threshold_matches_the_tech_md_table(index, points):
+def test_each_mr_threshold_matches_the_rank_table(index, points):
     assert MR_RANK_THRESHOLDS[index] == points
 
 
 @pytest.mark.parametrize('index,points', [(31, 2397500), (32, 2545000), (33, 2692500),
                                           (60, 6675000)])
-def test_legendary_thresholds_match_the_tech_md_examples(index, points):
+def test_legendary_thresholds_match_the_rank_examples(index, points):
     assert MR_RANK_THRESHOLDS[index] == points
 
 
