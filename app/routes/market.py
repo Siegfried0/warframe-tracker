@@ -3,7 +3,7 @@ from flask_login import current_user, login_required
 
 from models.db import get_db
 from models.item import Item
-from services.auth_service import get_setting
+from services.auth_service import get_setting_int
 from services.market_api import get_price, market_url_for
 
 market_bp = Blueprint('market', __name__, url_prefix='/market')
@@ -26,7 +26,7 @@ def index():
     for item in watched:
         if item.get('market_url_name'):
             item['market_url'] = market_url_for(item['market_url_name'])
-    cache_hours = get_setting(uid, 'market_cache_hours', 6)
+    cache_hours = get_setting_int(uid, 'market_cache_hours')
     return render_template('market.html', watched=watched,
                            prefs={'market_cache_hours': cache_hours})
 
@@ -38,7 +38,7 @@ def price(item_id):
     if not item or not item.market_url_name:
         return jsonify({'ok': False, 'error': 'No market listing for this item'}), 404
 
-    cache_hours = int(get_setting(current_user.id, 'market_cache_hours', 6))
+    cache_hours = get_setting_int(current_user.id, 'market_cache_hours')
     data = get_price(item_id, item.market_url_name, cache_hours)
     return jsonify({'ok': True, **data})
 

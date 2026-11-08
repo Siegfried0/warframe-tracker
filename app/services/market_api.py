@@ -4,7 +4,7 @@ Docs: https://warframe.market/api_doc
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 
@@ -58,7 +58,10 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
 
     if row:
         fetched = datetime.fromisoformat(row['fetched_at'])
-        if datetime.utcnow() - fetched < timedelta(hours=cache_hours):
+        # Compared in seconds, not as a timedelta: a cache duration of any whole number of
+        # hours (up to the 64-bit bound a setting allows) must not overflow the comparison.
+        age = (datetime.utcnow() - fetched).total_seconds()
+        if age < cache_hours * 3600:
             return {
                 'platinum': row['platinum_price'],
                 'fetched_at': row['fetched_at'],

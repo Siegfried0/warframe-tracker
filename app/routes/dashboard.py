@@ -7,7 +7,7 @@ from services.farming_service import (
     get_advisor_opportunities,
     get_pinned_goals,
 )
-from services.auth_service import get_setting
+from services.auth_service import get_setting_int
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -33,9 +33,9 @@ def index():
         advisor_opportunities = advisor_data.get('opportunities', [])[:3]
 
     # Legacy unowned list (shown when no pinned goals)
-    cache_hours   = int(get_setting(uid, 'market_cache_hours', 6))
-    buy_threshold = _int_or_none(get_setting(uid, 'buy_threshold_plat'))
-    plat_per_hour = _int_or_none(get_setting(uid, 'plat_per_hour'))
+    cache_hours   = get_setting_int(uid, 'market_cache_hours')
+    buy_threshold = get_setting_int(uid, 'buy_threshold_plat')
+    plat_per_hour = get_setting_int(uid, 'plat_per_hour')
     unowned = Progress.get_unowned_items(uid)[:10]
     farm_next = enrich_with_market(uid, unowned, cache_hours, buy_threshold, plat_per_hour)
 
@@ -50,9 +50,3 @@ def index():
         advisor_opportunities=advisor_opportunities,
     )
 
-
-def _int_or_none(val):
-    try:
-        return int(val) if val is not None else None
-    except (TypeError, ValueError):
-        return None

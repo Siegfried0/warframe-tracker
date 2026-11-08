@@ -7,7 +7,8 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from models.progress import Progress
-from services.auth_service import USER_SETTINGS, get_setting, set_setting
+from services.auth_service import (SETTING_VALUE_MAX, USER_SETTINGS, get_setting,
+                                   save_preferences)
 from services.backup_service import backup_now
 from services.export_service import export_user_data
 from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
@@ -23,10 +24,12 @@ def index():
         action = request.form.get('action')
 
         if action == 'save_preferences':
-            for key, _, _ in USER_SETTINGS:
-                val = request.form.get(key, '').strip() or None
-                set_setting(uid, key, val)
-            flash('Preferences saved.', 'success')
+            invalid = save_preferences(uid, request.form)
+            if invalid:
+                flash(f'Preferences not saved: {", ".join(invalid)} must be empty or a '
+                      f'whole number from 0 to {SETTING_VALUE_MAX}.', 'error')
+            else:
+                flash('Preferences saved.', 'success')
 
         elif action == 'change_password':
             current_pw = request.form.get('current_password', '')
