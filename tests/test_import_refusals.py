@@ -17,6 +17,7 @@ from transfer_fixtures import (make_zip, read_user, seeded,  # noqa: F401
 
 FLAG_OK = [('0', 0), ('1', 1), (' 1 ', 1), ('', 0)]
 FLAG_BAD = ['2', '-1', '1.0', 'true', 'x']
+INT_OK = [('0', 0), (' 7 ', 7), ('9223372036854775807', 9223372036854775807)]
 INT_BAD = ['-1', '1.5', '9223372036854775808', '100000000000000000000', '1e3', '٣']
 
 # (file, header, row template with {v}, reader of the stored value from read_user(bob))
@@ -29,11 +30,32 @@ FLAG_CELLS = {
                  lambda u: u['progress'][('Excalibur', 'warframe')][2]),
     'resurgence_watch': ('arcane.csv', 'name,resurgence_watch', 'Arcane Energize,{v}',
                          lambda u: u['progress'][('Arcane Energize', 'arcane')][3]),
+    'pinned': ('farming_goals.csv', 'name,category,pinned', 'Excalibur,warframe,{v}',
+               lambda u: u['goals'][('Excalibur', 'warframe')][0]),
+    'checklist acquired': ('farming_checklist.csv', 'name,category,component_name,acquired',
+                           'Braton,primary,Barrel,{v}',
+                           lambda u: u['checklist'][('Braton', 'primary', 'Barrel')]),
+    'ingredient acquired': ('farming_progress.csv', 'name,category,row_type,row_key,acquired',
+                            'Excalibur,warframe,ingredient,Morphics,{v}',
+                            lambda u: u['goal_rows'][('Excalibur', 'warframe', 'ingredient',
+                                                      'Morphics')][0]),
 }
 INT_CELLS = {
     'target_rank': ('warframe.csv', 'name,target_rank', 'Excalibur,{v}'),
     'owned_rank': ('arcane.csv', 'name,owned_rank', 'Arcane Energize,{v}'),
 }
+# Integer cells of the farming files: (file, header, row template, reader).
+FARM_INT_CELLS = {
+    'sort_order': ('farming_goals.csv', 'name,category,sort_order', 'Excalibur,warframe,{v}',
+                   lambda u: u['goals'][('Excalibur', 'warframe')][2]),
+    'quantity_owned': ('farming_progress.csv',
+                       'name,category,row_type,row_key,quantity_owned',
+                       'Excalibur,warframe,ingredient,Morphics,{v}',
+                       lambda u: u['goal_rows'][('Excalibur', 'warframe', 'ingredient',
+                                                 'Morphics')][1]),
+}
+# A goal for Bob's progress rows to belong to.
+GOAL = {'farming_goals.csv': 'name,category\nExcalibur,warframe\n'}
 
 
 @pytest.fixture
@@ -64,7 +86,11 @@ def stored(app, uid, reader):
 
 
 def upload(fname, header, row, value):
-    return {fname: f'{header}\n{row.format(v=value)}\n'}
+    """One file of one row; a progress row comes with a goal file naming its goal."""
+    files = {fname: f'{header}\n{row.format(v=value)}\n'}
+    if fname == 'farming_progress.csv':
+        files.update(GOAL)
+    return files
 
 
 # ── Axis 1: flags, integers, categories, names ──────────────────────────────
@@ -104,6 +130,24 @@ def test_a_rank_cell_refuses_negatives_fractions_and_overflow(app, bob, cell, va
     assert f'{fname} line 2, column {header.split(",")[-1]}:' in message
 
 
+@pytest.mark.parametrize('cell', FARM_INT_CELLS)
+@pytest.mark.parametrize('value, expected', INT_OK + [('', 0)])
+def test_a_farming_integer_cell_accepts_whole_numbers_and_empty_is_0(app, bob, cell, value,
+                                                                     expected):
+    fname, header, row, reader = FARM_INT_CELLS[cell]
+    assert not isinstance(run(app, bob, upload(fname, header, row, value)), str)
+    assert stored(app, bob, reader) == expected
+
+
+@pytest.mark.parametrize('cell', FARM_INT_CELLS)
+@pytest.mark.parametrize('value', INT_BAD)
+def test_a_farming_integer_cell_refuses_negatives_fractions_and_overflow(app, bob, cell,
+                                                                         value):
+    fname, header, row, _ = FARM_INT_CELLS[cell]
+    message = run(app, bob, upload(fname, header, row, value))
+    assert f'{fname} line 2, column {cell}:' in message
+
+
 @pytest.mark.parametrize('cell, reader', [
     ('target_rank', lambda u: u['progress'][('Excalibur', 'warframe')][6]),
     ('owned_rank', lambda u: u['progress'][('Arcane Energize', 'arcane')][5]),
@@ -123,6 +167,100 @@ def test_a_category_files_category_cell_must_match_the_file(app, bob, value, ok)
         assert stored(app, bob, lambda u: u['progress'][('Excalibur', 'warframe')][1]) == 1
     else:
         assert 'warframe.csv line 2, column category:' in result
+
+
+FARMING_ROWS = {
+    'farming_goals.csv': 'name,category\nExcalibur,{v}\n',
+    'farming_progress.csv': 'name,category,row_type,row_key\nExcalibur,{v},ingredient,Morphics\n',
+    'farming_checklist.csv': 'name,category,component_name\nExcalibur,{v},Systems\n',
+}
+
+
+@pytest.mark.parametrize('fname', FARMING_ROWS)
+@pytest.mark.parametrize('value, ok', [('warframe', True), (' warframe ', True),
+                                       ('Warframe', False), ('weapons', False), ('', False)])
+def test_a_farming_files_category_cell_must_be_an_app_category_exactly(app, bob, fname,
+                                                                       value, ok):
+    files = {fname: FARMING_ROWS[fname].format(v=value)}
+    if fname == 'farming_progress.csv':
+        files.update(GOAL)
+    result = run(app, bob, files)
+    if ok:
+        assert not isinstance(result, str)
+    else:
+        assert f'{fname} line 2, column category:' in result
+
+
+@pytest.mark.parametrize('value, expected', [('tree', 'tree'), ('list', 'list'), ('', 'tree'),
+                                             (' list ', 'list'), ('Tree', None), ('LIST', None),
+                                             ('grid', None)])
+def test_display_mode_is_tree_or_list(app, bob, value, expected):
+    result = run(app, bob, {'farming_goals.csv':
+                            f'name,category,display_mode\nExcalibur,warframe,{value}\n'})
+    if expected is None:
+        assert 'farming_goals.csv line 2, column display_mode:' in result
+    else:
+        assert stored(app, bob, lambda u: u['goals'][('Excalibur', 'warframe')][1]) == expected
+
+
+PROGRESS = 'name,category,row_type,row_key,acquired,quantity_owned,comp_state'
+
+
+@pytest.mark.parametrize('row_type, value, expected', [
+    ('component', 'pending', None), ('component', 'blueprint', 'blueprint'),
+    ('component', 'crafted', 'crafted'), ('component', '', None),
+    ('component', ' crafted ', 'crafted'), ('component', 'Crafted', 'refused'),
+    ('component', 'done', 'refused'), ('component', 'BLUEPRINT', 'refused'),
+    ('ingredient', 'crafted', 'refused'), ('ingredient', 'pending', 'refused'),
+    ('ingredient', ' ', None), ('ingredient', '', None),
+])
+def test_comp_state_spellings(app, bob, row_type, value, expected):
+    files = dict(GOAL, **{'farming_progress.csv':
+                          f'{PROGRESS}\nExcalibur,warframe,{row_type},Blueprint,0,0,{value}\n'})
+    result = run(app, bob, files)
+    if expected == 'refused':
+        assert 'farming_progress.csv line 2, column comp_state:' in result
+    else:
+        rows = stored(app, bob, lambda u: u['goal_rows'])
+        assert rows[('Excalibur', 'warframe', row_type, 'Blueprint')][2] == expected
+
+
+@pytest.mark.parametrize('fname, cols, row, cell', [
+    ('farming_progress.csv', 'name,category,row_type,row_key',
+     'Excalibur,warframe,Component,X', 'row_type'),
+    ('farming_progress.csv', 'name,category,row_type,row_key',
+     'Excalibur,warframe,resource,X', 'row_type'),
+    ('farming_progress.csv', 'name,category,row_type,row_key',
+     'Excalibur,warframe,,X', 'row_type'),
+    ('farming_progress.csv', 'name,category,row_type,row_key',
+     'Excalibur,warframe,component,  ', 'row_key'),
+    ('farming_progress.csv', 'name,category,row_type,row_key',
+     ' ,warframe,component,X', 'name'),
+    ('farming_checklist.csv', 'name,category,component_name', 'Braton,primary, ',
+     'component_name'),
+    ('farming_checklist.csv', 'name,category,component_name', ',primary,Barrel', 'name'),
+    ('farming_goals.csv', 'name,category,pinned', ' ,warframe,1', 'name'),
+])
+def test_a_farming_key_cell_that_is_empty_or_unknown_is_refused(app, bob, fname, cols, row,
+                                                                 cell):
+    files = dict(GOAL, **{fname: f'{cols}\n{row}\n'})
+    assert f'{fname} line 2, column {cell}:' in run(app, bob, files)
+
+
+@pytest.mark.parametrize('name, category', [
+    ('Lex', 'secondary'),      # Carol's goal: another user's goal is no goal of Bob's
+    ('Braton', 'primary'),     # an item with no goal at all
+    ('Excalibur', 'primary'),  # the goal's name under another category
+])
+def test_a_progress_row_whose_goal_is_neither_in_the_file_nor_the_users_is_refused(
+        app, bob, name, category):
+    message = run(app, bob, {
+        'farming_goals.csv': 'name,category\nExcalibur,warframe\n',
+        'farming_progress.csv': 'name,category,row_type,row_key\n'
+                                'Excalibur,warframe,component,Blueprint\n'
+                                f'{name},{category},component,Barrel\n'})
+    assert 'farming_progress.csv line 3, column name:' in message
+    assert 'has no farming goal' in message
 
 
 @pytest.mark.parametrize('name, expected', [
@@ -155,11 +293,31 @@ def test_blank_header_cells_are_ignored(app, bob):
 @pytest.mark.parametrize('fname, text, line', [
     ('warframe.csv', 'name,mastered\nExcalibur,1\nLex,1\n Excalibur ,0\n', 4),
     ('primary.csv', 'name,category,mastered\nBraton,primary,1\nBraton,,0\n', 3),
+    ('farming_goals.csv', 'name,category,pinned\nExcalibur,warframe,1\nLex,secondary,0\n'
+                          'Excalibur, warframe ,0\n', 4),
+    ('farming_progress.csv', 'name,category,row_type,row_key\n'
+                             'Excalibur,warframe,component,Blueprint\n'
+                             'Excalibur,warframe, component , Blueprint \n', 3),
+    ('farming_checklist.csv', 'name,category,component_name,acquired\n'
+                              'Braton,primary,Barrel,1\nBraton,primary,Barrel,0\n', 3),
 ])
 def test_a_key_repeated_in_one_file_is_refused(app, bob, fname, text, line):
     message = run(app, bob, {fname: text})
     assert f'{fname} line {line}' in message
     assert 'already appears on line 2' in message
+
+
+@pytest.mark.parametrize('fname, text', [
+    ('farming_progress.csv', 'name,category,row_type,row_key,quantity_owned\n'
+                             'Excalibur,warframe,component,Morphics,0\n'
+                             'Excalibur,warframe,ingredient,Morphics,4\n'),
+    ('farming_checklist.csv', 'name,category,component_name,acquired\n'
+                              'Braton,primary,Barrel,1\nBraton,primary,Stock,1\n'
+                              'Lex,secondary,Barrel,1\n'),
+])
+def test_rows_differing_in_one_key_cell_are_not_a_repeat(app, bob, fname, text):
+    files = dict(GOAL, **{fname: text})
+    assert not isinstance(run(app, bob, files), str)
 
 
 def test_the_same_name_in_two_category_files_is_not_a_repeat(app, bob):
@@ -189,6 +347,15 @@ def zip_bytes(files):
      'warframe.csv line 1, column name: the column appears twice'),
     (zip_bytes({'warframe.csv': 'name,mastered\nExcalibur,1,extra\n'}),
      'warframe.csv line 2, column #3'),
+    (zip_bytes({'farming_goals.csv': 'name,pinned\nExcalibur,1\n'}),
+     'farming_goals.csv line 1, column category: the header lacks this column'),
+    (zip_bytes({'farming_progress.csv': 'name,category,row_key\nExcalibur,warframe,X\n'}),
+     'farming_progress.csv line 1, column row_type: the header lacks this column'),
+    (zip_bytes({'farming_progress.csv': 'name,category,row_type\nExcalibur,warframe,x\n'}),
+     'farming_progress.csv line 1, column row_key: the header lacks this column'),
+    (zip_bytes({'farming_checklist.csv': 'name,category,acquired\nBraton,primary,1\n'}),
+     'farming_checklist.csv line 1, column component_name: the header lacks this column'),
+    (zip_bytes({'farming_checklist.csv': ''}), 'farming_checklist.csv line 1'),
     (b'x' * (8 * 1024 * 1024 + 1), 'larger than 8 MiB'),
 ])
 def test_a_damaged_or_oversized_upload_is_refused(app, bob, upload_bytes, words):
@@ -200,6 +367,15 @@ def test_a_refusal_after_valid_files_writes_none_of_them(app, bob):
                              'secondary.csv': 'name,in_possession\nLex,1\n',
                              'warframe.csv': 'name,target_rank\nExcalibur,x\n'})
     assert 'warframe.csv line 2, column target_rank:' in message
+
+
+def test_a_bad_farming_cell_after_valid_files_writes_none_of_them(app, bob):
+    message = run(app, bob, {'primary.csv': 'name,mastered\nBraton,1\n',
+                             'farming_goals.csv': 'name,category\nExcalibur,warframe\n',
+                             'farming_checklist.csv': 'name,category,component_name,acquired\n'
+                                                      'Braton,primary,Barrel,1\n'
+                                                      'Braton,primary,Stock,yes\n'})
+    assert 'farming_checklist.csv line 3, column acquired:' in message
 
 
 def test_a_truncated_member_is_refused(app, bob):
@@ -248,7 +424,7 @@ def test_unknown_files_directories_extra_columns_and_header_only_files_are_ignor
         zf.writestr('warframe.csv', 'name,in_possession,colour\nExcalibur,1,blue\n')
     buf.seek(0)
     result = run(app, bob, buf)
-    assert result.counts == {'items': 1}
+    assert result.counts == {'items': 1, 'goals': 0, 'progress': 0, 'checklist': 0}
     with app.app_context():
         after = snapshot()
     assert after['user_market_watchlist'] == before['user_market_watchlist']

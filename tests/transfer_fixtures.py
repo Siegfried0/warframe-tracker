@@ -1,7 +1,8 @@
 """Shared data and readers for the export / import tests.
 
 `seed(app)` builds a catalogue and three users: Alice (progress with notes and arcane
-ranks), Bob (empty, the import target) and Carol (rows of her own that no import into Bob may touch). The
+ranks, farming goals with every component state, checklist rows), Bob (empty, the import
+target) and Carol (rows of her own that no import into Bob may touch). The
 `seeded` fixture gives each test its own copy of one database seeded once per session
 (seeding per test cost most of the matrices' run time). The readers return each table
 keyed by item name and category, never by id, so two users' data compare directly.
@@ -18,6 +19,7 @@ import app as app_module
 from models.db import get_db
 from models.item import Item
 from models.user import User
+from services.farming_service import add_farming_goal, set_checklist, set_goal_progress
 
 WEIRD = 'Odd, "quoted"\nname Ñoño ☃'
 FORMAT1_HEADER = 'name,category,source,in_possession,mastered,subsumed,resurgence_watch,note'
@@ -60,8 +62,23 @@ def seed(app):
     put_progress(alice, WEIRD, 'melee', mastered=1, subsumed=0, note='ü\nline two')
     put_progress(alice, 'Arcane Energize', 'arcane', in_possession=1, owned_rank=3,
                  target_rank=5)
+    goal = add_farming_goal(alice, item_id('Excalibur', 'warframe'))['goal_id']
+    db = get_db()
+    db.execute("UPDATE farming_goals SET pinned = 1, display_mode = 'list', sort_order = 2 "
+               'WHERE id = ?', (goal,))
+    db.commit()
+    add_farming_goal(alice, item_id(WEIRD, 'melee'))
+    set_goal_progress(alice, goal, 'component', 'Blueprint', comp_state='blueprint')
+    set_goal_progress(alice, goal, 'component', 'Neuroptics', comp_state='crafted')
+    set_goal_progress(alice, goal, 'component', 'Chassis', comp_state='pending')
+    set_goal_progress(alice, goal, 'ingredient', 'Morphics', quantity_owned=3)
+    set_checklist(alice, item_id('Braton', 'primary'), 'Barrel', True)
+    set_checklist(alice, item_id('Braton', 'primary'), 'Stock', False)
 
     put_progress(carol, 'Lex', 'secondary', in_possession=1, note='carol-only note')
+    carol_goal = add_farming_goal(carol, item_id('Lex', 'secondary'))['goal_id']
+    set_goal_progress(carol, carol_goal, 'ingredient', 'Morphics', quantity_owned=99)
+    set_checklist(carol, item_id('Lex', 'secondary'), 'Receiver', True)
     return users
 
 
@@ -108,13 +125,27 @@ def _rows(sql, uid):
 
 
 def read_user(uid) -> dict:
-    """The progress a user owns, keyed by (name, category)."""
+    """Every table an import writes for a user, keyed by (name, category) and the row's
+    own key."""
     progress = {(r['name'], r['category']): (r['in_possession'], r['mastered'], r['subsumed'],
                                              r['resurgence_watch'], r['note'], r['owned_rank'],
                                              r['target_rank'])
                 for r in _rows('''SELECT i.name, i.category, p.* FROM user_progress p
                                   JOIN items i ON i.id = p.item_id WHERE p.user_id = ?''', uid)}
-    return {'progress': progress}
+    goals = {(r['name'], r['category']): (r['pinned'], r['display_mode'], r['sort_order'])
+             for r in _rows('''SELECT i.name, i.category, g.* FROM farming_goals g
+                               JOIN items i ON i.id = g.item_id WHERE g.user_id = ?''', uid)}
+    goal_rows = {(r['name'], r['category'], r['row_type'], r['row_key']):
+                 (r['acquired'], r['quantity_owned'], r['comp_state'])
+                 for r in _rows('''SELECT i.name, i.category, fp.* FROM farming_progress fp
+                                   JOIN farming_goals g ON g.id = fp.goal_id
+                                   JOIN items i ON i.id = g.item_id
+                                   WHERE fp.user_id = ?''', uid)}
+    checklist = {(r['name'], r['category'], r['component_name']): r['acquired']
+                 for r in _rows('''SELECT i.name, i.category, c.* FROM farming_checklist c
+                                   JOIN items i ON i.id = c.item_id WHERE c.user_id = ?''', uid)}
+    return {'progress': progress, 'goals': goals, 'goal_rows': goal_rows,
+            'checklist': checklist}
 
 
 def nonzero_progress(view: dict) -> dict:
@@ -128,8 +159,8 @@ _TABLES = ['items', 'user_progress', 'farming_goals', 'farming_progress',
 
 
 def snapshot(drop_updated_at=False) -> dict:
-    """Every row of every table an import can write (the farming tables too: an import of
-    this format never writes them), in id order."""
+    """Every row of every table an import can write (the watchlist and settings too: an
+    import of this format never writes them), in id order."""
     out = {}
     for table in _TABLES:
         rows = [dict(r) for r in get_db().execute(f'SELECT * FROM {table} ORDER BY id')]

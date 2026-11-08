@@ -15,7 +15,11 @@ def write_plan(db, user_id: int, plan) -> dict:
     items = _ItemIds(db)
     now = _now()
     _write_items(db, user_id, plan, items, now)
-    return {'items': len(plan.items)}
+    goal_ids = _write_goals(db, user_id, plan, items)
+    _write_progress(db, user_id, plan, goal_ids, now)
+    _write_checklist(db, user_id, plan, items, now)
+    return {'items': len(plan.items), 'goals': len(plan.goals),
+            'progress': len(plan.progress), 'checklist': len(plan.checklist)}
 
 
 class _ItemIds:
@@ -39,7 +43,7 @@ class _ItemIds:
                                 (name, cat)).fetchone()
 
 
-def _upsert(db, table: str, where: dict, values: dict):
+def _upsert(db, table: str, where: dict, values: dict, insert_extra: dict = None):
     """Update ``values`` on the row matching ``where`` or insert it. Table and column
     names come from fixed lists in this module, never from the file."""
     cond = ' AND '.join(f'{c} = ?' for c in where)
@@ -49,7 +53,7 @@ def _upsert(db, table: str, where: dict, values: dict):
             sets = ', '.join(f'{c} = ?' for c in values)
             db.execute(f'UPDATE {table} SET {sets} WHERE id = ?', [*values.values(), row['id']])
         return row['id']
-    cols = {**where, **values}
+    cols = {**where, **(insert_extra or {}), **values}
     marks = ', '.join('?' for _ in cols)
     db.execute(f'INSERT INTO {table} ({", ".join(cols)}) VALUES ({marks})', list(cols.values()))
     return None
@@ -65,3 +69,65 @@ def _write_items(db, user_id, plan, items, now):
         _upsert(db, 'user_progress', {'user_id': user_id, 'item_id': item_id},
                 {**values, 'updated_at': now})
 
+
+def _write_goals(db, user_id, plan, items) -> dict:
+    """Write the file's goals; return (name, category) -> goal id for every goal a
+    progress row of the file belongs to (the import checked that each one exists)."""
+    for (name, cat), values in plan.goals.items():
+        item_id, _ = items.get(name, cat)
+        _upsert(db, 'farming_goals', {'user_id': user_id, 'item_id': item_id}, values)
+    goal_ids = {}
+    for name, cat in {(k[0], k[1]) for k in plan.progress}:
+        item_id, _ = items.get(name, cat)
+        row = db.execute('SELECT id FROM farming_goals WHERE user_id = ? AND item_id = ?',
+                         (user_id, item_id)).fetchone()
+        goal_ids[(name, cat)] = row['id']
+    return goal_ids
+
+
+def _write_progress(db, user_id, plan, goal_ids, now):
+    for (name, cat, row_type, row_key), values in plan.progress.items():
+        goal_id = goal_ids[(name, cat)]
+        existing = db.execute(
+            '''SELECT id, acquired, comp_state FROM farming_progress
+                WHERE goal_id = ? AND row_type = ? AND row_key = ?''',
+            (goal_id, row_type, row_key)).fetchone()
+        fields = _progress_fields(row_type, values, existing)
+        _upsert(db, 'farming_progress',
+                {'goal_id': goal_id, 'row_type': row_type, 'row_key': row_key},
+                {**fields, 'updated_at': now}, insert_extra={'user_id': user_id})
+
+
+def _progress_fields(row_type: str, values: dict, existing) -> dict:
+    """The columns to write for one progress row. On a component row ``comp_state``
+    decides when the file carries it and ``acquired`` mirrors it (1 for crafted); without
+    it ``acquired`` 1 means crafted and 0 pending, except that an existing blueprint row
+    stays blueprint (an import never downgrades a state it cannot see); with neither the
+    state is untouched. An ingredient row carries no state."""
+    fields = {}
+    if 'quantity_owned' in values:
+        fields['quantity_owned'] = values['quantity_owned']
+    if row_type == 'ingredient':
+        if 'acquired' in values:
+            fields['acquired'] = values['acquired']
+        fields['comp_state'] = None
+        return fields
+    if 'comp_state' in values:
+        state = values['comp_state']
+    elif 'acquired' in values:
+        state = 'crafted' if values['acquired'] else 'pending'
+        if state == 'pending' and existing is not None and existing['comp_state'] == 'blueprint':
+            state = 'blueprint'
+    else:
+        return fields  # state untouched on an existing row, pending (defaults) on a new one
+    fields['acquired'] = 1 if state == 'crafted' else 0
+    fields['comp_state'] = None if state == 'pending' else state
+    return fields
+
+
+def _write_checklist(db, user_id, plan, items, now):
+    for (name, cat, component), values in plan.checklist.items():
+        item_id, _ = items.get(name, cat)
+        _upsert(db, 'farming_checklist',
+                {'user_id': user_id, 'item_id': item_id, 'component_name': component},
+                {**values, 'updated_at': now})
