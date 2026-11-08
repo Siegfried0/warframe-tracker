@@ -115,3 +115,9 @@ gunicorn --bind=0.0.0.0 --timeout 600 app:app
 - Automatic inventory sync via an official Warframe API (not publicly available for player data).
 - Acting as a trade intermediary — market integration is read-only price data only.
 - Mobile-native app — the responsive web UI is the intended interface on all devices.
+
+---
+
+## Licence
+
+MIT, see [`LICENSE`](LICENSE). The vendored jQuery and Materialize CSS in `app/static/vendor/` keep their own MIT notices.
