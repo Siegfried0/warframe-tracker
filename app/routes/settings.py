@@ -1,19 +1,17 @@
-import csv
-import io
 import json
-import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import (Blueprint, Response, current_app, flash, redirect,
                    render_template, request, url_for)
 from flask_login import current_user, login_required
+from werkzeug.exceptions import RequestEntityTooLarge
 
-from models.db import get_db
-from models.item import CATEGORIES, Item
 from models.progress import Progress
-from models.user import User
 from services.auth_service import get_setting, set_setting
 from services.backup_service import backup_now
+from services.export_service import export_user_data
+from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
+                                     import_user_data)
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 
@@ -81,24 +79,9 @@ def index():
 @settings_bp.route('/export')
 @login_required
 def export_data():
-    uid = current_user.id
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for cat in CATEGORIES:
-            rows = Progress.get_all_for_user(uid, category=cat)
-            csv_buf = io.StringIO()
-            writer = csv.DictWriter(csv_buf, fieldnames=[
-                'name', 'category', 'source', 'in_possession',
-                'mastered', 'subsumed', 'resurgence_watch', 'note',
-            ])
-            writer.writeheader()
-            for r in rows:
-                writer.writerow({k: r.get(k, '') for k in writer.fieldnames})
-            zf.writestr(f'{cat}.csv', csv_buf.getvalue())
-    buf.seek(0)
-    ts = datetime.utcnow().strftime('%Y%m%d')
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d')
     return Response(
-        buf.getvalue(),
+        export_user_data(current_user.id),
         mimetype='application/zip',
         headers={'Content-Disposition': f'attachment; filename=warframe_progress_{ts}.zip'},
     )
@@ -107,46 +90,19 @@ def export_data():
 @settings_bp.route('/import', methods=['POST'])
 @login_required
 def import_data():
-    uid = current_user.id
-    uploaded = request.files.get('import_file')
+    request.max_content_length = MAX_REQUEST_BYTES
+    try:
+        uploaded = request.files.get('import_file')
+    except RequestEntityTooLarge:
+        flash(UPLOAD_TOO_LARGE, 'error')
+        return redirect(url_for('settings.index'))
     if not uploaded:
         flash('No file uploaded.', 'error')
         return redirect(url_for('settings.index'))
-
     try:
-        with zipfile.ZipFile(io.BytesIO(uploaded.read())) as zf:
-            for name in zf.namelist():
-                cat = name.replace('.csv', '')
-                if cat not in CATEGORIES:
-                    continue
-                content = zf.read(name).decode('utf-8')
-                reader = csv.DictReader(io.StringIO(content))
-                for row in reader:
-                    item_name = row.get('name', '').strip()
-                    if not item_name:
-                        continue
-                    item = next(
-                        (i for i in Item.get_all(category=cat) if i.name == item_name),
-                        None,
-                    )
-                    if not item:
-                        Item.upsert(name=item_name, category=cat)
-                        item = next(
-                            (i for i in Item.get_all(category=cat) if i.name == item_name),
-                            None,
-                        )
-                    if not item:
-                        continue
-                    Progress.upsert(
-                        uid, item.id,
-                        in_possession=int(row.get('in_possession') or 0),
-                        mastered=int(row.get('mastered') or 0),
-                        subsumed=int(row.get('subsumed') or 0),
-                        resurgence_watch=int(row.get('resurgence_watch') or 0),
-                        note=row.get('note') or None,
-                    )
-        flash('Import complete.', 'success')
-    except Exception as exc:
-        flash(f'Import failed: {exc}', 'error')
-
+        result = import_user_data(current_user.id, uploaded.stream)
+    except ImportRefused as exc:
+        flash(str(exc), 'error')
+    else:
+        flash(result.message, 'success')
     return redirect(url_for('settings.index'))

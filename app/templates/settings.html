@@ -54,13 +54,19 @@
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
         <span class="card-title">Data Export &amp; Import</span>
-        <p class="grey-text">Export all your progress as a ZIP of CSV files (one per category).</p>
+        <p class="grey-text">Export all your data as a ZIP of CSV files: one file per category
+          (owned, mastered, subsumed, resurgence watch, notes and arcane ranks). Your market
+          watchlist, personal settings and farming goals are not exported yet; an import
+          leaves them as they are.</p>
         <a href="{{ url_for('settings.export_data') }}" class="btn blue-grey lighten-1 waves-effect">
           <i class="material-icons left">download</i>Export ZIP
         </a>
 
         <div style="margin-top:1.5rem">
-          <p class="grey-text">Import from a previously exported ZIP. Conflicting rows are overwritten.</p>
+          <p class="grey-text">Import from a previously exported ZIP (older exports too). Rows in
+            the file overwrite yours for the same item, new items are added, and anything the
+            file does not name is kept. The file is checked first: one invalid cell refuses the
+            whole import and nothing is written.</p>
           <form method="post" enctype="multipart/form-data" action="{{ url_for('settings.import_data') }}">
             <div class="file-field input-field">
               <div class="btn blue-grey lighten-1">
