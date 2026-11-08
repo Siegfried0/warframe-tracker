@@ -132,22 +132,24 @@ class Item:
 
     @classmethod
     def upsert(cls, name: str, category: str, source=None, wiki_url=None,
-               vaulted=False, resurgence_available=False,
+               vaulted=False,
                market_url_name=None, tradable=True, image_url=None,
                grants_mastery=True, mod_type=None, mod_polarity=None,
                mod_max_rank=None):
+        """Insert or update one catalogue row. `resurgence_available` is not written here:
+        a new row starts at 0 and an update keeps it; only the Prime Resurgence sync step
+        sets or clears it."""
         db = get_db()
         db.execute('''
             INSERT INTO items
-                (name, category, source, wiki_url, vaulted, resurgence_available,
+                (name, category, source, wiki_url, vaulted,
                  market_url_name, tradable, image_url, grants_mastery,
                  mod_type, mod_polarity, mod_max_rank)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name, category) DO UPDATE SET
                 source               = excluded.source,
                 wiki_url             = excluded.wiki_url,
                 vaulted              = excluded.vaulted,
-                resurgence_available = excluded.resurgence_available,
                 market_url_name      = excluded.market_url_name,
                 tradable             = excluded.tradable,
                 image_url            = CASE
@@ -161,7 +163,7 @@ class Item:
                 mod_max_rank         = excluded.mod_max_rank,
                 updated_at           = datetime('now')
         ''', (name, category, source, wiki_url,
-              int(vaulted), int(resurgence_available),
+              int(vaulted),
               market_url_name, int(tradable), image_url, int(grants_mastery),
               mod_type, mod_polarity, mod_max_rank))
         db.commit()

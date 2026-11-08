@@ -9,6 +9,7 @@ from collections import defaultdict
 from models.db import get_db
 from models.progress import Progress
 from services.market_api import get_price, market_url_for
+from services.resurgence_sync import resurgence_status, vaulted_note
 
 # Categories whose items can be farming goals (excludes raw resources)
 _GOAL_CATEGORIES = (
@@ -598,10 +599,20 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
 
     prog_map = _get_progress_map(goal_id)
 
-    # Enrich tree-view components with goal-scoped progress + vaulted badge
-    item_vaulted = bool(
-        db.execute('SELECT vaulted FROM items WHERE id = ?', (item_id,)).fetchone()['vaulted']
-    )
+    # Enrich tree-view components with goal-scoped progress + vaulted badge. A vaulted
+    # item's note names trade and Prime Resurgence, and says "in Prime Resurgence now" only
+    # while the stored stock is current and lists the item.
+    flags = db.execute(
+        'SELECT vaulted, resurgence_available FROM items WHERE id = ?', (item_id,)
+    ).fetchone()
+    item_vaulted = bool(flags['vaulted'])
+    resurgence = resurgence_status()
+    in_resurgence = bool(resurgence['current'] and flags['resurgence_available'])
+    note = vaulted_note(in_resurgence) if item_vaulted else None
+    plan['vaulted'] = item_vaulted
+    plan['vaulted_note'] = note
+    plan['in_resurgence'] = in_resurgence
+    plan['resurgence_notice'] = resurgence['notice'] if item_vaulted else None
 
     # Pre-fetch component and ingredient images for tree-view thumbnails
     all_comp_names_list = [c['component_name'] for c in plan.get('components', [])]
@@ -638,6 +649,7 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         comp['goal_comp_state'] = cs
         comp['goal_acquired']   = (cs == 'crafted')   # tree-view checkbox compat
         comp['vaulted'] = item_vaulted  # component blueprint vaults with the item
+        comp['vaulted_note'] = note
         comp['image_url'] = comp_img_map.get(cname)
         for ing in comp.get('ingredients', []):
             iname = ing['ingredient_name']

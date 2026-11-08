@@ -115,12 +115,31 @@ def get_global_setting(key: str, default=None):
     return row['value'] if row else default
 
 
+def upsert_global_setting(db, key: str, value):
+    """Write one app-wide setting (``user_id`` NULL) without committing: the row's value is
+    updated if the key exists, else a row is inserted. No ``ON CONFLICT``: SQLite's UNIQUE
+    (user_id, key) treats every NULL user_id as distinct, so the conflict never fires and
+    each call would add a row; MSSQL has no such clause. Both backends run these statements."""
+    text = str(value) if value is not None else None
+    row = db.execute(
+        'SELECT id FROM settings WHERE user_id IS NULL AND key = ?', (key,)
+    ).fetchone()
+    if row:
+        db.execute(
+            'UPDATE settings SET value = ? WHERE user_id IS NULL AND key = ?', (text, key)
+        )
+    else:
+        db.execute(
+            'INSERT INTO settings (user_id, key, value) VALUES (NULL, ?, ?)', (key, text)
+        )
+
+
 def set_global_setting(key: str, value):
     from models.db import get_db
     db = get_db()
-    db.execute(
-        '''INSERT INTO settings (user_id, key, value) VALUES (NULL, ?, ?)
-           ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value''',
-        (key, str(value) if value is not None else None),
-    )
-    db.commit()
+    try:
+        upsert_global_setting(db, key, value)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise

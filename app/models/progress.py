@@ -145,8 +145,14 @@ class Progress:
                             filters: dict = None,
                             query: str = '',
                             page: int = 1,
-                            per_page: int = 48) -> tuple[list[dict], int]:
-        """Return one page of filtered items plus the total filtered count."""
+                            per_page: int = 48,
+                            *, resurgence_current: bool) -> tuple[list[dict], int]:
+        """Return one page of filtered items plus the total filtered count.
+
+        `resurgence_current` says whether the stored Prime Resurgence stock counts
+        (services/resurgence_sync.resurgence_status); when it does not, the "available"
+        filter matches nothing and every row's `resurgence_available` reads 0.
+        """
         if filters is None:
             filters = {}
         db = get_db()
@@ -218,7 +224,7 @@ class Progress:
         if resurgence_val == 'watched':
             sql += ' AND COALESCE(p.resurgence_watch, 0) = 1'
         elif resurgence_val == 'available':
-            sql += ' AND i.resurgence_available = 1'
+            sql += ' AND i.resurgence_available = 1' if resurgence_current else ' AND 1 = 0'
 
         modtype_val = filters.get('modtype', 'all')
         if modtype_val not in ('all', ''):
@@ -244,11 +250,14 @@ class Progress:
         total = count_row[0] if count_row else 0
 
         offset = (page - 1) * per_page
-        rows = db.execute(
+        rows = [dict(r) for r in db.execute(
             sql + ' ORDER BY i.name LIMIT ? OFFSET ?',
             params + [per_page, offset],
-        ).fetchall()
-        return [dict(r) for r in rows], total
+        ).fetchall()]
+        if not resurgence_current:
+            for row in rows:
+                row['resurgence_available'] = 0
+        return rows, total
 
     @classmethod
     def get_filter_options(cls, user_id: int, category: str) -> dict:
@@ -300,7 +309,12 @@ class Progress:
         db.commit()
 
     @classmethod
-    def get_resurgence_watched_and_available(cls, user_id: int) -> list[dict]:
+    def get_resurgence_watched_and_available(cls, user_id: int, *,
+                                             resurgence_current: bool) -> list[dict]:
+        """The user's watched, unowned items in the current Prime Resurgence stock; none
+        when the stored stock does not count (`resurgence_current` False)."""
+        if not resurgence_current:
+            return []
         rows = get_db().execute('''
             SELECT i.*
             FROM items i

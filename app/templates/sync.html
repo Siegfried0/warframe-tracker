@@ -11,7 +11,8 @@
         <span class="card-title">Sync from wiki.warframe.com</span>
         <p class="grey-text">
           Fetches the latest item lists from the Warframe wiki using the Cargo API.
-          New items are added; vaulted status and Prime Resurgence flags are updated.
+          New items are added; vaulted status is updated, and Prime Resurgence's current
+          stock is read from the wiki's Prime Resurgence page.
           Your existing progress data is never modified.
         </p>
         <p class="grey-text">
@@ -49,6 +50,7 @@
           <li>Component ingredients (crafting recipes)</li>
           <li>Drop sources (farming locations)</li>
           <li>Item images (downloaded &amp; cached locally)</li>
+          <li>Prime Resurgence's current stock (the wiki's Prime Resurgence page)</li>
         </ul>
         <p class="grey-text" style="margin-top:1rem;font-size:.85rem">
           Vaulted status and Prime Resurgence availability are also updated on each sync.
@@ -107,6 +109,14 @@ $('#sync-btn').on('click', function() {
         ].join(' · ');
         cls = r.total > 0 ? 'green darken-3' : 'orange darken-3';
         msg = 'Sync complete — ' + (r.total || 0) + ' items. ' + details;
+        var pr = r.resurgence || {};
+        if (pr.ok) {
+          msg += ' · Prime Resurgence: ' + pr.available + ' items available until ' + pr.ends_at +
+                 (pr.end_from_page ? '' : ' (no end date on the page)');
+        } else {
+          msg += ' · Prime Resurgence not updated (' + (pr.error || 'not read') +
+                 '); the last stock is kept.';
+        }
       } else {
         cls = 'red darken-3';
         msg = 'Sync failed: ' + (r.error || 'unknown error');

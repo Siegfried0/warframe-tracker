@@ -15,6 +15,10 @@ class Config:
     AUTO_SYNC_ON_STARTUP = os.environ.get('AUTO_SYNC_ON_STARTUP', 'false').lower() == 'true'
     SYNC_INTERVAL_HOURS = int(os.environ.get('SYNC_INTERVAL_HOURS', 24))
 
+    # Prime Resurgence stock read from a page without a readable end date counts for this
+    # many days after the sync that read it (a value below 1 means the default, 7)
+    RESURGENCE_FALLBACK_DAYS = int(os.environ.get('RESURGENCE_FALLBACK_DAYS', 7))
+
     # OIDC — all optional
     OIDC_CLIENT_ID = os.environ.get('OIDC_CLIENT_ID')
     OIDC_CLIENT_SECRET = os.environ.get('OIDC_CLIENT_SECRET')

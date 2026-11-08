@@ -8,6 +8,7 @@ from services.farming_service import (
     get_pinned_goals,
 )
 from services.auth_service import get_setting_int
+from services.resurgence_sync import resurgence_status
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -20,7 +21,9 @@ def index():
     uid = current_user.id
     summary    = Progress.get_mastery_summary(uid)
     immediate  = Progress.get_immediate_gains(uid)
-    resurgence = Progress.get_resurgence_watched_and_available(uid)
+    resurgence_state = resurgence_status()
+    resurgence = Progress.get_resurgence_watched_and_available(
+        uid, resurgence_current=resurgence_state['current'])
 
     # Pinned farming goals with progress for "Farm next" panel
     pinned_goals = get_pinned_goals(uid)
@@ -45,6 +48,7 @@ def index():
         immediate=immediate,
         farm_next=farm_next,
         resurgence=resurgence,
+        resurgence_notice=resurgence_state['notice'],
         pinned_goals=pinned_goals,
         active_node=active_node,
         advisor_opportunities=advisor_opportunities,

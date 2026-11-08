@@ -208,6 +208,11 @@
             <button class="wf-filter-btn {% if filters.resurgence == 'watched' %}wf-filter-active{% endif %}" data-filter="resurgence" data-val="watched">Watched</button>
             <button class="wf-filter-btn {% if filters.resurgence == 'available' %}wf-filter-active{% endif %}" data-filter="resurgence" data-val="available">Available</button>
           </div>
+          {% if resurgence_notice %}
+          <span class="grey-text wf-resurgence-notice" style="font-size:.72rem;flex-basis:100%">
+            <i class="material-icons tiny">info_outline</i> {{ resurgence_notice }}
+          </span>
+          {% endif %}
         </div>
         {% endif %}
 

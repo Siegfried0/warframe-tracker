@@ -227,6 +227,32 @@ function progressBar(pct, color) {
          '<div class="determinate ' + color + '" style="width:' + pct + '%"></div></div>';
 }
 
+// Vaulted items: how to obtain them, and the Prime Resurgence notice when its data is stale
+function escText(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;');
+}
+
+function vaultedPlanNote(plan) {
+  if (!plan.vaulted) return '';
+  var html = '<div class="orange-text wf-vaulted-note" style="font-size:.78rem;margin-bottom:.5rem">' +
+             '<i class="material-icons tiny">lock</i> ' + escText(plan.vaulted_note) + '</div>';
+  if (plan.resurgence_notice) {
+    html += '<div class="grey-text wf-resurgence-notice" style="font-size:.72rem;margin-bottom:.5rem">' +
+            '<i class="material-icons tiny">info_outline</i> ' + escText(plan.resurgence_notice) + '</div>';
+  }
+  return html;
+}
+
+function vaultedLock(note, inResurgence) {
+  var html = ' <span class="orange-text" style="font-size:.78rem" title="' + escText(note || 'Vaulted') + '">' +
+             '<i class="material-icons tiny">lock</i></span>';
+  if (inResurgence) {
+    html += ' <span class="amber-text wf-in-resurgence" style="font-size:.72rem">In Prime Resurgence now</span>';
+  }
+  return html;
+}
+
 // ── Advisor renderer ──────────────────────────────────────────────────────────
 
 function renderAdvisorBody(data) {
@@ -290,7 +316,7 @@ function renderTreeView(plan, goalId) {
   if (!plan.components || !plan.components.length) {
     return '<p class="grey-text">No component data available. Run a Wiki Sync to populate recipes.</p>';
   }
-  var html = '';
+  var html = vaultedPlanNote(plan);
   if (plan.market_price) {
     html += '<div class="grey-text" style="font-size:.82rem;margin-bottom:.5rem">' +
             'Market price: <span class="orange-text">' + plan.market_price + 'p</span>' +
@@ -314,7 +340,7 @@ function renderTreeView(plan, goalId) {
     }
     html += '<div style="flex:1">';
     html += '<strong class="white-text">' + comp.component_name + '</strong>';
-    if (comp.vaulted) html += ' <span class="orange-text" style="font-size:.78rem" title="Blueprint vaulted"><i class="material-icons tiny">lock</i></span>';
+    if (comp.vaulted) html += vaultedLock(comp.vaulted_note, plan.in_resurgence);
     if (comp.drops && comp.drops.length) {
       html += '<br>' + dropBadge(comp.drops[0]);
       if (comp.drops.length > 1) {
@@ -384,7 +410,7 @@ function renderVisualPlanBody(plan, goalId) {
   });
   var resPct = resNeeded > 0 ? Math.round(resCovered / resNeeded * 100) : 100;
 
-  var html = '';
+  var html = vaultedPlanNote(plan);
 
   // ── Market price ────────────────────────────────────────────────────────────
   if (plan.market_price) {
@@ -477,7 +503,8 @@ function renderVisualPlanBody(plan, goalId) {
               '<i class="material-icons" style="font-size:.62rem">check</i></div>';
 
       html += '</div>'; // /.wf-comp-wrap
-      html += '<div class="wf-comp-name grey-text">' + comp.component_name + '</div>';
+      html += '<div class="wf-comp-name grey-text">' + comp.component_name +
+              (plan.vaulted ? vaultedLock(plan.vaulted_note, false) : '') + '</div>';
       html += '</div>'; // /.wf-comp-item
     });
     html += '</div>';

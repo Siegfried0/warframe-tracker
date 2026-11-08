@@ -5,6 +5,7 @@ from models.db import get_db
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
 from services.collection_service import ToggleError, toggle_progress
+from services.resurgence_sync import resurgence_status
 
 collection_bp = Blueprint('collection', __name__, url_prefix='/collection')
 
@@ -55,12 +56,14 @@ def category(cat):
     except (TypeError, ValueError):
         page = 1
 
+    resurgence = resurgence_status()
     rows, total_items = Progress.get_paged_for_user(
         current_user.id, cat,
         filters=filters,
         query=q,
         page=page,
         per_page=per_page,
+        resurgence_current=resurgence['current'],
     )
 
     total_pages = max(1, (total_items + per_page - 1) // per_page)
@@ -92,6 +95,7 @@ def category(cat):
         has_next=has_next,
         prev_url=prev_url,
         next_url=next_url,
+        resurgence_notice=resurgence['notice'],
     )
 
 
