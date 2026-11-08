@@ -41,9 +41,11 @@ Open `http://localhost:5000`. On first run with an empty database the setup wiza
 To run the tests (offline; each test uses its own temporary database):
 
 ```bash
-pip install -r app/requirements.txt -r requirements-dev.txt
+python -m pip install -r app/requirements.txt -r requirements-dev.txt
 python -m pytest
 ```
+
+GitHub Actions runs the same two commands on every push and pull request (Ubuntu 24.04, Python 3.11; `.github/workflows/tests.yml`).
 
 For long-running installations a **systemd service unit** is provided. Scheduled wiki syncs run automatically at the configured interval when running as a service.
 

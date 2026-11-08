@@ -1,0 +1,22 @@
+# Runs the test suite on every push and pull request.
+# The token is read-only, the job uses no secrets and deploys nothing, and the tests never
+# reach the network. tests/test_ci_workflow.py pins this file's shape: change both together.
+name: tests
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install the pinned dependencies
+        run: python -m pip install -r app/requirements.txt -r requirements-dev.txt
+      - name: Run the test suite
+        run: python -m pytest
