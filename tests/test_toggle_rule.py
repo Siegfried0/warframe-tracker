@@ -1,6 +1,7 @@
-"""The subsume / in-possession / mastered toggle rule (ADR-0002) and its route.
+"""The subsume / in-possession / mastered toggle rule and its route.
 
-The oracle is ADR-0002's table (§2) and its refusal (§3). States are written 'PMS':
+The oracle is the rule's table below and its one refusal (subsumed ON for an item that
+cannot be subsumed: only a non-Prime Warframe can be). States are written 'PMS':
 in_possession, mastered, subsumed, each 0 or 1. Every case starts with resurgence_watch=1
 so a toggle that must not touch it shows that it did not.
 """
@@ -16,7 +17,7 @@ from services.collection_service import ToggleError, toggle_flags, toggle_progre
 
 STATES = ['000', '001', '010', '011', '100', '101', '110', '111']
 
-# ADR-0002 §2, one toggle from each of the 8 states, the state it leaves.
+# The rule: one toggle from each of the 8 states, the state it leaves.
 ONE_TOGGLE = {
     'subsumed': {
         '000': '011', '010': '011', '100': '011', '110': '011',  # S ON: S=1, M=1, P=0
@@ -72,7 +73,7 @@ def matrix(table):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize('field,start,end', matrix(ONE_TOGGLE))
-def test_one_toggle_follows_the_adr_table(field, start, end):
+def test_one_toggle_follows_the_rule_table(field, start, end):
     current = as_flags(start)
     result = {**current, **toggle_flags(field, current, 'warframe', None)}
     assert as_state(result) == end

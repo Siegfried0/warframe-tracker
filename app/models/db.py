@@ -1,4 +1,4 @@
-# file-length: exempt (split pending: T-013)
+# file-length: exempt -- over the length limit; a split into smaller modules is planned
 import sqlite3
 from flask import g, current_app
 

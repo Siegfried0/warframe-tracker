@@ -1,4 +1,4 @@
-"""The collection toggle rule (ADR-0002): which flags one click writes.
+"""The collection toggle rule: which flags one click writes.
 
 `toggle_flags` is the rule itself, pure: the item's category and source, the field
 toggled and the current flags in, the flags to write out. `toggle_progress` validates a
@@ -24,12 +24,12 @@ class ToggleError(Exception):
 
 
 def can_subsume(category: str, source) -> bool:
-    """Only a non-Prime Warframe can be subsumed (ADR-0002 §3)."""
+    """Only a non-Prime Warframe can be subsumed."""
     return category == 'warframe' and source != 'prime'
 
 
 def toggle_flags(field: str, current: dict, category: str, source) -> dict:
-    """The flags one toggle of `field` writes, given the current flags (ADR-0002 §2).
+    """The flags one toggle of `field` writes, given the current flags.
 
     `current` holds `in_possession`, `mastered`, `subsumed` and `resurgence_watch`
     (a missing key counts as 0). The result names only the flags that are written; every

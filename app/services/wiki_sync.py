@@ -1,4 +1,4 @@
-# file-length: exempt (split pending: T-011)
+# file-length: exempt -- over the length limit; a split into smaller modules is planned
 """
 Warframe item sync — fetches items from WFCD warframe-items dataset (primary) and
 the Warframe wiki category API (K-Drive boards, Necramechs).

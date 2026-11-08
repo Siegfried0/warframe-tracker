@@ -3,6 +3,13 @@ from functools import wraps
 from flask import abort
 from flask_login import current_user
 
+# The Settings page's personal settings: (key, label, default). The export carries them.
+USER_SETTINGS = [
+    ('market_cache_hours', 'Market cache duration (hours)', '6'),
+    ('buy_threshold_plat', 'Buy threshold (platinum)', ''),
+    ('plat_per_hour',      'Platinum per hour (time-value)', ''),
+]
+
 
 def admin_required(f):
     """Route decorator — 403 if the current user is not an admin."""

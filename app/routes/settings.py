@@ -7,20 +7,13 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from models.progress import Progress
-from services.auth_service import get_setting, set_setting
+from services.auth_service import USER_SETTINGS, get_setting, set_setting
 from services.backup_service import backup_now
 from services.export_service import export_user_data
 from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
                                      import_user_data)
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
-
-_USER_SETTINGS = [
-    ('market_cache_hours', 'Market cache duration (hours)', '6'),
-    ('buy_threshold_plat', 'Buy threshold (platinum)', ''),
-    ('plat_per_hour',      'Platinum per hour (time-value)', ''),
-]
-
 
 @settings_bp.route('/', methods=['GET', 'POST'])
 @login_required
@@ -30,7 +23,7 @@ def index():
         action = request.form.get('action')
 
         if action == 'save_preferences':
-            for key, _, _ in _USER_SETTINGS:
+            for key, _, _ in USER_SETTINGS:
                 val = request.form.get(key, '').strip() or None
                 set_setting(uid, key, val)
             flash('Preferences saved.', 'success')
@@ -72,8 +65,8 @@ def index():
 
         return redirect(url_for('settings.index'))
 
-    prefs = {key: get_setting(uid, key, default) for key, _, default in _USER_SETTINGS}
-    return render_template('settings.html', settings_meta=_USER_SETTINGS, prefs=prefs)
+    prefs = {key: get_setting(uid, key, default) for key, _, default in USER_SETTINGS}
+    return render_template('settings.html', settings_meta=USER_SETTINGS, prefs=prefs)
 
 
 @settings_bp.route('/export')

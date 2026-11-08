@@ -18,8 +18,11 @@ def write_plan(db, user_id: int, plan) -> dict:
     goal_ids = _write_goals(db, user_id, plan, items)
     _write_progress(db, user_id, plan, goal_ids, now)
     _write_checklist(db, user_id, plan, items, now)
+    _write_watchlist(db, user_id, plan, items)
+    _write_settings(db, user_id, plan)
     return {'items': len(plan.items), 'goals': len(plan.goals),
-            'progress': len(plan.progress), 'checklist': len(plan.checklist)}
+            'progress': len(plan.progress), 'checklist': len(plan.checklist),
+            'watchlist': len(plan.watchlist), 'settings': len(plan.settings)}
 
 
 class _ItemIds:
@@ -131,3 +134,16 @@ def _write_checklist(db, user_id, plan, items, now):
         _upsert(db, 'farming_checklist',
                 {'user_id': user_id, 'item_id': item_id, 'component_name': component},
                 {**values, 'updated_at': now})
+
+
+def _write_watchlist(db, user_id, plan, items):
+    for name, cat in plan.watchlist:
+        item_id, _ = items.get(name, cat)
+        _upsert(db, 'user_market_watchlist', {'user_id': user_id, 'item_id': item_id}, {})
+
+
+def _write_settings(db, user_id, plan):
+    for key, values in plan.settings.items():
+        value = values.get('value')
+        _upsert(db, 'settings', {'user_id': user_id, '"key"': key},
+                {'value': None if value is None else str(value)} if values else {})

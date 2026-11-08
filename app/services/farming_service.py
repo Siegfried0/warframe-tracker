@@ -1,4 +1,4 @@
-# file-length: exempt (split pending: T-012)
+# file-length: exempt -- over the length limit; a split into smaller modules is planned
 """
 Farming optimiser — builds efficient multi-target mission routes.
 """

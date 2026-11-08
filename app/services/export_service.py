@@ -1,10 +1,10 @@
 """Export of one user's tracker data as a ZIP of CSV files (format 2).
 
 The export writes the caller's rows only: one ``<category>.csv`` per category (progress
-flags, note, arcane ranks) plus ``farming_goals.csv``, ``farming_progress.csv`` and
-``farming_checklist.csv``. Items are named by ``(name, category)``, never by id. The
-format's file and column lists live here; the import (``services.import_service``) reads
-the same lists.
+flags, note, arcane ranks) plus ``farming_goals.csv``, ``farming_progress.csv``,
+``farming_checklist.csv``, ``watchlist.csv`` and ``settings.csv``. Items are named by
+``(name, category)``, never by id. The format's file and column lists live here; the
+import (``services.import_service``) reads the same lists.
 """
 import csv
 import io
@@ -13,18 +13,24 @@ import zipfile
 from models.db import get_db
 from models.item import CATEGORIES
 from models.progress import Progress
+from services.auth_service import USER_SETTINGS
 
 CATEGORY_COLUMNS = ['name', 'category', 'source', 'in_possession', 'mastered', 'subsumed',
                     'resurgence_watch', 'note', 'owned_rank', 'target_rank']
 GOALS_FILE = 'farming_goals.csv'
 PROGRESS_FILE = 'farming_progress.csv'
 CHECKLIST_FILE = 'farming_checklist.csv'
+WATCHLIST_FILE = 'watchlist.csv'
+SETTINGS_FILE = 'settings.csv'
 FILE_COLUMNS = {
     GOALS_FILE: ['name', 'category', 'pinned', 'display_mode', 'sort_order'],
     PROGRESS_FILE: ['name', 'category', 'row_type', 'row_key', 'acquired', 'quantity_owned',
                     'comp_state'],
     CHECKLIST_FILE: ['name', 'category', 'component_name', 'acquired'],
+    WATCHLIST_FILE: ['name', 'category'],
+    SETTINGS_FILE: ['key', 'value'],
 }
+SETTING_KEYS = [key for key, _, _ in USER_SETTINGS]
 
 
 # ── Export ──────────────────────────────────────────────────────────────────
@@ -62,6 +68,18 @@ def export_user_data(user_id: int) -> bytes:
                 ORDER BY i.category, i.name, fc.component_name''', (user_id,)).fetchall()
         zf.writestr(CHECKLIST_FILE, _csv(FILE_COLUMNS[CHECKLIST_FILE],
                                          (list(r) for r in checklist)))
+        watch = db.execute(
+            '''SELECT i.name, i.category
+                 FROM user_market_watchlist w JOIN items i ON i.id = w.item_id
+                WHERE w.user_id = ?
+                ORDER BY i.category, i.name''', (user_id,)).fetchall()
+        zf.writestr(WATCHLIST_FILE, _csv(FILE_COLUMNS[WATCHLIST_FILE], (list(r) for r in watch)))
+        marks = ', '.join('?' for _ in SETTING_KEYS)
+        settings = db.execute(
+            f'''SELECT "key", value FROM settings
+                 WHERE user_id = ? AND "key" IN ({marks})
+                 ORDER BY "key"''', [user_id, *SETTING_KEYS]).fetchall()
+        zf.writestr(SETTINGS_FILE, _csv(FILE_COLUMNS[SETTINGS_FILE], (list(r) for r in settings)))
     return buf.getvalue()
 
 

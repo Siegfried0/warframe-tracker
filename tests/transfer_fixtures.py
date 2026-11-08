@@ -1,8 +1,8 @@
 """Shared data and readers for the export / import tests.
 
 `seed(app)` builds a catalogue and three users: Alice (progress with notes and arcane
-ranks, farming goals with every component state, checklist rows), Bob (empty, the import
-target) and Carol (rows of her own that no import into Bob may touch). The
+ranks, farming goals with every component state, checklist rows, watch entries, settings),
+Bob (empty, the import target) and Carol (rows of her own that no import into Bob may touch). The
 `seeded` fixture gives each test its own copy of one database seeded once per session
 (seeding per test cost most of the matrices' run time). The readers return each table
 keyed by item name and category, never by id, so two users' data compare directly.
@@ -19,6 +19,7 @@ import app as app_module
 from models.db import get_db
 from models.item import Item
 from models.user import User
+from services.auth_service import set_setting
 from services.farming_service import add_farming_goal, set_checklist, set_goal_progress
 
 WEIRD = 'Odd, "quoted"\nname Ñoño ☃'
@@ -49,6 +50,13 @@ def put_progress(uid, name, category, **fields):
     db.commit()
 
 
+def watch(uid, name, category):
+    db = get_db()
+    db.execute('INSERT INTO user_market_watchlist (user_id, item_id) VALUES (?, ?)',
+               (uid, item_id(name, category)))
+    db.commit()
+
+
 def seed(app):
     """Return {'alice': id, 'bob': id, 'carol': id}; runs inside an app context."""
     for name, category, max_rank in CATALOGUE:
@@ -74,11 +82,18 @@ def seed(app):
     set_goal_progress(alice, goal, 'ingredient', 'Morphics', quantity_owned=3)
     set_checklist(alice, item_id('Braton', 'primary'), 'Barrel', True)
     set_checklist(alice, item_id('Braton', 'primary'), 'Stock', False)
+    watch(alice, 'Braton', 'primary')
+    watch(alice, WEIRD, 'melee')
+    set_setting(alice, 'market_cache_hours', '12')
+    set_setting(alice, 'plat_per_hour', '30')
+    set_setting(alice, 'buy_threshold_plat', None)
 
     put_progress(carol, 'Lex', 'secondary', in_possession=1, note='carol-only note')
     carol_goal = add_farming_goal(carol, item_id('Lex', 'secondary'))['goal_id']
     set_goal_progress(carol, carol_goal, 'ingredient', 'Morphics', quantity_owned=99)
     set_checklist(carol, item_id('Lex', 'secondary'), 'Receiver', True)
+    watch(carol, 'Lex', 'secondary')
+    set_setting(carol, 'plat_per_hour', '777')
     return users
 
 
@@ -144,8 +159,13 @@ def read_user(uid) -> dict:
     checklist = {(r['name'], r['category'], r['component_name']): r['acquired']
                  for r in _rows('''SELECT i.name, i.category, c.* FROM farming_checklist c
                                    JOIN items i ON i.id = c.item_id WHERE c.user_id = ?''', uid)}
+    watchlist = {(r['name'], r['category'])
+                 for r in _rows('''SELECT i.name, i.category FROM user_market_watchlist w
+                                   JOIN items i ON i.id = w.item_id WHERE w.user_id = ?''', uid)}
+    settings = {r['key']: r['value']
+                for r in _rows('SELECT "key", value FROM settings WHERE user_id = ?', uid)}
     return {'progress': progress, 'goals': goals, 'goal_rows': goal_rows,
-            'checklist': checklist}
+            'checklist': checklist, 'watchlist': watchlist, 'settings': settings}
 
 
 def nonzero_progress(view: dict) -> dict:
@@ -159,8 +179,7 @@ _TABLES = ['items', 'user_progress', 'farming_goals', 'farming_progress',
 
 
 def snapshot(drop_updated_at=False) -> dict:
-    """Every row of every table an import can write (the watchlist and settings too: an
-    import of this format never writes them), in id order."""
+    """Every row of every table an import can write, in id order."""
     out = {}
     for table in _TABLES:
         rows = [dict(r) for r in get_db().execute(f'SELECT * FROM {table} ORDER BY id')]

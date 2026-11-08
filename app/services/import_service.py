@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 
 from models.db import get_db
 from models.item import CATEGORIES
-from services.export_service import CHECKLIST_FILE, FILE_COLUMNS, GOALS_FILE, PROGRESS_FILE
+from services.export_service import (CHECKLIST_FILE, FILE_COLUMNS, GOALS_FILE, PROGRESS_FILE,
+                                     SETTING_KEYS, SETTINGS_FILE, WATCHLIST_FILE)
 from services.import_writer import write_plan
 
 # Bounds. A large export measured 1.04 MiB as CSV text and 31 KB zipped;
@@ -36,6 +37,8 @@ _REQUIRED = {
     GOALS_FILE: ['name', 'category'],
     PROGRESS_FILE: ['name', 'category', 'row_type', 'row_key'],
     CHECKLIST_FILE: ['name', 'category', 'component_name'],
+    WATCHLIST_FILE: ['name', 'category'],
+    SETTINGS_FILE: ['key'],
 }
 _FLAGS = ['in_possession', 'mastered', 'subsumed', 'resurgence_watch']
 _RANKS = ['owned_rank', 'target_rank']
@@ -49,13 +52,19 @@ class ImportRefused(Exception):
 @dataclass
 class ImportResult:
     counts: dict = field(default_factory=dict)
+    ignored_settings: int = 0
 
     @property
     def message(self) -> str:
         c = self.counts
-        return (f"Import complete: {c.get('items', 0)} items, {c.get('goals', 0)} goals, "
+        text = (f"Import complete: {c.get('items', 0)} items, {c.get('goals', 0)} goals, "
                 f"{c.get('progress', 0)} goal progress rows, {c.get('checklist', 0)} "
-                f"checklist rows.")
+                f"checklist rows, {c.get('watchlist', 0)} watchlist entries, "
+                f"{c.get('settings', 0)} settings.")
+        if self.ignored_settings:
+            noun = 'key' if self.ignored_settings == 1 else 'keys'
+            text += f' {self.ignored_settings} unknown setting {noun} ignored.'
+        return text
 
 
 # ── Import: reading ─────────────────────────────────────────────────────────
@@ -219,6 +228,9 @@ class _Plan:
     progress: dict = field(default_factory=dict)    # (name, cat, type, key) -> {...}
     checklist: dict = field(default_factory=dict)   # (name, cat, component) -> {...}
     progress_lines: dict = field(default_factory=dict)  # progress key -> its line
+    watchlist: dict = field(default_factory=dict)   # (name, cat) -> {}
+    settings: dict = field(default_factory=dict)    # key -> {'value': int or None} or {}
+    ignored_settings: int = 0
 
 
 def _parse(texts: dict) -> _Plan:
@@ -228,12 +240,15 @@ def _parse(texts: dict) -> _Plan:
         target, seen = _target(plan, fname), {}
         for line, row in rows:
             try:
-                key, values = _parse_row(fname, cols, row)
+                key, values = _parse_row(plan, fname, cols, row)
             except _Invalid as bad:
                 _refuse(fname, line, bad.column, bad.reason)
+            if key is None:
+                continue
             if key in seen:
-                _refuse(fname, line, 'name', f'the same row key already appears on line '
-                                             f'{seen[key]}.')
+                key_col = 'key' if fname == SETTINGS_FILE else 'name'
+                _refuse(fname, line, key_col, f'the same row key already appears on line '
+                                              f'{seen[key]}.')
             seen[key] = line
             target[key] = values
             if fname == PROGRESS_FILE:
@@ -243,10 +258,11 @@ def _parse(texts: dict) -> _Plan:
 
 def _target(plan: _Plan, fname: str) -> dict:
     return {GOALS_FILE: plan.goals, PROGRESS_FILE: plan.progress,
-            CHECKLIST_FILE: plan.checklist}.get(fname, plan.items)
+            CHECKLIST_FILE: plan.checklist, WATCHLIST_FILE: plan.watchlist,
+            SETTINGS_FILE: plan.settings}.get(fname, plan.items)
 
 
-def _parse_row(fname: str, cols: set, row: dict):
+def _parse_row(plan: _Plan, fname: str, cols: set, row: dict):
     """(key, values) for one row; values hold only the columns the file carries."""
     if fname == GOALS_FILE:
         return _parse_goal_row(cols, row)
@@ -257,6 +273,14 @@ def _parse_row(fname: str, cols: set, row: dict):
         if 'acquired' in cols:
             values['acquired'] = _flag(row['acquired'], 'acquired')
         return (_name(row), _category(row), _name(row, 'component_name')), values
+    if fname == SETTINGS_FILE:
+        key = _name(row, 'key')
+        if key not in SETTING_KEYS:
+            plan.ignored_settings += 1
+            return None, None
+        return key, ({'value': _uint(row['value'], 'value', None)} if 'value' in cols else {})
+    if fname == WATCHLIST_FILE:
+        return (_name(row), _category(row)), {}
     file_cat = fname[:-len('.csv')]
     values = {}
     for col in _FLAGS:
@@ -326,7 +350,7 @@ def import_user_data(user_id: int, stream) -> ImportResult:
         db.rollback()
         raise ImportRefused(f'Import failed, nothing written: the database refused a write '
                             f'({type(exc).__name__}).') from exc
-    return ImportResult(counts=counts)
+    return ImportResult(counts=counts, ignored_settings=plan.ignored_settings)
 
 
 def _check_progress_goals(db, user_id: int, plan: _Plan):
