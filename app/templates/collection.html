@@ -1,0 +1,936 @@
+{% extends 'base.html' %}
+{% block title %}{{ category_label }} — Collection{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">list</i>Collection</h4>
+
+<!-- Category tabs -->
+<div class="row" style="margin-bottom:.5rem">
+  <div class="col s12">
+    <div class="card blue-grey darken-3" style="padding:.5rem 1rem">
+      {% for cat in categories %}
+      <a href="{{ url_for('collection.category', cat=cat) }}"
+         class="btn-flat {% if cat == current_cat %}teal-text{% else %}grey-text{% endif %} waves-effect"
+         style="margin:.25rem">
+        {{ category_labels[cat] }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Search + view switcher -->
+<div class="row" style="margin-bottom:0">
+  <div class="col s12 m6">
+    <form method="get" style="display:flex;gap:.5rem;align-items:flex-end">
+      {# preserve active filters in the search form #}
+      {% for k, v in filters.items() %}{% if v and v != 'all' %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">
+      {% endif %}{% endfor %}
+      {% if per_page != 48 %}<input type="hidden" name="per_page" value="{{ per_page }}">{% endif %}
+      <div class="input-field" style="flex:1;margin:0">
+        <input id="q" name="q" type="text" value="{{ query }}" class="white-text">
+        <label for="q" class="white-text">Search {{ category_label }}</label>
+      </div>
+      <button class="btn blue-grey lighten-1" type="submit">
+        <i class="material-icons">search</i>
+      </button>
+      {% if query %}
+      <a href="{{ url_for('collection.category', cat=current_cat) }}" class="btn-flat white-text">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+  <div class="col s12 m6" style="display:flex;align-items:flex-end;justify-content:flex-end;padding-bottom:.75rem;gap:.3rem">
+    <button id="view-card" class="btn-small waves-effect" title="Card Grid">
+      <i class="material-icons">grid_view</i>
+    </button>
+    <button id="view-table" class="btn-small waves-effect" title="Table View">
+      <i class="material-icons">table_rows</i>
+    </button>
+  </div>
+</div>
+
+<!-- Filter bar -->
+{# filter_options comes from the route — covers the full category, not just this page #}
+{% set variant_sources = filter_options.sources %}
+{% set mod_types       = filter_options.mod_types %}
+{% set polarities      = filter_options.polarities %}
+{% set arc_sources     = filter_options.arc_sources %}
+
+<div class="row" style="margin-bottom:.5rem" id="filter-bar-row">
+  <div class="col s12">
+    <div class="card blue-grey darken-3" style="padding:.5rem .75rem">
+      <div class="wf-filter-bar">
+
+        <!-- Ownership -->
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">
+            {% if current_cat == 'arcane' %}Rank Status{% else %}Ownership{% endif %}
+          </span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.owned == 'all' %}wf-filter-active{% endif %}" data-filter="owned" data-val="all">All</button>
+            {% if current_cat == 'arcane' %}
+            <button class="wf-filter-btn {% if filters.owned == '1' %}wf-filter-active{% endif %}" data-filter="owned" data-val="1">Any Rank</button>
+            <button class="wf-filter-btn {% if filters.owned == '0' %}wf-filter-active{% endif %}" data-filter="owned" data-val="0">Not Owned</button>
+            {% else %}
+            <button class="wf-filter-btn {% if filters.owned == '1' %}wf-filter-active{% endif %}" data-filter="owned" data-val="1">Owned</button>
+            <button class="wf-filter-btn {% if filters.owned == '0' %}wf-filter-active{% endif %}" data-filter="owned" data-val="0">Unowned</button>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Mastery / Maxed -->
+        {% if current_cat not in ('arcane',) %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">
+            {% if current_cat == 'mod' %}Maxed{% else %}Mastery{% endif %}
+          </span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.mastered == 'all' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.mastered == '1' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="1">
+              {% if current_cat == 'mod' %}Maxed{% else %}Mastered{% endif %}
+            </button>
+            <button class="wf-filter-btn {% if filters.mastered == '0' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="0">
+              {% if current_cat == 'mod' %}Not Maxed{% else %}Unmastered{% endif %}
+            </button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Arcane: Maxed -->
+        {% if current_cat == 'arcane' %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Maxed</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.mastered == 'all' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.mastered == '1' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="1">Maxed</button>
+            <button class="wf-filter-btn {% if filters.mastered == '0' %}wf-filter-active{% endif %}" data-filter="mastered" data-val="0">Not Maxed</button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Subsume (Warframes only) -->
+        {% if current_cat == 'warframe' %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Subsume</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.subsumed == 'all' %}wf-filter-active{% endif %}" data-filter="subsumed" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.subsumed == '1' %}wf-filter-active{% endif %}" data-filter="subsumed" data-val="1">Subsumed</button>
+            <button class="wf-filter-btn {% if filters.subsumed == '0' %}wf-filter-active{% endif %}" data-filter="subsumed" data-val="0">Not subsumed</button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Mod type filter (Mods only) -->
+        {% if current_cat == 'mod' and mod_types %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Mod Type</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.modtype == 'all' %}wf-filter-active{% endif %}" data-filter="modtype" data-val="all">All</button>
+            {% for mt in mod_types %}
+            <button class="wf-filter-btn {% if filters.modtype == mt %}wf-filter-active{% endif %}" data-filter="modtype" data-val="{{ mt }}">{{ mt }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Polarity filter (Mods only) -->
+        {% if current_cat == 'mod' and polarities %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Polarity</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.polarity == 'all' %}wf-filter-active{% endif %}" data-filter="polarity" data-val="all">All</button>
+            {% for pol in polarities %}
+            <button class="wf-filter-btn {% if filters.polarity == pol %}wf-filter-active{% endif %}" data-filter="polarity" data-val="{{ pol }}">{{ pol }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Source / variant (standard categories) -->
+        {% if current_cat not in ('mod', 'arcane') %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Source</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.source == 'all' %}wf-filter-active{% endif %}" data-filter="source" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.source == 'prime' %}wf-filter-active{% endif %}" data-filter="source" data-val="prime">Prime</button>
+            <button class="wf-filter-btn {% if filters.source == 'non-prime' %}wf-filter-active{% endif %}" data-filter="source" data-val="non-prime">Non-prime</button>
+            {% for src in variant_sources %}
+            <button class="wf-filter-btn {% if filters.source == src %}wf-filter-active{% endif %}" data-filter="source" data-val="{{ src }}">{{ src | capitalize }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Arcane origin (Arcanes only) -->
+        {% if current_cat == 'arcane' and arc_sources %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Origin</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.source == 'all' %}wf-filter-active{% endif %}" data-filter="source" data-val="all">All</button>
+            {% for src in arc_sources %}
+            <button class="wf-filter-btn {% if filters.source == src %}wf-filter-active{% endif %}" data-filter="source" data-val="{{ src }}">{{ src | capitalize }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Arcane: Target met filter -->
+        {% if current_cat == 'arcane' %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Target</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.targetmet == 'all' %}wf-filter-active{% endif %}" data-filter="targetmet" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.targetmet == 'met' %}wf-filter-active{% endif %}" data-filter="targetmet" data-val="met">Target Met</button>
+            <button class="wf-filter-btn {% if filters.targetmet == 'notmet' %}wf-filter-active{% endif %}" data-filter="targetmet" data-val="notmet">Target Not Met</button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Vault status (standard categories only) -->
+        {% if current_cat not in ('mod', 'arcane') %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Vault</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.vaulted == 'all' %}wf-filter-active{% endif %}" data-filter="vaulted" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.vaulted == '0' %}wf-filter-active{% endif %}" data-filter="vaulted" data-val="0">Available</button>
+            <button class="wf-filter-btn {% if filters.vaulted == '1' %}wf-filter-active{% endif %}" data-filter="vaulted" data-val="1">Vaulted</button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Prime Resurgence (standard categories only) -->
+        {% if current_cat not in ('mod', 'arcane') %}
+        <div class="wf-filter-group">
+          <span class="wf-filter-label">Resurgence</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn {% if filters.resurgence == 'all' %}wf-filter-active{% endif %}" data-filter="resurgence" data-val="all">All</button>
+            <button class="wf-filter-btn {% if filters.resurgence == 'watched' %}wf-filter-active{% endif %}" data-filter="resurgence" data-val="watched">Watched</button>
+            <button class="wf-filter-btn {% if filters.resurgence == 'available' %}wf-filter-active{% endif %}" data-filter="resurgence" data-val="available">Available</button>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Per-page selector (card view only; shown/hidden by JS) -->
+        <div class="wf-filter-group" id="per-page-group" style="display:none">
+          <span class="wf-filter-label">Per page</span>
+          <div class="wf-filter-btns">
+            <button class="wf-filter-btn wf-pp-btn {% if per_page == 24 %}wf-filter-active{% endif %}" data-pp="24">24</button>
+            <button class="wf-filter-btn wf-pp-btn {% if per_page == 48 %}wf-filter-active{% endif %}" data-pp="48">48</button>
+            <button class="wf-filter-btn wf-pp-btn {% if per_page == 96 %}wf-filter-active{% endif %}" data-pp="96">96</button>
+          </div>
+        </div>
+
+        <!-- Item count + clear -->
+        <div class="wf-filter-group" style="margin-left:auto">
+          <span id="filter-count" class="wf-filter-count">{{ rows | length }} / {{ total_items }}</span>
+          {% set ns_ha = namespace(has_active=false) %}
+          {% for v in filters.values() %}{% if v and v != 'all' %}{% set ns_ha.has_active = true %}{% endif %}{% endfor %}
+          {% if query %}
+          <a href="{{ url_for('collection.category', cat=current_cat, per_page=per_page, q=query) }}"
+          {% else %}
+          <a href="{{ url_for('collection.category', cat=current_cat, per_page=per_page) }}"
+          {% endif %}
+             id="filter-clear" class="wf-filter-btn" {% if not ns_ha.has_active %}style="display:none"{% endif %}>
+            <i class="material-icons" style="font-size:.85rem;vertical-align:middle">clear</i> Clear
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Pagination (top) ───────────────────────────────────────────────────── -->
+{% if total_pages > 1 %}
+<div class="row wf-pag-row" style="margin-bottom:.25rem">
+  <div class="col s12">
+    <div class="wf-pagination">
+      <a href="{{ prev_url or '#' }}" id="pag-prev-top"
+         class="btn-small waves-effect blue-grey {% if not has_prev %}disabled{% endif %}">
+        <i class="material-icons">chevron_left</i>
+      </a>
+      <span class="white-text" style="padding:0 .75rem;line-height:2rem">Page {{ page }} / {{ total_pages }}</span>
+      <a href="{{ next_url or '#' }}" id="pag-next-top"
+         class="btn-small waves-effect blue-grey {% if not has_next %}disabled{% endif %}">
+        <i class="material-icons">chevron_right</i>
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Card Grid ──────────────────────────────────────────────────────────── -->
+<div id="collection-cards" class="row">
+  {% for row in rows %}
+
+  {# Compute data-f-* values for arcane rank filtering #}
+  {% if current_cat == 'arcane' %}
+    {% set arc_owned_rank  = row.owned_rank  if row.owned_rank  is not none else 0 %}
+    {% set arc_target_rank = row.target_rank if row.target_rank is not none else 0 %}
+    {% set arc_max_rank    = row.mod_max_rank if row.mod_max_rank is not none else 0 %}
+    {% set arc_is_owned    = 1 if arc_owned_rank > 0 else 0 %}
+    {% set arc_is_maxed    = 1 if (arc_max_rank > 0 and arc_owned_rank >= arc_max_rank) else 0 %}
+    {% set arc_target_met  = 1 if (arc_target_rank > 0 and arc_owned_rank >= arc_target_rank) else 0 %}
+  {% endif %}
+
+  <div class="col s6 m4 l3 coll-col"
+       data-item-id="{{ row.id }}"
+       data-f-owned="{{ 1 if (current_cat == 'arcane' and arc_is_owned) or (current_cat != 'arcane' and row.in_possession) else 0 }}"
+       data-f-mastered="{{ 1 if (current_cat == 'arcane' and arc_is_maxed) or (current_cat != 'arcane' and row.mastered) else 0 }}"
+       data-f-subsumed="{{ 1 if row.subsumed else 0 }}"
+       data-f-source="{{ row.source or '' }}"
+       data-f-vaulted="{{ 1 if row.vaulted else 0 }}"
+       data-f-rwatch="{{ 1 if row.resurgence_watch else 0 }}"
+       data-f-ravail="{{ 1 if row.resurgence_available else 0 }}"
+       {% if current_cat == 'mod' %}
+       data-f-modtype="{{ row.mod_type or '' }}"
+       data-f-polarity="{{ row.mod_polarity or '' }}"
+       {% endif %}
+       {% if current_cat == 'arcane' %}
+       data-f-owned-rank="{{ arc_owned_rank }}"
+       data-f-target-rank="{{ arc_target_rank }}"
+       data-f-max-rank="{{ arc_max_rank }}"
+       data-f-targetmet="{{ arc_target_met }}"
+       {% endif %}>
+    <div class="card blue-grey darken-2 coll-card {% if current_cat not in ('mod','arcane') and row.resurgence_available and row.resurgence_watch %}resurgence-card{% endif %}">
+      <div class="coll-card-portrait">
+        <i class="material-icons grey-text coll-portrait-placeholder">
+          {% if current_cat == 'mod' %}auto_fix_high{% elif current_cat == 'arcane' %}auto_awesome{% else %}shield{% endif %}
+        </i>
+        {% if row.image_url %}
+        <img src="{{ row.image_url }}" alt="{{ row.name }}" class="coll-portrait-img"
+             onerror="this.style.display='none'">
+        {% endif %}
+        {% if current_cat not in ('mod', 'arcane') and row.vaulted %}
+        <span class="coll-badge orange darken-2 white-text">Vaulted</span>
+        {% endif %}
+        {% if current_cat not in ('mod', 'arcane') and row.resurgence_available and row.resurgence_watch %}
+        <span class="coll-badge amber darken-2 white-text">Resurgence!</span>
+        {% endif %}
+      </div>
+      <div class="card-content" style="padding:.5rem .6rem .4rem">
+        <p class="white-text coll-card-name" title="{{ row.name }}">{{ row.name }}</p>
+        {% if current_cat == 'mod' %}
+          {% if row.mod_type %}<p class="grey-text coll-card-source" style="font-size:.7rem">{{ row.mod_type }}</p>{% endif %}
+          {% if row.mod_polarity %}<p class="grey-text coll-card-source" style="font-size:.7rem">{{ row.mod_polarity }} · R{{ row.mod_max_rank or 0 }}</p>{% endif %}
+        {% elif current_cat == 'arcane' %}
+          {% if row.source and row.source != 'standard' %}<p class="grey-text coll-card-source">{{ row.source | capitalize }}</p>{% endif %}
+          <!-- Arcane rank progress bar -->
+          <div style="margin:.3rem 0 .2rem">
+            <div style="background:#37474f;border-radius:2px;height:4px">
+              {% if arc_max_rank > 0 %}
+              {% set bar_pct = [(arc_owned_rank / arc_max_rank * 100)|int, 100]|min %}
+              <div class="arc-rank-bar" style="width:{{ bar_pct }}%;height:4px;background:#26a69a;border-radius:2px"></div>
+              {% endif %}
+            </div>
+            <div style="display:flex;align-items:center;gap:.25rem;margin-top:.25rem">
+              <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
+                      data-delta="-1" data-max="{{ arc_max_rank }}"
+                      style="padding:0;width:1.2rem;height:1.2rem;line-height:1.2rem;min-width:0"
+                      title="Decrease rank">
+                <i class="material-icons" style="font-size:.85rem">remove</i>
+              </button>
+              <span class="arc-owned-rank grey-text" style="font-size:.75rem">{{ arc_owned_rank }}/{{ arc_max_rank }}</span>
+              <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
+                      data-delta="1" data-max="{{ arc_max_rank }}"
+                      style="padding:0;width:1.2rem;height:1.2rem;line-height:1.2rem;min-width:0"
+                      title="Increase rank">
+                <i class="material-icons" style="font-size:.85rem">add</i>
+              </button>
+              <span class="grey-text" style="font-size:.7rem;margin-left:.2rem">target:</span>
+              <input type="number" class="arc-target-input white-text" data-item="{{ row.id }}"
+                     data-max="{{ arc_max_rank }}"
+                     value="{{ arc_target_rank }}" min="0" max="{{ arc_max_rank }}"
+                     style="width:2rem;background:none;border:none;border-bottom:1px solid #546e7a;font-size:.75rem;padding:0;text-align:center">
+            </div>
+          </div>
+        {% else %}
+          {% if row.source %}<p class="grey-text coll-card-source">{{ row.source }}</p>{% endif %}
+        {% endif %}
+        <div class="coll-card-icons">
+          {% if current_cat not in ('arcane',) %}
+          <a href="#" class="wf-toggle {% if row.in_possession %}teal-text{% else %}grey-text{% endif %}"
+             data-item="{{ row.id }}" data-field="in_possession" title="Owned">
+            <i class="material-icons small">{{ 'check_box' if row.in_possession else 'check_box_outline_blank' }}</i>
+          </a>
+          {% endif %}
+          {% if current_cat not in ('arcane',) %}
+          <a href="#" class="wf-toggle {% if row.mastered %}amber-text{% else %}grey-text{% endif %}"
+             data-item="{{ row.id }}" data-field="mastered"
+             title="{{ 'Maxed' if current_cat == 'mod' else 'Mastered' }}">
+            <i class="material-icons small">{{ 'star' if row.mastered else 'star_border' }}</i>
+          </a>
+          {% endif %}
+          {% if current_cat == 'warframe' and row.source != 'prime' %}
+          <a href="#" class="wf-toggle {% if row.subsumed %}purple-text{% else %}grey-text{% endif %}"
+             data-item="{{ row.id }}" data-field="subsumed" title="Subsumed">
+            <i class="material-icons small">spa</i>
+          </a>
+          {% endif %}
+          {% if current_cat not in ('mod', 'arcane') and row.source == 'prime' %}
+          <a href="#" class="wf-toggle {% if row.resurgence_watch %}red-text{% else %}grey-text{% endif %}"
+             data-item="{{ row.id }}" data-field="resurgence_watch" title="Watch for Prime Resurgence">
+            <i class="material-icons small">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
+          </a>
+          {% endif %}
+          {% if row.wiki_url %}
+          <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
+            <i class="material-icons small">open_in_new</i>
+          </a>
+          {% endif %}
+          <a href="#" class="wf-note-edit grey-text" data-item="{{ row.id }}" title="Note">
+            <i class="material-icons small">{% if row.note %}notes{% else %}edit_note{% endif %}</i>
+          </a>
+          {% if current_cat in ('mod', 'arcane') %}
+          <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Farm it">
+            <i class="material-icons small">agriculture</i>
+          </a>
+          {% elif current_cat != 'resource' %}
+          <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
+            <i class="material-icons small">add_task</i>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col s12">
+    <div class="card blue-grey darken-3">
+      <div class="card-content grey-text center-align" style="padding:2rem">No items found.</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Table View ─────────────────────────────────────────────────────────── -->
+<div id="collection-table" class="row" style="display:none">
+  <div class="col s12">
+    <div class="card blue-grey darken-2">
+      <div class="card-content" style="padding:0">
+        <table class="wf-table responsive-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              {% if current_cat == 'mod' %}
+              <th>Type</th>
+              <th>Polarity</th>
+              <th class="center-align">Max Rank</th>
+              {% elif current_cat == 'arcane' %}
+              <th>Origin</th>
+              <th class="center-align">Owned Rank</th>
+              <th class="center-align">Target</th>
+              {% else %}
+              <th>Source</th>
+              {% endif %}
+              {% if current_cat != 'arcane' %}
+              <th class="center-align">Owned</th>
+              <th class="center-align">{{ 'Maxed' if current_cat == 'mod' else 'Mastered' }}</th>
+              {% endif %}
+              {% if current_cat == 'warframe' %}<th class="center-align">Subsumed</th>{% endif %}
+              {% if current_cat not in ('mod', 'arcane') %}
+              <th class="center-align">Watch</th>
+              <th class="center-align">Vaulted</th>
+              {% endif %}
+              {% if current_cat in ('mod', 'arcane') %}
+              <th class="center-align">Farm</th>
+              {% elif current_cat != 'resource' %}
+              <th class="center-align">Plan</th>
+              {% endif %}
+              <th>Note</th>
+              <th>Wiki</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            {% if current_cat == 'arcane' %}
+              {% set arc_owned_rank  = row.owned_rank  if row.owned_rank  is not none else 0 %}
+              {% set arc_target_rank = row.target_rank if row.target_rank is not none else 0 %}
+              {% set arc_max_rank    = row.mod_max_rank if row.mod_max_rank is not none else 0 %}
+              {% set arc_is_owned    = 1 if arc_owned_rank > 0 else 0 %}
+              {% set arc_is_maxed    = 1 if (arc_max_rank > 0 and arc_owned_rank >= arc_max_rank) else 0 %}
+              {% set arc_target_met  = 1 if (arc_target_rank > 0 and arc_owned_rank >= arc_target_rank) else 0 %}
+            {% endif %}
+            <tr class="coll-tr {% if current_cat not in ('mod','arcane') and row.resurgence_available and row.resurgence_watch %}resurgence-row{% endif %}"
+                data-item-id="{{ row.id }}"
+                data-f-owned="{{ 1 if (current_cat == 'arcane' and arc_is_owned) or (current_cat != 'arcane' and row.in_possession) else 0 }}"
+                data-f-mastered="{{ 1 if (current_cat == 'arcane' and arc_is_maxed) or (current_cat != 'arcane' and row.mastered) else 0 }}"
+                data-f-subsumed="{{ 1 if row.subsumed else 0 }}"
+                data-f-source="{{ row.source or '' }}"
+                data-f-vaulted="{{ 1 if row.vaulted else 0 }}"
+                data-f-rwatch="{{ 1 if row.resurgence_watch else 0 }}"
+                data-f-ravail="{{ 1 if row.resurgence_available else 0 }}"
+                {% if current_cat == 'mod' %}
+                data-f-modtype="{{ row.mod_type or '' }}"
+                data-f-polarity="{{ row.mod_polarity or '' }}"
+                {% endif %}
+                {% if current_cat == 'arcane' %}
+                data-f-owned-rank="{{ arc_owned_rank }}"
+                data-f-target-rank="{{ arc_target_rank }}"
+                data-f-max-rank="{{ arc_max_rank }}"
+                data-f-targetmet="{{ arc_target_met }}"
+                {% endif %}>
+              <td class="white-text">{{ row.name }}</td>
+              {% if current_cat == 'mod' %}
+              <td class="grey-text">{{ row.mod_type or '—' }}</td>
+              <td class="grey-text">{{ row.mod_polarity or '—' }}</td>
+              <td class="center-align grey-text">{{ row.mod_max_rank if row.mod_max_rank is not none else '—' }}</td>
+              {% elif current_cat == 'arcane' %}
+              <td class="grey-text">{{ row.source or '—' }}</td>
+              <td class="center-align">
+                <div style="display:flex;align-items:center;justify-content:center;gap:.2rem">
+                  <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
+                          data-delta="-1" data-max="{{ arc_max_rank }}"
+                          style="padding:0;min-width:1.4rem;height:1.4rem;line-height:1.4rem">
+                    <i class="material-icons" style="font-size:.85rem">remove</i>
+                  </button>
+                  <span class="arc-owned-rank grey-text">{{ arc_owned_rank }}/{{ arc_max_rank }}</span>
+                  <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
+                          data-delta="1" data-max="{{ arc_max_rank }}"
+                          style="padding:0;min-width:1.4rem;height:1.4rem;line-height:1.4rem">
+                    <i class="material-icons" style="font-size:.85rem">add</i>
+                  </button>
+                </div>
+              </td>
+              <td class="center-align">
+                <input type="number" class="arc-target-input white-text" data-item="{{ row.id }}"
+                       data-max="{{ arc_max_rank }}"
+                       value="{{ arc_target_rank }}" min="0" max="{{ arc_max_rank }}"
+                       style="width:2.5rem;background:none;border:none;border-bottom:1px solid #546e7a;font-size:.85rem;padding:0;text-align:center">
+              </td>
+              {% else %}
+              <td class="grey-text">{{ row.source or '—' }}</td>
+              {% endif %}
+              {% if current_cat != 'arcane' %}
+              <td class="center-align">
+                <a href="#" class="wf-toggle teal-text" data-item="{{ row.id }}" data-field="in_possession"
+                   title="Toggle Owned">
+                  <i class="material-icons">{{ 'check_box' if row.in_possession else 'check_box_outline_blank' }}</i>
+                </a>
+              </td>
+              <td class="center-align">
+                <a href="#" class="wf-toggle amber-text" data-item="{{ row.id }}" data-field="mastered"
+                   title="{{ 'Toggle Maxed' if current_cat == 'mod' else 'Toggle Mastered' }}">
+                  <i class="material-icons">{{ 'star' if row.mastered else 'star_border' }}</i>
+                </a>
+              </td>
+              {% endif %}
+              {% if current_cat == 'warframe' %}
+              <td class="center-align">
+                {% if row.source != 'prime' %}
+                <a href="#" class="wf-toggle purple-text" data-item="{{ row.id }}" data-field="subsumed"
+                   title="Toggle Subsumed">
+                  <i class="material-icons">spa</i>
+                </a>
+                {% else %}<span class="grey-text">—</span>{% endif %}
+              </td>
+              {% endif %}
+              {% if current_cat not in ('mod', 'arcane') %}
+              <td class="center-align">
+                {% if row.source == 'prime' %}
+                <a href="#" class="wf-toggle red-text" data-item="{{ row.id }}" data-field="resurgence_watch"
+                   title="Watch for Prime Resurgence">
+                  <i class="material-icons">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
+                </a>
+                {% else %}<span class="grey-text">—</span>{% endif %}
+              </td>
+              <td class="center-align">
+                {% if row.vaulted %}
+                <span class="orange-text" title="Currently vaulted"><i class="material-icons small">lock</i></span>
+                {% else %}<span class="grey-text">—</span>{% endif %}
+              </td>
+              {% endif %}
+              {% if current_cat in ('mod', 'arcane') %}
+              <td class="center-align">
+                <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Farm it">
+                  <i class="material-icons small">agriculture</i>
+                </a>
+              </td>
+              {% elif current_cat != 'resource' %}
+              <td class="center-align">
+                <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
+                  <i class="material-icons small">add_task</i>
+                </a>
+              </td>
+              {% endif %}
+              <td>
+                <span class="wf-note-display grey-text" data-item="{{ row.id }}">{{ row.note or '' }}</span>
+                <a href="#" class="wf-note-edit grey-text" data-item="{{ row.id }}" title="Edit note">
+                  <i class="material-icons tiny">edit</i>
+                </a>
+              </td>
+              <td>
+                {% if row.wiki_url %}
+                <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
+                  <i class="material-icons small">open_in_new</i>
+                </a>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="grey-text center-align" style="padding:2rem">No items found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Pagination (bottom) ────────────────────────────────────────────────── -->
+{% if total_pages > 1 %}
+<div class="row wf-pag-row" style="margin-top:.25rem">
+  <div class="col s12">
+    <div class="wf-pagination">
+      <a href="{{ prev_url or '#' }}" id="pag-prev-bot"
+         class="btn-small waves-effect blue-grey {% if not has_prev %}disabled{% endif %}">
+        <i class="material-icons">chevron_left</i>
+      </a>
+      <span class="white-text" style="padding:0 .75rem;line-height:2rem">Page {{ page }} / {{ total_pages }}</span>
+      <a href="{{ next_url or '#' }}" id="pag-next-bot"
+         class="btn-small waves-effect blue-grey {% if not has_next %}disabled{% endif %}">
+        <i class="material-icons">chevron_right</i>
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Note edit modal -->
+<div id="note-modal" class="modal blue-grey darken-2">
+  <div class="modal-content white-text">
+    <h5>Edit Note</h5>
+    <input type="hidden" id="note-item-id">
+    <div class="input-field">
+      <textarea id="note-text" class="materialize-textarea white-text"></textarea>
+      <label for="note-text" class="white-text">Note</label>
+    </div>
+  </div>
+  <div class="modal-footer blue-grey darken-2">
+    <a href="#!" class="modal-close btn-flat white-text">Cancel</a>
+    <button id="note-save" class="btn teal waves-effect">Save</button>
+  </div>
+</div>
+
+<!-- Farm-it modal (mod/arcane drop sources) -->
+<div id="farm-modal" class="modal blue-grey darken-2">
+  <div class="modal-content white-text">
+    <h5 id="farm-modal-title">Drop Sources</h5>
+    <div id="farm-modal-body" class="grey-text"></div>
+  </div>
+  <div class="modal-footer blue-grey darken-2">
+    <a href="#!" class="modal-close btn-flat white-text">Close</a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var CURRENT_CAT  = '{{ current_cat }}';
+var VIEW_KEY     = 'wf_coll_view_' + CURRENT_CAT;
+var PREV_URL     = {{ prev_url | tojson }};
+var NEXT_URL     = {{ next_url | tojson }};
+var CURRENT_PAGE = {{ page }};
+var TOTAL_PAGES  = {{ total_pages }};
+var CURRENT_PP   = {{ per_page }};
+
+// ── Filter state (mirrors server-side active filters) ────────────────────────
+
+var activeFilters = {
+  owned:     '{{ filters.owned }}',
+  mastered:  '{{ filters.mastered }}',
+  subsumed:  '{{ filters.subsumed }}',
+  source:    '{{ filters.source }}',
+  vaulted:   '{{ filters.vaulted }}',
+  resurgence:'{{ filters.resurgence }}',
+  modtype:   '{{ filters.modtype }}',
+  polarity:  '{{ filters.polarity }}',
+  targetmet: '{{ filters.targetmet }}'
+};
+
+// Filter state per-view (used by view-switch to restore saved filter state)
+function filterStateKey(view) { return 'wf_filter_' + CURRENT_CAT + '_' + view; }
+function perPageKey(view)     { return 'wf_per_page_' + CURRENT_CAT + '_' + view; }
+
+function saveFilters(view) {
+  localStorage.setItem(filterStateKey(view), JSON.stringify(activeFilters));
+}
+
+function loadFiltersFromStorage(view) {
+  var saved = localStorage.getItem(filterStateKey(view));
+  if (saved) {
+    try { activeFilters = JSON.parse(saved); } catch(e) {}
+  }
+}
+
+function currentView() { return localStorage.getItem(VIEW_KEY) || 'cards'; }
+
+// ── URL navigation helpers ────────────────────────────────────────────────────
+
+var BASE_URL = '{{ url_for("collection.category", cat=current_cat) }}';
+var QUERY_Q  = {{ query | tojson }};
+
+function navigateTo(page, perPage) {
+  var params = new URLSearchParams();
+  Object.keys(activeFilters).forEach(function(k) {
+    var v = activeFilters[k];
+    if (v && v !== 'all') params.set(k, v);
+  });
+  params.set('page', page || 1);
+  params.set('per_page', perPage || CURRENT_PP);
+  if (QUERY_Q) params.set('q', QUERY_Q);
+  window.location.href = BASE_URL + '?' + params.toString();
+}
+
+// ── Per-page helpers ──────────────────────────────────────────────────────────
+
+function savedPerPage(view) {
+  return parseInt(localStorage.getItem(perPageKey(view))) || (view === 'table' ? 100 : 48);
+}
+
+// ── View switcher ─────────────────────────────────────────────────────────────
+
+function setView(view) {
+  var prev = currentView();
+  localStorage.setItem(VIEW_KEY, view);
+
+  if (view === 'table') {
+    $('#collection-cards').hide();
+    $('#collection-table').show();
+    $('#view-card').removeClass('teal').addClass('blue-grey lighten-1');
+    $('#view-table').addClass('teal').removeClass('blue-grey lighten-1');
+    $('#per-page-group').hide();
+  } else {
+    $('#collection-table').hide();
+    $('#collection-cards').show();
+    $('#view-card').addClass('teal').removeClass('blue-grey lighten-1');
+    $('#view-table').removeClass('teal').addClass('blue-grey lighten-1');
+    $('#per-page-group').show();
+  }
+
+  // If the preferred per_page for the new view differs from current, reload
+  var pp = savedPerPage(view);
+  if (pp !== CURRENT_PP) {
+    loadFiltersFromStorage(view);
+    navigateTo(1, pp);
+  } else {
+    loadFiltersFromStorage(view);
+  }
+}
+
+// ── Arcane rank helpers ───────────────────────────────────────────────────────
+
+function updateArcaneRank(itemId, newRank, maxRank) {
+  $.ajax({
+    url: '{{ url_for("collection.update_rank") }}',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({item_id: itemId, owned_rank: newRank}),
+    success: function(r) {
+      if (!r.ok) return;
+      $('[data-item-id="' + itemId + '"]').each(function() {
+        var $el = $(this);
+        var confirmed = r.owned_rank;
+        var targetRank = parseInt($el.attr('data-f-target-rank')) || 0;
+        var isOwned  = confirmed > 0 ? '1' : '0';
+        var isMaxed  = (maxRank > 0 && confirmed >= maxRank) ? '1' : '0';
+        var targetMet = (targetRank > 0 && confirmed >= targetRank) ? '1' : '0';
+
+        $el.attr('data-f-owned-rank', confirmed)
+           .attr('data-f-owned',      isOwned)
+           .attr('data-f-mastered',   isMaxed)
+           .attr('data-f-targetmet',  targetMet);
+
+        $el.find('.arc-owned-rank').text(confirmed + '/' + maxRank);
+
+        var barPct = maxRank > 0 ? Math.min(Math.round(confirmed / maxRank * 100), 100) : 0;
+        $el.find('.arc-rank-bar').css('width', barPct + '%');
+      });
+    }
+  });
+}
+
+$(function() {
+  M.Modal.init($('#note-modal')[0]);
+  M.Modal.init($('#farm-modal')[0]);
+
+  // Restore saved view; if per_page differs from saved preference, reload
+  var savedView = localStorage.getItem(VIEW_KEY) || 'cards';
+  var pp = savedPerPage(savedView);
+  if (pp !== CURRENT_PP) {
+    // First visit or per_page mismatch — reload with saved per_page
+    loadFiltersFromStorage(savedView);
+    navigateTo(CURRENT_PAGE, pp);
+    return;
+  }
+  setView(savedView);
+
+  $('#view-card').on('click', function() { setView('cards'); });
+  $('#view-table').on('click', function() { setView('table'); });
+
+  // Filter button clicks → navigate to page 1 with new filter state
+  $(document).on('click', '.wf-filter-btn[data-filter]', function() {
+    var f = $(this).data('filter');
+    var v = String($(this).data('val'));
+    activeFilters[f] = v;
+    saveFilters(currentView());
+    navigateTo(1, CURRENT_PP);
+  });
+
+  // Per-page selector
+  $(document).on('click', '.wf-pp-btn', function() {
+    var pp = parseInt($(this).data('pp'));
+    localStorage.setItem(perPageKey(currentView()), pp);
+    navigateTo(1, pp);
+  });
+
+  // Keyboard: ArrowLeft / ArrowRight pagination
+  $(document).on('keydown', function(e) {
+    if ($(e.target).is('input, textarea, select')) return;
+    if (e.key === 'ArrowLeft' && PREV_URL) {
+      window.location.href = PREV_URL;
+    } else if (e.key === 'ArrowRight' && NEXT_URL) {
+      window.location.href = NEXT_URL;
+    }
+  });
+
+  // Toggle checkboxes
+  $(document).on('click', '.wf-toggle', function(e) {
+    e.preventDefault();
+    var $a = $(this), itemId = $a.data('item'), field = $a.data('field');
+    $.ajax({
+      url: '{{ url_for("collection.toggle") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({item_id: itemId, field: field}),
+      success: function(r) { if (r.ok) location.reload(); }
+    });
+  });
+
+  // Arcane rank +/- buttons
+  $(document).on('click', '.arc-rank-btn', function(e) {
+    e.preventDefault();
+    var $btn    = $(this);
+    var itemId  = $btn.data('item');
+    var delta   = parseInt($btn.data('delta'));
+    var maxRank = parseInt($btn.data('max')) || 0;
+    var $el     = $btn.closest('[data-item-id]');
+    var current = parseInt($el.attr('data-f-owned-rank')) || 0;
+    var newRank = Math.max(0, Math.min(maxRank, current + delta));
+    if (newRank === current) return;
+    updateArcaneRank(itemId, newRank, maxRank);
+  });
+
+  // Arcane target rank input (debounced)
+  var targetTimer = null;
+  $(document).on('change input', '.arc-target-input', function() {
+    var $inp    = $(this);
+    var itemId  = $inp.data('item');
+    var maxRank = parseInt($inp.data('max')) || 0;
+    var val     = Math.max(0, Math.min(maxRank, parseInt($inp.val()) || 0));
+    $inp.val(val);
+    clearTimeout(targetTimer);
+    targetTimer = setTimeout(function() {
+      $.ajax({
+        url: '{{ url_for("collection.update_target") }}',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({item_id: itemId, target_rank: val}),
+        success: function(r) {
+          if (!r.ok) return;
+          var $el = $('[data-item-id="' + itemId + '"]');
+          var ownedRank = parseInt($el.first().attr('data-f-owned-rank')) || 0;
+          var targetMet = (val > 0 && ownedRank >= val) ? '1' : '0';
+          $el.attr('data-f-target-rank', val).attr('data-f-targetmet', targetMet);
+        }
+      });
+    }, 600);
+  });
+
+  // Note edit
+  $(document).on('click', '.wf-note-edit', function(e) {
+    e.preventDefault();
+    var itemId = $(this).data('item');
+    var current = $(this).siblings('.wf-note-display').text().trim() || '';
+    $('#note-item-id').val(itemId);
+    $('#note-text').val(current);
+    M.updateTextFields();
+    M.Modal.getInstance($('#note-modal')[0]).open();
+  });
+
+  $('#note-save').on('click', function() {
+    var itemId = $('#note-item-id').val();
+    var note   = $('#note-text').val().trim();
+    $.ajax({
+      url: '{{ url_for("collection.save_note") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({item_id: itemId, note: note}),
+      success: function(r) {
+        if (r.ok) {
+          M.Modal.getInstance($('#note-modal')[0]).close();
+          location.reload();
+        }
+      }
+    });
+  });
+
+  // Plan it — add item to Farming Planner goals
+  $(document).on('click', '.wf-plan-it', function(e) {
+    e.preventDefault();
+    var $a = $(this);
+    var itemId = $a.data('item');
+    $.ajax({
+      url: '{{ url_for("farming.goals_add") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({item_id: itemId}),
+      success: function(r) {
+        if (!r.ok) { M.toast({html: r.error || 'Failed to add goal.'}); return; }
+        if (r.already_exists) {
+          M.toast({html: r.goal.item_name + ' is already in your farming goals.'});
+        } else {
+          M.toast({html: r.goal.item_name + ' added to Farming Planner. <a href="{{ url_for("farming.index") }}" class="white-text">View</a>'});
+          $a.find('i').text('check').css('color', '#26a69a');
+        }
+      },
+      error: function() { M.toast({html: 'Request failed.'}); }
+    });
+  });
+
+  // Farm it — show drop sources in modal (mods and arcanes)
+  $(document).on('click', '.wf-farm-it', function(e) {
+    e.preventDefault();
+    var $a     = $(this);
+    var itemId = $a.data('item');
+    var name   = $a.data('name');
+    var dropBase = '{{ url_for("collection.drops", item_id=0) }}'.replace(/\/0$/, '/');
+    $.getJSON(dropBase + itemId,
+      function(r) {
+        $('#farm-modal-title').text(name + ' — Drop Sources');
+        if (!r.ok || !r.drops || !r.drops.length) {
+          $('#farm-modal-body').html('<p class="grey-text">No drop data available for this item.</p>');
+        } else {
+          var html = '<table class="wf-table" style="font-size:.85rem"><thead><tr>' +
+            '<th>Location</th><th>Mission</th><th class="right-align">Chance</th>' +
+            '</tr></thead><tbody>';
+          r.drops.forEach(function(d) {
+            html += '<tr><td>' + (d.location || '—') + '</td>' +
+                    '<td class="grey-text">' + (d.mission_type || '—') + '</td>' +
+                    '<td class="right-align grey-text">' + (d.drop_chance ? d.drop_chance.toFixed(2) + '%' : '—') + '</td>' +
+                    '</tr>';
+          });
+          html += '</tbody></table>';
+          $('#farm-modal-body').html(html);
+        }
+        M.Modal.getInstance($('#farm-modal')[0]).open();
+      }
+    ).fail(function() {
+      M.toast({html: 'Could not load drop data.'});
+    });
+  });
+});
+</script>
+{% endblock %}

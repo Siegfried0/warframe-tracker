@@ -1,0 +1,108 @@
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required, login_user, logout_user
+
+from models.user import User
+
+auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+
+def _first_run_needed() -> bool:
+    return User.count() == 0
+
+
+@auth_bp.route('/setup', methods=['GET', 'POST'])
+def setup():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/login')
+    if not _first_run_needed():
+        return redirect(url_for('dashboard.index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        confirm  = request.form.get('confirm', '')
+        email    = request.form.get('email', '').strip() or None
+
+        if not username or not password:
+            flash('Username and password are required.', 'error')
+        elif password != confirm:
+            flash('Passwords do not match.', 'error')
+        elif len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
+        else:
+            user = User.create(username=username, password=password,
+                               email=email, role='admin')
+            login_user(user, remember=True)
+            flash(f'Welcome, {user.username}! Admin account created.', 'success')
+            return redirect(url_for('dashboard.index'))
+    return render_template('auth/setup.html')
+
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/login')
+    if _first_run_needed():
+        return redirect(url_for('auth.setup'))
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        remember = bool(request.form.get('remember'))
+
+        user = User.get_by_username(username)
+        if user and user.is_active and user.check_password(password):
+            login_user(user, remember=remember)
+            user.update_last_login()
+            next_url = request.args.get('next') or url_for('dashboard.index')
+            return redirect(next_url)
+        flash('Invalid username or password.', 'error')
+    return render_template('auth/login.html')
+
+
+@auth_bp.route('/logout')
+@login_required
+def logout():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/logout')
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('auth.login'))
+
+
+@auth_bp.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/login')
+    if _first_run_needed():
+        return redirect(url_for('auth.setup'))
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        confirm  = request.form.get('confirm', '')
+        email    = request.form.get('email', '').strip() or None
+
+        error = None
+        if not username:
+            error = 'Username is required.'
+        elif not password:
+            error = 'Password is required.'
+        elif password != confirm:
+            error = 'Passwords do not match.'
+        elif len(password) < 8:
+            error = 'Password must be at least 8 characters.'
+        elif User.get_by_username(username):
+            error = 'Username already taken.'
+
+        if error:
+            flash(error, 'error')
+        else:
+            user = User.create(username=username, password=password, email=email)
+            login_user(user, remember=True)
+            user.update_last_login()
+            flash(f'Account created. Welcome, {user.username}!', 'success')
+            return redirect(url_for('dashboard.index'))
+
+    return render_template('auth/register.html')

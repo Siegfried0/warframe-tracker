@@ -1,0 +1,1026 @@
+{% extends 'base.html' %}
+{% block title %}Farming Planner — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">agriculture</i>Farming Planner</h4>
+
+<!-- ── Add Goal ──────────────────────────────────────────────────────────── -->
+<div class="row" style="margin-bottom:.75rem">
+  <div class="col s12 m6">
+    <div class="card blue-grey darken-2" style="margin:0;padding:.75rem 1rem">
+      <div style="display:flex;gap:.5rem;align-items:center;position:relative">
+        <div class="input-field" style="flex:1;margin:0">
+          <i class="material-icons prefix grey-text">search</i>
+          <input id="goal-search" type="text" class="white-text" autocomplete="off"
+                 placeholder="Add a goal item (Warframe, weapon, companion…)">
+        </div>
+        <div id="goal-search-results" class="card blue-grey darken-1"
+             style="position:absolute;z-index:100;min-width:320px;max-height:260px;overflow-y:auto;display:none;top:3.5rem;left:0;right:0"></div>
+      </div>
+    </div>
+  </div>
+  {% if goals|length >= 2 %}
+  <div class="col s12 m6" style="display:flex;align-items:center;gap:.5rem;padding-top:.5rem">
+    <button id="agg-btn" class="btn blue-grey lighten-1 waves-effect" style="white-space:nowrap">
+      <i class="material-icons left">view_list</i>All Goals View
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Goal Cards ────────────────────────────────────────────────────────── -->
+{% if goals %}
+<div class="row" id="goals-section" style="margin-bottom:.5rem">
+  {% for goal in goals %}
+  <div class="col s12 m6 l4 goal-col" id="goal-col-{{ goal.goal_id }}">
+    <div class="card blue-grey darken-2 wf-goal-card" data-goal-id="{{ goal.goal_id }}">
+
+      <!-- ── Compact state (default, collapsed) ─────────────────────────── -->
+      <div class="wf-goal-compact">
+        <div class="wf-goal-compact-main">
+          <div class="wf-goal-compact-portrait">
+            <i class="material-icons grey-text" style="font-size:2.5rem">shield</i>
+            {% if goal.image_url %}
+            <img src="{{ goal.image_url }}" alt="{{ goal.item_name }}"
+                 class="wf-goal-compact-portrait-img" onerror="this.style.display='none'">
+            {% endif %}
+          </div>
+          <div class="card-content white-text" style="padding:.5rem .75rem .3rem">
+            <div style="display:flex;align-items:center;gap:.3rem;flex-wrap:wrap">
+              <strong class="white-text" style="font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ goal.item_name }}</strong>
+              {% if goal.vaulted %}
+              <span class="badge orange darken-2 white-text new" data-badge-caption="" style="font-size:.6rem">Vaulted</span>
+              {% endif %}
+            </div>
+            <div class="grey-text" style="font-size:.72rem">{{ goal.category|title }}</div>
+            <div class="progress blue-grey darken-3 wf-goal-prog-bar" style="margin:.3rem 0 .1rem;height:5px">
+              <div class="determinate teal" style="width:{{ goal.progress_pct }}%"></div>
+            </div>
+            <small class="grey-text wf-goal-prog-pct" style="font-size:.68rem">{{ goal.progress_pct }}%</small>
+          </div>
+          <div class="card-action" style="padding:.4rem .5rem;display:flex;gap:.35rem;align-items:center">
+            <button class="btn-small waves-effect goal-mode-btn {% if goal.display_mode == 'tree' %}teal{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" title="Tree View">
+              <i class="material-icons">account_tree</i>
+            </button>
+            <button class="btn-small waves-effect goal-list-btn {% if goal.display_mode == 'list' %}teal{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" title="Visual Plan">
+              <i class="material-icons">grid_view</i>
+            </button>
+            <button class="btn-small waves-effect goal-pin-btn {% if goal.pinned %}amber darken-2{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" data-pinned="{{ goal.pinned }}" title="Pin to dashboard">
+              <i class="material-icons">push_pin</i>
+            </button>
+            <button class="btn-small red darken-3 waves-effect goal-remove-btn"
+                    data-goal="{{ goal.goal_id }}" title="Remove goal">
+              <i class="material-icons">delete</i>
+            </button>
+          </div>
+        </div>
+        <button class="wf-goal-side-tab goal-expand-btn"
+                data-goal="{{ goal.goal_id }}" data-mode="{{ goal.display_mode }}"
+                title="Show crafting plan">
+          <i class="material-icons">chevron_right</i>
+        </button>
+      </div>
+
+      <!-- ── Expanded state ─────────────────────────────────────────────── -->
+      <div class="wf-goal-expanded-inner" style="display:none">
+
+        <!-- Left: portrait + info + buttons (always visible when expanded) -->
+        <div class="wf-goal-exp-left">
+          <div class="wf-goal-exp-portrait">
+            <i class="material-icons grey-text" style="font-size:2.5rem">shield</i>
+            {% if goal.image_url %}
+            <img src="{{ goal.image_url }}" alt="{{ goal.item_name }}"
+                 class="wf-goal-exp-portrait-img" onerror="this.style.display='none'">
+            {% endif %}
+          </div>
+          <div style="margin-bottom:.35rem;min-width:0">
+            <div style="display:flex;align-items:flex-start;gap:.3rem;flex-wrap:wrap;margin-bottom:.1rem">
+              <strong class="white-text" style="font-size:.88rem;word-break:break-word">{{ goal.item_name }}</strong>
+              {% if goal.vaulted %}
+              <span class="badge orange darken-2 white-text new" data-badge-caption=""
+                    style="font-size:.6rem;float:none;position:static;margin:0">Vaulted</span>
+              {% endif %}
+            </div>
+            <div class="grey-text" style="font-size:.72rem;margin-bottom:.2rem">{{ goal.category|title }}</div>
+            <div class="progress blue-grey darken-3 wf-goal-prog-bar" style="margin:.2rem 0 .1rem;height:5px">
+              <div class="determinate teal" style="width:{{ goal.progress_pct }}%"></div>
+            </div>
+            <small class="grey-text wf-goal-prog-pct" style="font-size:.68rem">{{ goal.progress_pct }}%</small>
+          </div>
+          <!-- Action buttons -->
+          <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.5rem">
+            <button class="btn-small waves-effect goal-mode-btn {% if goal.display_mode == 'tree' %}teal{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" title="Tree View" style="padding:0 .5rem">
+              <i class="material-icons" style="font-size:.9rem">account_tree</i>
+            </button>
+            <button class="btn-small waves-effect goal-list-btn {% if goal.display_mode == 'list' %}teal{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" title="Visual Plan" style="padding:0 .5rem">
+              <i class="material-icons" style="font-size:.9rem">grid_view</i>
+            </button>
+            <button class="btn-small waves-effect goal-pin-btn {% if goal.pinned %}amber darken-2{% else %}blue-grey{% endif %}"
+                    data-goal="{{ goal.goal_id }}" data-pinned="{{ goal.pinned }}" title="Pin to dashboard"
+                    style="padding:0 .5rem">
+              <i class="material-icons" style="font-size:.9rem">push_pin</i>
+            </button>
+            <button class="btn-small red darken-3 waves-effect goal-remove-btn"
+                    data-goal="{{ goal.goal_id }}" title="Remove goal" style="padding:0 .5rem">
+              <i class="material-icons" style="font-size:.9rem">delete</i>
+            </button>
+          </div>
+        </div>
+
+        <button class="wf-goal-side-tab goal-expand-btn"
+                data-goal="{{ goal.goal_id }}" data-mode="{{ goal.display_mode }}"
+                title="Collapse">
+          <i class="material-icons">chevron_left</i>
+        </button>
+
+        <!-- Right: dynamically loaded plan content -->
+        <div class="wf-goal-plan-panel" id="plan-panel-{{ goal.goal_id }}">
+          <p class="grey-text center-align" style="padding:2rem">
+            <i class="material-icons">hourglass_empty</i>
+          </p>
+        </div>
+
+      </div><!-- /.wf-goal-expanded-inner -->
+
+    </div><!-- /.card -->
+  </div><!-- /.goal-col -->
+  {% endfor %}
+</div>
+{% else %}
+<div class="card blue-grey darken-3">
+  <div class="card-content grey-text">
+    <p>No farming goals yet. Search for an item above to add your first goal, or use the
+       <strong>Plan it</strong> button in the
+       <a href="{{ url_for('collection.index') }}" class="teal-text">Collection Browser</a>.</p>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Aggregate View ────────────────────────────────────────────────────── -->
+<div id="agg-section" class="card blue-grey darken-2" style="display:none;margin-bottom:1.5rem">
+  <div class="card-content white-text">
+    <span class="card-title"><i class="material-icons left">view_list</i>All Goals — Aggregate Shopping List</span>
+    <div id="agg-body"><span class="grey-text">Loading…</span></div>
+  </div>
+  <div class="card-action">
+    <a href="#" id="agg-close-btn" class="grey-text">Close</a>
+  </div>
+</div>
+
+<!-- ── Live Session Advisor ──────────────────────────────────────────────── -->
+<div class="card blue-grey darken-2" id="advisor-card" style="margin-top:1.5rem">
+  <div class="card-content white-text">
+    <span class="card-title"><i class="material-icons left">gps_fixed</i>Live Session Advisor</span>
+    <p class="grey-text" style="font-size:.85rem">
+      Set your current farming node to see which of your needed items drop there
+      and how efficient they are compared to the optimal source.
+    </p>
+    <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;position:relative">
+      <div class="input-field" style="flex:1;min-width:220px;margin-bottom:0">
+        <i class="material-icons prefix grey-text">map</i>
+        <input id="node-input" type="text" class="white-text" autocomplete="off"
+               placeholder="Search mission node…"
+               value="{{ active_node or '' }}">
+        <div id="node-results" class="card blue-grey darken-1"
+             style="position:absolute;z-index:100;max-height:240px;overflow-y:auto;display:none;left:0;right:0;top:3.5rem"></div>
+      </div>
+      <button id="node-clear-btn" class="btn red darken-3 waves-effect"
+              {% if not active_node %}style="display:none"{% endif %}>
+        <i class="material-icons left">clear</i>Clear Node
+      </button>
+    </div>
+    <div id="advisor-panel" style="margin-top:1rem"></div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+var COMP_COLORS = [
+  {hex: '#4db6ac', rgb: '77,182,172'},
+  {hex: '#ffb74d', rgb: '255,183,77'},
+  {hex: '#64b5f6', rgb: '100,181,246'},
+  {hex: '#ce93d8', rgb: '206,147,216'},
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function dropBadge(drop) {
+  if (!drop) return '';
+  var pct  = drop.drop_chance ? drop.drop_chance.toFixed(2) + '%' : '?%';
+  var runs = drop.avg_runs ? ' · ~' + drop.avg_runs + ' runs' : '';
+  return '<span class="grey-text" style="font-size:.78rem">' +
+         (drop.mission_type || '') + ' — ' + (drop.location || '') +
+         ' <span class="teal-text">(' + pct + runs + ')</span></span>';
+}
+
+function progressBar(pct, color) {
+  color = color || 'teal';
+  return '<div class="progress blue-grey darken-3" style="margin:.25rem 0 .15rem;height:6px;border-radius:3px">' +
+         '<div class="determinate ' + color + '" style="width:' + pct + '%"></div></div>';
+}
+
+// ── Advisor renderer ──────────────────────────────────────────────────────────
+
+function renderAdvisorBody(data) {
+  if (!data || !data.node) return '';
+  var html = '<h6 class="white-text">Farming: <span class="teal-text">' + data.node + '</span></h6>';
+  if (data.guaranteed_free) {
+    html += '<div class="card-panel teal darken-3 white-text" style="padding:.5rem .75rem;margin:.5rem 0">' +
+            '<i class="material-icons tiny">check_circle</i>' +
+            ' <strong>Guaranteed-drop node</strong> — all secondary opportunities below are essentially free.' +
+            '</div>';
+  }
+  if (data.opportunities && data.opportunities.length) {
+    html += '<p class="grey-text" style="font-size:.85rem">Secondary opportunities at this node:</p>';
+    html += '<table class="wf-table"><thead><tr>' +
+            '<th>Item</th><th>Here</th><th>Best</th><th>Efficiency</th><th>Goal</th>' +
+            '</tr></thead><tbody>';
+    data.opportunities.forEach(function(opp) {
+      html += '<tr><td class="white-text">' + opp.name;
+      if (opp.essentially_free) html += ' <span class="teal-text" style="font-size:.75rem"> free</span>';
+      html += '</td><td class="grey-text">' + opp.drop_pct + '</td>';
+      html += '<td class="grey-text">' + opp.best_pct + '</td>';
+      html += '<td class="' + opp.rating_class + '">' + opp.rating + ' (' + opp.efficiency_pct + '%)</td>';
+      html += '<td class="grey-text" style="font-size:.8rem">' + (opp.goal_labels || []).join(', ') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<p class="grey-text">None of your needed items drop at this node.</p>';
+  }
+  if (data.harvest_summary && data.harvest_summary.length) {
+    html += '<details style="margin-top:.75rem">' +
+            '<summary class="grey-text" style="cursor:pointer">Session harvest summary (10 runs)</summary>';
+    html += '<table class="wf-table" style="margin-top:.5rem"><thead><tr>' +
+            '<th>Item</th><th>Drop %</th><th>Expected / 10 runs</th></tr></thead><tbody>';
+    data.harvest_summary.forEach(function(h) {
+      html += '<tr><td class="grey-text">' + h.name + '</td>' +
+              '<td class="grey-text">' + h.drop_pct + '</td>' +
+              '<td class="white-text">~' + h.expected_per_10 + '</td></tr>';
+    });
+    html += '</tbody></table></details>';
+  }
+  return html;
+}
+
+function refreshAdvisor() {
+  $.getJSON('{{ url_for("farming.advisor") }}', function(r) {
+    if (!r.ok) return;
+    if (r.node) {
+      $('#node-input').val(r.node);
+      $('#node-clear-btn').show();
+      $('#advisor-panel').html(renderAdvisorBody(r));
+    } else {
+      $('#advisor-panel').empty();
+      $('#node-clear-btn').hide();
+    }
+  });
+}
+
+// ── Tree View renderer ────────────────────────────────────────────────────────
+
+function renderTreeView(plan, goalId) {
+  if (!plan.components || !plan.components.length) {
+    return '<p class="grey-text">No component data available. Run a Wiki Sync to populate recipes.</p>';
+  }
+  var html = '';
+  if (plan.market_price) {
+    html += '<div class="grey-text" style="font-size:.82rem;margin-bottom:.5rem">' +
+            'Market price: <span class="orange-text">' + plan.market_price + 'p</span>' +
+            (plan.market_url ? ' <a href="' + plan.market_url + '" target="_blank" class="grey-text"><i class="material-icons tiny">open_in_new</i></a>' : '') +
+            '</div>';
+  }
+  plan.components.forEach(function(comp) {
+    var cbId = 'gc-' + goalId + '-' + comp.component_name.replace(/[^a-z0-9]/gi, '-');
+    var acq  = comp.goal_acquired;
+    html += '<div class="component-row" style="border-left:3px solid ' + (comp.vaulted ? '#ff8f00' : '#4db6ac') +
+            ';padding:.4rem .6rem;margin-bottom:.4rem;background:rgba(0,0,0,.15);opacity:' + (acq ? '.4' : '1') + '">';
+    html += '<div style="display:flex;align-items:flex-start;gap:.4rem">';
+    html += '<label style="min-width:1.5rem;margin-top:.1rem">' +
+            '<input type="checkbox" class="filled-in goal-comp-cb" id="' + cbId + '"' +
+            ' data-goal="' + goalId + '" data-key="' + encodeURIComponent(comp.component_name) + '"' +
+            (acq ? ' checked' : '') + '><span></span></label>';
+    if (comp.image_url) {
+      html += '<img src="' + comp.image_url + '" style="width:28px;height:28px;object-fit:contain;' +
+              'border-radius:50%;background:#2e3f47;flex-shrink:0;margin-top:.05rem" ' +
+              'onerror="this.style.display=\'none\'">';
+    }
+    html += '<div style="flex:1">';
+    html += '<strong class="white-text">' + comp.component_name + '</strong>';
+    if (comp.vaulted) html += ' <span class="orange-text" style="font-size:.78rem" title="Blueprint vaulted"><i class="material-icons tiny">lock</i></span>';
+    if (comp.drops && comp.drops.length) {
+      html += '<br>' + dropBadge(comp.drops[0]);
+      if (comp.drops.length > 1) {
+        html += ' <a href="#" class="teal-text more-toggle" style="font-size:.78rem" data-target="more-' + cbId + '">+' + (comp.drops.length - 1) + ' more</a>';
+        html += '<div id="more-' + cbId + '" style="display:none">';
+        comp.drops.slice(1).forEach(function(d) { html += dropBadge(d) + '<br>'; });
+        html += '</div>';
+      }
+    }
+    if (comp.ingredients && comp.ingredients.length) {
+      var ingId = 'ing-' + cbId;
+      html += ' <a href="#" class="orange-text ing-toggle" style="font-size:.78rem" data-target="' + ingId + '">▾ ' +
+              comp.ingredients.length + ' ingredient' + (comp.ingredients.length !== 1 ? 's' : '') + '</a>';
+      html += '<div id="' + ingId + '" style="margin:.3rem 0 0 .5rem">';
+      comp.ingredients.forEach(function(ing) {
+        var ingCbId = 'gi-' + goalId + '-' + ing.ingredient_name.replace(/[^a-z0-9]/gi, '-');
+        var ingDone = ing.quantity_owned >= ing.ingredient_qty;
+        html += '<div style="margin-bottom:.3rem;opacity:' + (acq ? '.4' : '1') + '">';
+        html += '<label style="display:inline-flex;align-items:center;gap:.3rem">';
+        html += '<input type="checkbox" class="filled-in goal-ing-cb" id="' + ingCbId + '"' +
+                ' data-goal="' + goalId + '" data-key="' + encodeURIComponent(ing.ingredient_name) + '"' +
+                (ingDone ? ' checked' : '') + '><span></span></label>';
+        if (ing.image_url) {
+          html += '<img src="' + ing.image_url + '" style="width:20px;height:20px;object-fit:contain;' +
+                  'border-radius:50%;background:#2e3f47;flex-shrink:0;vertical-align:middle" ' +
+                  'onerror="this.style.display=\'none\'">';
+        }
+        html += '<span class="white-text">' + ing.ingredient_name + '</span> ';
+        html += '<span class="orange-text">×' + ing.ingredient_qty + '</span>';
+        if (ing.drops && ing.drops.length) html += '<br>' + dropBadge(ing.drops[0]);
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div></div>';
+  });
+  return html;
+}
+
+// ── Visual Plan body renderer (components + resources) ────────────────────────
+
+function renderVisualPlanBody(plan, goalId) {
+  var sl = plan.shopping_list;
+  if (!sl || (!sl.components.length && !sl.resources.length)) {
+    return '<p class="grey-text">No recipe data. Run a Wiki Sync.</p>';
+  }
+
+  // Index component → colour slot and state
+  var compColorIdx = {};
+  var compStateMap = {};
+  sl.components.forEach(function(comp, i) {
+    compColorIdx[comp.component_name] = i % COMP_COLORS.length;
+    compStateMap[comp.component_name] = comp.comp_state || 'pending';
+  });
+
+  // ── Sub-progress computation ────────────────────────────────────────────────
+  var compCrafted = sl.components.filter(function(c) { return c.comp_state === 'crafted'; }).length;
+  var compTotal   = sl.components.length;
+  var compPct     = compTotal > 0 ? Math.round(compCrafted / compTotal * 100) : 0;
+
+  var resCovered = 0, resNeeded = 0;
+  sl.resources.forEach(function(res) {
+    if (!res.grayed && res.qty_needed > 0) {
+      resNeeded  += res.qty_needed;
+      resCovered += Math.min(res.qty_owned, res.qty_needed);
+    }
+  });
+  var resPct = resNeeded > 0 ? Math.round(resCovered / resNeeded * 100) : 100;
+
+  var html = '';
+
+  // ── Market price ────────────────────────────────────────────────────────────
+  if (plan.market_price) {
+    html += '<div class="wf-plan-market-row" style="margin-bottom:.6rem">' +
+            'Market: <span class="orange-text">' + plan.market_price + 'p</span>';
+    if (plan.market_url) {
+      html += ' <a href="' + plan.market_url + '" target="_blank" class="grey-text">' +
+              '<i class="material-icons tiny">open_in_new</i></a>';
+    }
+    html += '</div>';
+  }
+
+  // ── Progress bars block ─────────────────────────────────────────────────────
+  html += '<div style="margin-bottom:.9rem">';
+
+  // Overall
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.15rem">' +
+          '<span class="wf-plan-section-lbl" style="margin:0">Overall</span>' +
+          '<span class="grey-text" style="font-size:.68rem">' + plan.progress_pct + '%</span></div>';
+  html += '<div class="progress blue-grey darken-3" style="height:6px;border-radius:3px;margin-bottom:.55rem">' +
+          '<div class="determinate teal" style="width:' + plan.progress_pct + '%"></div></div>';
+
+  // Sub-bars side by side
+  html += '<div style="display:flex;gap:.9rem">';
+
+  // Components sub-bar
+  html += '<div style="flex:1;min-width:0">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.1rem">' +
+          '<span class="wf-plan-section-lbl" style="margin:0;font-size:.63rem">Blueprints</span>' +
+          '<span class="grey-text" style="font-size:.63rem">' + compCrafted + ' / ' + compTotal + '</span></div>';
+  html += '<div class="progress blue-grey darken-3" style="height:4px;border-radius:2px">' +
+          '<div class="determinate" style="width:' + compPct + '%;background:#64b5f6"></div></div>';
+  html += '</div>';
+
+  // Resources sub-bar
+  html += '<div style="flex:1;min-width:0">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.1rem">' +
+          '<span class="wf-plan-section-lbl" style="margin:0;font-size:.63rem">Resources</span>' +
+          '<span class="grey-text" style="font-size:.63rem">' + resPct + '%</span></div>';
+  html += '<div class="progress blue-grey darken-3" style="height:4px;border-radius:2px">' +
+          '<div class="determinate" style="width:' + resPct + '%;background:#ffb74d"></div></div>';
+  html += '</div>';
+
+  html += '</div>'; // end sub-bars row
+  html += '</div>'; // end progress block
+
+  // ── Component circles ───────────────────────────────────────────────────────
+  if (sl.components.length) {
+    html += '<div class="wf-plan-section-lbl">Components</div>';
+    html += '<div class="wf-plan-comp-row">';
+    sl.components.forEach(function(comp, i) {
+      var ci      = i % COMP_COLORS.length;
+      var col     = COMP_COLORS[ci];
+      var state   = comp.comp_state || 'pending';
+      var safeKey = encodeURIComponent(comp.component_name);
+
+      // Circle classes based on state
+      var circleClass = 'wf-comp-circle';
+      if (state === 'crafted')   circleClass += ' wf-comp-crafted';
+      if (state === 'blueprint') circleClass += ' wf-comp-blueprint';
+
+      var stateTitle = state === 'crafted' ? 'Crafted — click to reset'
+                     : state === 'blueprint' ? 'Blueprint owned — click to mark crafted'
+                     : 'Click to cycle state (pending → blueprint → crafted)';
+
+      html += '<div class="wf-comp-item">';
+
+      // Wrap div: positioning context for corner badges
+      html += '<div class="wf-comp-wrap"' +
+              ' data-goal="' + goalId + '" data-key="' + safeKey + '" data-state="' + state + '"' +
+              ' title="' + stateTitle + '">';
+
+      // The circle itself
+      html += '<div class="' + circleClass + '"' +
+              ' style="border-color:' + col.hex + ';background:rgba(' + col.rgb + ',.12)">';
+      html += '<i class="material-icons" style="font-size:1.3rem;color:' + col.hex + '">description</i>';
+      if (comp.image_url) {
+        html += '<img src="' + comp.image_url + '" class="wf-comp-img" onerror="this.style.display=\'none\'">';
+      }
+      html += '</div>'; // /.wf-comp-circle
+
+      // Corner badge: blueprint (bottom-left)
+      html += '<div class="wf-comp-corner-btn wf-corner-bp' + (state === 'blueprint' ? ' wf-corner-active' : '') + '"' +
+              ' data-action="blueprint" title="Blueprint owned">' +
+              '<i class="material-icons" style="font-size:.62rem">description</i></div>';
+
+      // Corner badge: crafted (bottom-right)
+      html += '<div class="wf-comp-corner-btn wf-corner-craft' + (state === 'crafted' ? ' wf-corner-active' : '') + '"' +
+              ' data-action="crafted" title="Crafted">' +
+              '<i class="material-icons" style="font-size:.62rem">check</i></div>';
+
+      html += '</div>'; // /.wf-comp-wrap
+      html += '<div class="wf-comp-name grey-text">' + comp.component_name + '</div>';
+      html += '</div>'; // /.wf-comp-item
+    });
+    html += '</div>';
+  }
+
+  // ── Resource grid ───────────────────────────────────────────────────────────
+  if (sl.resources.length) {
+    html += '<div class="wf-plan-section-lbl" style="margin-top:1rem">Resources</div>';
+    html += '<div class="wf-plan-res-row">';
+    sl.resources.forEach(function(res) {
+      var satisfied  = res.still_needed <= 0;
+      var grayed     = res.grayed;
+      var bestDrop   = res.drops && res.drops.length ? res.drops[0] : null;
+      var compStates = res.from_components_states || {};
+
+      // Component dots — amber ring for blueprint state
+      var dots = '';
+      (res.from_components || []).forEach(function(cname) {
+        var ci = compColorIdx[cname];
+        if (ci !== undefined) {
+          var cState    = compStates[cname] || 'pending';
+          var dotStyle  = 'background:' + COMP_COLORS[ci].hex;
+          var dotTitle  = cname;
+          if (cState === 'blueprint') {
+            dotStyle += ';box-shadow:0 0 0 2px #ffa000';
+            dotTitle += ' (blueprint owned)';
+          }
+          dots += '<div class="wf-res-dot" style="' + dotStyle + '" title="' + dotTitle + '"></div>';
+        }
+      });
+
+      // Quantity label and mini progress bar
+      var qtyLabel, barPct, barFill;
+      if (grayed) {
+        qtyLabel = '—';
+        barPct   = 100;
+        barFill  = 'background:rgba(255,255,255,.15)';
+      } else if (res.qty_needed === 0) {
+        qtyLabel = '—';
+        barPct   = 100;
+        barFill  = 'background:rgba(255,255,255,.15)';
+      } else {
+        var rawPct = Math.min(100, Math.round(res.qty_owned / res.qty_needed * 100));
+        qtyLabel   = res.qty_owned + ' / ' + res.qty_needed;
+        barPct     = rawPct;
+        barFill    = satisfied ? 'background:#4db6ac' : 'background:#ffb74d';
+      }
+
+      html += '<div class="wf-res-item' + (grayed ? ' wf-res-grayed' : '') + '">';
+      html += '<div class="wf-res-name" title="' + res.ingredient_name + '">' + res.ingredient_name + '</div>';
+
+      html += '<div class="wf-res-circle' + (satisfied && !grayed ? ' wf-res-satisfied' : '') + '">';
+      html += '<i class="material-icons grey-text" style="font-size:1rem">layers</i>';
+      if (res.image_url) {
+        html += '<img src="' + res.image_url + '" class="wf-res-img" onerror="this.style.display=\'none\'">';
+      }
+      if (satisfied && !grayed) {
+        html += '<div class="wf-res-done-badge"><i class="material-icons teal-text" style="font-size:.75rem">check</i></div>';
+      }
+      html += '</div>';
+
+      if (dots) html += '<div class="wf-res-dots">' + dots + '</div>';
+
+      // Qty label (owned / needed)
+      html += '<div class="wf-res-qty ' + (satisfied && !grayed ? 'teal-text' : grayed ? 'grey-text' : 'orange-text') + '">' + qtyLabel + '</div>';
+
+      // Mini progress bar
+      html += '<div class="wf-res-mini-bar"><div class="wf-res-mini-bar-fill" style="width:' + barPct + '%;' + barFill + '"></div></div>';
+
+      html += '<input type="number" class="goal-ing-qty wf-res-owned-input" min="0"' +
+              ' data-goal="' + goalId + '" data-key="' + encodeURIComponent(res.ingredient_name) + '"' +
+              ' value="' + res.qty_owned + '" title="Owned quantity">';
+
+      if (bestDrop && bestDrop.location) {
+        var locSafe = bestDrop.location.replace(/"/g, '&quot;');
+        html += '<button class="wf-advisor-loc-btn waves-effect" data-location="' + locSafe + '"' +
+                ' title="Send to advisor: ' + locSafe + '">' +
+                '<i class="material-icons" style="font-size:.75rem">gps_fixed</i></button>';
+      }
+      html += '</div>'; // /.wf-res-item
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+// ── Aggregate renderer ────────────────────────────────────────────────────────
+
+function renderAggregate(data) {
+  if (!data.resources || !data.resources.length) {
+    return '<p class="grey-text">No outstanding resources across all goals.</p>';
+  }
+  var html = '<div style="margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center">' +
+             '<span class="grey-text">Total across all active goals</span>' +
+             '<span class="teal-text">Readiness: ' + data.readiness_pct + '%</span></div>';
+  html += progressBar(data.readiness_pct);
+  html += '<table class="wf-table" style="margin-top:.75rem"><thead><tr>' +
+          '<th>Resource</th><th>Needed</th><th>Owned</th><th>Still Need</th><th>Goals</th><th>Best Source</th>' +
+          '</tr></thead><tbody>';
+  data.resources.forEach(function(res) {
+    var shared = res.shared ? '<span class="amber-text" title="Needed by multiple goals"> ★</span>' : '';
+    html += '<tr>';
+    html += '<td class="white-text">' + res.ingredient_name + shared + '</td>';
+    html += '<td class="orange-text">' + res.qty_needed + '</td>';
+    html += '<td class="teal-text">' + res.qty_owned + '</td>';
+    html += '<td class="' + (res.still_needed > 0 ? 'red-text' : 'grey-text') + '">' + res.still_needed + '</td>';
+    html += '<td class="grey-text" style="font-size:.8rem">' + (res.goal_labels || []).join(', ') + '</td>';
+    html += '<td>' + (res.drops && res.drops.length ? dropBadge(res.drops[0]) : '<span class="grey-text">—</span>') + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+// ── Goal search ───────────────────────────────────────────────────────────────
+
+var searchTimer = null;
+$('#goal-search').on('input', function() {
+  clearTimeout(searchTimer);
+  var q = $(this).val().trim();
+  if (q.length < 2) { $('#goal-search-results').hide(); return; }
+  searchTimer = setTimeout(function() {
+    $.getJSON('{{ url_for("farming.goals_search") }}', {q: q}, function(r) {
+      if (!r.ok || !r.items.length) { $('#goal-search-results').hide(); return; }
+      var html = '';
+      r.items.forEach(function(item) {
+        var thumb = '<div style="width:32px;height:32px;background:rgba(255,255,255,.05);border-radius:3px;' +
+                    'position:relative;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">' +
+                    '<i class="material-icons grey-text" style="font-size:.9rem">shield</i>';
+        if (item.image_url) {
+          thumb += '<img src="' + item.image_url + '" style="width:32px;height:32px;object-fit:contain;' +
+                   'position:absolute;top:0;left:0;background:#2e3f47" onerror="this.style.display=\'none\'">';
+        }
+        thumb += '</div>';
+        html += '<div class="goal-search-item" data-id="' + item.id + '"' +
+                ' style="padding:.4rem .75rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.08);' +
+                'display:flex;align-items:center;gap:.5rem">';
+        html += thumb + '<span class="white-text">' + item.name + '</span>';
+        html += ' <span class="grey-text" style="font-size:.8rem">(' + item.category + ')</span>';
+        if (item.vaulted) html += ' <span class="orange-text" style="font-size:.75rem">Vaulted</span>';
+        html += '</div>';
+      });
+      $('#goal-search-results').html(html).show();
+    });
+  }, 250);
+}).on('blur', function() {
+  setTimeout(function() { $('#goal-search-results').hide(); }, 200);
+});
+
+$(document).on('click', '.goal-search-item', function() {
+  var itemId = $(this).data('id');
+  $('#goal-search-results').hide();
+  $('#goal-search').val('');
+  $.ajax({
+    url: '{{ url_for("farming.goals_add") }}',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({item_id: itemId}),
+    success: function(r) {
+      if (!r.ok) { M.toast({html: r.error}); return; }
+      if (r.already_exists) {
+        M.toast({html: r.goal.item_name + ' is already in your goals.'});
+      } else {
+        M.toast({html: r.goal.item_name + ' added to farming goals.'});
+        location.reload();
+      }
+    }
+  });
+});
+
+// ── Node picker ───────────────────────────────────────────────────────────────
+
+var allNodes = [];
+$.getJSON('{{ url_for("farming.nodes") }}', function(r) {
+  if (r.ok) allNodes = r.nodes;
+});
+
+var nodeTimer = null;
+$('#node-input').on('input', function() {
+  clearTimeout(nodeTimer);
+  var q = $(this).val().toLowerCase().trim();
+  if (q.length < 2) { $('#node-results').hide(); return; }
+  nodeTimer = setTimeout(function() {
+    var matches = allNodes.filter(function(n) { return n.toLowerCase().includes(q); }).slice(0, 15);
+    if (!matches.length) { $('#node-results').hide(); return; }
+    var html = '';
+    matches.forEach(function(n) {
+      html += '<div class="node-result-item" style="padding:.35rem .75rem;cursor:pointer;' +
+              'border-bottom:1px solid rgba(255,255,255,.08)">' +
+              '<span class="white-text" style="font-size:.9rem">' + n + '</span></div>';
+    });
+    $('#node-results').html(html).show();
+  }, 200);
+}).on('blur', function() {
+  setTimeout(function() { $('#node-results').hide(); }, 200);
+});
+
+$(document).on('click', '.node-result-item', function() {
+  var nodeLoc = $(this).find('.white-text').text();
+  $('#node-results').hide();
+  $('#node-input').val(nodeLoc);
+  setAdvisorNode(nodeLoc);
+});
+
+$('#node-clear-btn').on('click', function() {
+  $.ajax({
+    url: '{{ url_for("farming.advisor_clear") }}',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({}),
+    success: function(r) {
+      if (r.ok) {
+        $('#node-input').val('');
+        $('#node-clear-btn').hide();
+        $('#advisor-panel').empty();
+      }
+    }
+  });
+});
+
+function setAdvisorNode(nodeLoc) {
+  $.ajax({
+    url: '{{ url_for("farming.advisor_set") }}',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({node_location: nodeLoc}),
+    success: function(r) {
+      if (r.ok) {
+        $('#node-clear-btn').show();
+        refreshAdvisor();
+      }
+    }
+  });
+}
+
+// ── Advisor GPS quick-link (from resource circles) ────────────────────────────
+
+$(document).on('click', '.wf-advisor-loc-btn', function() {
+  var nodeLoc = $(this).data('location');
+  $('#node-input').val(nodeLoc);
+  M.toast({html: 'Advisor set to: ' + nodeLoc});
+  setAdvisorNode(nodeLoc);
+  $('html, body').animate({scrollTop: $('#advisor-card').offset().top - 20}, 400);
+});
+
+// ── Goal expand / collapse ────────────────────────────────────────────────────
+
+$(document).on('click', '.goal-expand-btn', function() {
+  var goalId = $(this).data('goal');
+  var $card  = $('#goal-col-' + goalId).find('.wf-goal-card');
+
+  if ($card.hasClass('wf-expanded')) {
+    collapseGoal(goalId);
+  } else {
+    expandGoal(goalId, $(this).data('mode'));
+  }
+});
+
+function expandGoal(goalId, mode) {
+  var $col  = $('#goal-col-' + goalId);
+  var $card = $col.find('.wf-goal-card');
+
+  $col.removeClass('m6 l4');          // becomes s12 → full width
+  $card.addClass('wf-expanded');
+  $col.find('.wf-goal-compact').hide();
+  $col.find('.wf-goal-expanded-inner').show();
+
+  $('#plan-panel-' + goalId).html(
+    '<p class="grey-text center-align" style="padding:2rem">' +
+    '<i class="material-icons">hourglass_empty</i></p>'
+  );
+
+  loadGoalPlan(goalId, mode);
+  $('html, body').animate({scrollTop: $col.offset().top - 20}, 300);
+}
+
+function collapseGoal(goalId) {
+  var $col  = $('#goal-col-' + goalId);
+  var $card = $col.find('.wf-goal-card');
+
+  $col.addClass('m6 l4');
+  $card.removeClass('wf-expanded');
+  $col.find('.wf-goal-compact').show();
+  $col.find('.wf-goal-expanded-inner').hide();
+}
+
+// ── Goal plan loading ─────────────────────────────────────────────────────────
+
+function loadGoalPlan(goalId, mode) {
+  $.getJSON('/farming/goals/' + goalId + '/plan', function(r) {
+    if (!r.ok) {
+      $('#plan-panel-' + goalId).html(
+        '<p class="grey-text">' + (r.error || 'Failed to load plan.') + '</p>'
+      );
+      return;
+    }
+    var plan        = r.plan;
+    var displayMode = plan.display_mode || mode || 'list';
+    var body        = displayMode === 'tree' ? renderTreeView(plan, goalId) : renderVisualPlanBody(plan, goalId);
+    $('#plan-panel-' + goalId).html(body);
+    bindPlanEvents(goalId);
+  });
+}
+
+function reloadGoalPlan(goalId) {
+  var $panel = $('#plan-panel-' + goalId);
+  if ($panel.closest('.wf-goal-expanded-inner').is(':visible')) {
+    var mode = $('[data-goal="' + goalId + '"].goal-expand-btn').first().data('mode');
+    loadGoalPlan(goalId, mode);
+  }
+}
+
+// ── Progress bar update ───────────────────────────────────────────────────────
+
+function updateProgressBar(goalId) {
+  $.getJSON('/farming/goals/' + goalId + '/plan', function(r) {
+    if (!r.ok) return;
+    var plan = r.plan;
+    var pct  = plan.progress_pct != null ? plan.progress_pct : 0;
+
+    // Update both compact and expanded progress bars (only one visible at a time)
+    var $col = $('#goal-col-' + goalId);
+    $col.find('.wf-goal-prog-bar .determinate').css('width', pct + '%');
+    $col.find('.wf-goal-prog-pct').text(pct + '%');
+
+    // Re-render plan panel if visible
+    var $panel = $('#plan-panel-' + goalId);
+    if ($panel.closest('.wf-goal-expanded-inner').is(':visible')) {
+      var displayMode = plan.display_mode || 'list';
+      var body = displayMode === 'tree' ? renderTreeView(plan, goalId) : renderVisualPlanBody(plan, goalId);
+      $panel.html(body);
+      bindPlanEvents(goalId);
+    }
+
+    // Refresh advisor live
+    refreshAdvisor();
+  });
+}
+
+// ── Mode toggles ──────────────────────────────────────────────────────────────
+
+$(document).on('click', '.goal-mode-btn', function() {
+  var goalId = $(this).data('goal');
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/update',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({display_mode: 'tree'}),
+    success: function() {
+      $('[data-goal="' + goalId + '"].goal-mode-btn').addClass('teal').removeClass('blue-grey');
+      $('[data-goal="' + goalId + '"].goal-list-btn').removeClass('teal').addClass('blue-grey');
+      $('[data-goal="' + goalId + '"].goal-expand-btn').data('mode', 'tree');
+      reloadGoalPlan(goalId);
+    }
+  });
+});
+
+$(document).on('click', '.goal-list-btn', function() {
+  var goalId = $(this).data('goal');
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/update',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({display_mode: 'list'}),
+    success: function() {
+      $('[data-goal="' + goalId + '"].goal-list-btn').addClass('teal').removeClass('blue-grey');
+      $('[data-goal="' + goalId + '"].goal-mode-btn').removeClass('teal').addClass('blue-grey');
+      $('[data-goal="' + goalId + '"].goal-expand-btn').data('mode', 'list');
+      reloadGoalPlan(goalId);
+    }
+  });
+});
+
+// ── Pin toggle ────────────────────────────────────────────────────────────────
+
+$(document).on('click', '.goal-pin-btn', function() {
+  var goalId = $(this).data('goal');
+  var pinned = parseInt($(this).data('pinned')) ? 0 : 1;
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/update',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({pinned: pinned}),
+    success: function() {
+      $('[data-goal="' + goalId + '"].goal-pin-btn').data('pinned', pinned);
+      if (pinned) {
+        $('[data-goal="' + goalId + '"].goal-pin-btn').addClass('amber darken-2').removeClass('blue-grey');
+        M.toast({html: 'Goal pinned to dashboard.'});
+      } else {
+        $('[data-goal="' + goalId + '"].goal-pin-btn').removeClass('amber darken-2').addClass('blue-grey');
+        M.toast({html: 'Goal unpinned.'});
+      }
+    }
+  });
+});
+
+// ── Remove goal ───────────────────────────────────────────────────────────────
+
+$(document).on('click', '.goal-remove-btn', function() {
+  var goalId = $(this).data('goal');
+  if (!confirm('Remove this farming goal?')) return;
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/remove',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({}),
+    success: function(r) {
+      if (r.ok) {
+        $('#goal-col-' + goalId).fadeOut(300, function() { $(this).remove(); });
+      }
+    }
+  });
+});
+
+// ── Component state helpers (visual plan) ─────────────────────────────────────
+
+var STATE_CYCLE = {pending: 'blueprint', blueprint: 'crafted', crafted: 'pending'};
+
+function applyCompState($wrap, state) {
+  var $circle = $wrap.find('.wf-comp-circle');
+  $circle.removeClass('wf-comp-crafted wf-comp-blueprint');
+  if (state === 'crafted')   $circle.addClass('wf-comp-crafted');
+  if (state === 'blueprint') $circle.addClass('wf-comp-blueprint');
+  $wrap.find('.wf-corner-bp').toggleClass('wf-corner-active',    state === 'blueprint');
+  $wrap.find('.wf-corner-craft').toggleClass('wf-corner-active', state === 'crafted');
+  $wrap.data('state', state);
+  var title = state === 'crafted'   ? 'Crafted — click to reset'
+            : state === 'blueprint' ? 'Blueprint owned — click to mark crafted'
+            : 'Click to cycle state (pending → blueprint → crafted)';
+  $wrap.attr('title', title);
+}
+
+function sendCompState($wrap, goalId, key, state) {
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/progress',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({row_type: 'component', row_key: key, comp_state: state, quantity_owned: 0}),
+    success: function() { updateProgressBar(goalId); }
+  });
+}
+
+// Main circle area → cycle through states
+$(document).on('click', '.wf-comp-wrap', function(e) {
+  if ($(e.target).closest('.wf-comp-corner-btn').length) return;  // handled below
+  var $wrap  = $(this);
+  var goalId = $wrap.data('goal');
+  var key    = decodeURIComponent($wrap.data('key'));
+  var cur    = $wrap.data('state') || 'pending';
+  var next   = STATE_CYCLE[cur] || 'pending';
+  applyCompState($wrap, next);
+  sendCompState($wrap, goalId, key, next);
+});
+
+// Corner buttons → toggle specific state directly
+$(document).on('click', '.wf-comp-corner-btn', function(e) {
+  e.stopPropagation();
+  var $btn   = $(this);
+  var $wrap  = $btn.closest('.wf-comp-wrap');
+  var goalId = $wrap.data('goal');
+  var key    = decodeURIComponent($wrap.data('key'));
+  var action = $btn.data('action');              // 'blueprint' or 'crafted'
+  var cur    = $wrap.data('state') || 'pending';
+  var next   = cur === action ? 'pending' : action;  // toggle: active → pending
+  applyCompState($wrap, next);
+  sendCompState($wrap, goalId, key, next);
+});
+
+// ── Plan event binding ────────────────────────────────────────────────────────
+
+function bindPlanEvents(goalId) {
+  var ctx = '#plan-panel-' + goalId;
+
+  $(ctx).off('click.more').on('click.more', '.more-toggle', function(e) {
+    e.preventDefault();
+    $('#' + $(this).data('target')).toggle();
+  });
+  $(ctx).off('click.ing').on('click.ing', '.ing-toggle', function(e) {
+    e.preventDefault();
+    $('#' + $(this).data('target')).toggle();
+  });
+  $(ctx).off('change.comp').on('change.comp', '.goal-comp-cb', function() {
+    var gid   = $(this).data('goal');
+    var key   = decodeURIComponent($(this).data('key'));
+    var acq   = $(this).is(':checked');
+    var state = acq ? 'crafted' : 'pending';
+    $.ajax({
+      url: '/farming/goals/' + gid + '/progress',
+      method: 'POST', contentType: 'application/json',
+      data: JSON.stringify({row_type: 'component', row_key: key, comp_state: state, quantity_owned: 0}),
+      success: function() { updateProgressBar(gid); }
+    });
+    $(this).closest('.component-row').css('opacity', acq ? '.4' : '1');
+  });
+  $(ctx).off('change.ingcb').on('change.ingcb', '.goal-ing-cb', function() {
+    var gid = $(this).data('goal');
+    var key = decodeURIComponent($(this).data('key'));
+    var acq = $(this).is(':checked');
+    $.ajax({
+      url: '/farming/goals/' + gid + '/progress',
+      method: 'POST', contentType: 'application/json',
+      data: JSON.stringify({row_type: 'ingredient', row_key: key, acquired: acq, quantity_owned: acq ? 999 : 0}),
+    });
+  });
+  var qtyTimer = {};
+  $(ctx).off('input.qty').on('input.qty', '.goal-ing-qty', function() {
+    var $inp = $(this);
+    var gid  = $inp.data('goal');
+    var key  = decodeURIComponent($inp.data('key'));
+    clearTimeout(qtyTimer[key]);
+    qtyTimer[key] = setTimeout(function() {
+      var qty = Math.max(0, parseInt($inp.val()) || 0);
+      $inp.val(qty);
+      $.ajax({
+        url: '/farming/goals/' + gid + '/progress',
+        method: 'POST', contentType: 'application/json',
+        data: JSON.stringify({row_type: 'ingredient', row_key: key, acquired: false, quantity_owned: qty}),
+        success: function() { updateProgressBar(gid); }
+      });
+    }, 600);
+  });
+}
+
+// ── Aggregate view ────────────────────────────────────────────────────────────
+
+$('#agg-btn').on('click', function() {
+  var $sec = $('#agg-section');
+  $sec.show();
+  $('html, body').animate({scrollTop: $sec.offset().top - 20}, 300);
+  if ($sec.data('loaded')) return;
+  $sec.data('loaded', true);
+  $.getJSON('{{ url_for("farming.aggregate") }}', function(r) {
+    if (!r.ok) return;
+    $('#agg-body').html(renderAggregate(r));
+  });
+});
+
+$('#agg-close-btn').on('click', function(e) {
+  e.preventDefault();
+  $('#agg-section').hide();
+});
+
+// ── Initial advisor render ────────────────────────────────────────────────────
+
+$(function() {
+  {% if active_node and advisor_data %}
+  var adv = {{ advisor_data | tojson }};
+  adv.node = {{ active_node | tojson }};
+  $('#advisor-panel').html(renderAdvisorBody(adv));
+  {% endif %}
+});
+</script>
+{% endblock %}

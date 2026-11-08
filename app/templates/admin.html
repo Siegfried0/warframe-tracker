@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% block title %}Admin — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">admin_panel_settings</i>Admin Panel</h4>
+
+{% if not easyauth_enabled %}
+<!-- Create user -->
+<div class="card blue-grey darken-2" style="margin-bottom:2rem">
+  <div class="card-content white-text">
+    <span class="card-title">Create Local User</span>
+    <form method="post" action="{{ url_for('admin.create_user') }}">
+      <div class="row" style="margin-bottom:0">
+        <div class="input-field col s12 m3">
+          <input id="new_username" name="username" type="text" class="white-text" required>
+          <label for="new_username" class="white-text">Username</label>
+        </div>
+        <div class="input-field col s12 m3">
+          <input id="new_password" name="password" type="password" class="white-text" required minlength="8">
+          <label for="new_password" class="white-text">Password</label>
+        </div>
+        <div class="input-field col s12 m3">
+          <input id="new_email" name="email" type="email" class="white-text">
+          <label for="new_email" class="white-text">Email (optional)</label>
+        </div>
+        <div class="input-field col s12 m2">
+          <select name="role" class="browser-default blue-grey darken-2 white-text" style="border:none;padding:.5rem;width:100%">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div class="col s12 m1" style="padding-top:1.5rem">
+          <button class="btn teal waves-effect" type="submit">Create</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- User table -->
+<div class="card blue-grey darken-2">
+  <div class="card-content white-text">
+    <span class="card-title">Users <span class="badge blue-grey lighten-1 white-text new" data-badge-caption="">{{ users|length }}</span></span>
+    <table class="wf-table striped">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Auth</th>
+          <th>Status</th>
+          <th>Last Login</th>
+          <th>Items</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr class="{{ 'grey-text' if not u.is_active else '' }}">
+          <td class="white-text">
+            {{ u.username }}
+            {% if u.id == current_user.id %}<span class="teal-text" title="That's you"> (you)</span>{% endif %}
+          </td>
+          <td class="grey-text">{{ u.email or '—' }}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form method="post" action="{{ url_for('admin.set_role', uid=u.id) }}" style="display:inline">
+              <select name="role" class="browser-default blue-grey darken-3 white-text"
+                      style="border:none;background:transparent;cursor:pointer;font-size:.9rem"
+                      onchange="this.form.submit()">
+                <option value="user" {{ 'selected' if u.role == 'user' }}>user</option>
+                <option value="admin" {{ 'selected' if u.role == 'admin' }}>admin</option>
+              </select>
+            </form>
+            {% else %}
+            {{ u.role }}
+            {% endif %}
+          </td>
+          <td class="grey-text">{{ u.auth_type }}</td>
+          <td>
+            {% if u.is_active %}<span class="green-text">Active</span>
+            {% else %}<span class="red-text">Inactive</span>{% endif %}
+          </td>
+          <td class="grey-text" style="font-size:.85rem">{{ u.last_login or '—' }}</td>
+          <td class="grey-text">{{ stats.get(u.id, 0) }}</td>
+          <td>
+            {% if u.id != current_user.id %}
+            <form method="post" action="{{ url_for('admin.toggle_active', uid=u.id) }}" style="display:inline">
+              <button class="btn-flat {{ 'orange-text' if u.is_active else 'green-text' }} waves-effect" type="submit"
+                      title="{{ 'Deactivate' if u.is_active else 'Activate' }}">
+                <i class="material-icons">{{ 'block' if u.is_active else 'check_circle' }}</i>
+              </button>
+            </form>
+            {% if u.auth_type == 'local' and not easyauth_enabled %}
+            <button class="btn-flat blue-text waves-effect btn-reset-pw" type="button"
+                    title="Reset password"
+                    data-uid="{{ u.id }}" data-username="{{ u.username }}"
+                    data-target="pw-modal" onclick="openResetModal(this)">
+              <i class="material-icons">lock_reset</i>
+            </button>
+            {% endif %}
+            <form method="post" action="{{ url_for('admin.delete_user', uid=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('Delete {{ u.username }}? This cannot be undone.')">
+              <input type="hidden" name="confirm" value="DELETE">
+              <button class="btn-flat red-text waves-effect" type="submit" title="Delete user">
+                <i class="material-icons">delete_forever</i>
+              </button>
+            </form>
+            {% else %}
+            <span class="grey-text" style="font-size:.8rem">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Password reset modal -->
+<div id="pw-modal" class="modal blue-grey darken-2">
+  <div class="modal-content white-text">
+    <h5><i class="material-icons left">lock_reset</i>Reset password — <span id="pw-modal-name"></span></h5>
+    <div class="row" style="margin-bottom:0">
+      <div class="input-field col s12 m6">
+        <input id="pw-new" type="password" class="white-text" autocomplete="new-password">
+        <label for="pw-new" class="white-text">New password</label>
+      </div>
+      <div class="input-field col s12 m6">
+        <input id="pw-confirm" type="password" class="white-text" autocomplete="new-password">
+        <label for="pw-confirm" class="white-text">Confirm password</label>
+      </div>
+    </div>
+    <p id="pw-msg" style="min-height:1.4rem;margin:0"></p>
+  </div>
+  <div class="modal-footer blue-grey darken-2">
+    <button id="pw-submit" class="btn teal waves-effect" type="button">Set password</button>
+    <a href="#!" class="modal-close btn-flat grey-text waves-effect" style="margin-left:.5rem">Cancel</a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _pwModal;
+var _pwUid;
+
+document.addEventListener('DOMContentLoaded', function () {
+  _pwModal = M.Modal.init(document.getElementById('pw-modal'));
+
+  document.getElementById('pw-submit').addEventListener('click', function () {
+    var pw = document.getElementById('pw-new').value;
+    var confirm = document.getElementById('pw-confirm').value;
+    var msg = document.getElementById('pw-msg');
+
+    if (pw !== confirm) {
+      msg.textContent = 'Passwords do not match.';
+      msg.className = 'red-text';
+      return;
+    }
+
+    fetch('/admin/user/' + _pwUid + '/reset-password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pw})
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.ok) {
+        msg.textContent = 'Password updated.';
+        msg.className = 'green-text';
+        document.getElementById('pw-new').value = '';
+        document.getElementById('pw-confirm').value = '';
+      } else {
+        msg.textContent = data.error || 'An error occurred.';
+        msg.className = 'red-text';
+      }
+    })
+    .catch(function () {
+      msg.textContent = 'Request failed.';
+      msg.className = 'red-text';
+    });
+  });
+});
+
+function openResetModal(btn) {
+  _pwUid = btn.dataset.uid;
+  document.getElementById('pw-modal-name').textContent = btn.dataset.username;
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-confirm').value = '';
+  document.getElementById('pw-msg').textContent = '';
+  document.getElementById('pw-msg').className = '';
+  _pwModal.open();
+}
+</script>
+{% endblock %}

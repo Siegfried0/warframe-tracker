@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% block title %}Wiki Sync — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">sync</i>Wiki Sync</h4>
+
+<div class="row">
+  <div class="col s12 m8">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">Sync from wiki.warframe.com</span>
+        <p class="grey-text">
+          Fetches the latest item lists from the Warframe wiki using the Cargo API.
+          New items are added; vaulted status and Prime Resurgence flags are updated.
+          Your existing progress data is never modified.
+        </p>
+        <p class="grey-text">
+          <strong>Note:</strong> A full sync — including drop source data — can take
+          2–4 minutes depending on network latency. The page will update when it completes.
+        </p>
+        <button id="sync-btn" class="btn teal waves-effect">
+          <i class="material-icons left">sync</i>Run Sync Now
+        </button>
+        <div id="sync-status" style="margin-top:1.5rem;display:none">
+          <div class="progress blue-grey darken-3" id="sync-progress">
+            <div class="indeterminate teal"></div>
+          </div>
+          <p id="sync-msg" class="grey-text">Syncing… this may take a moment.</p>
+        </div>
+        <div id="sync-result" class="card-panel" style="display:none;margin-top:1rem"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col s12 m4">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">What gets synced</span>
+        <ul class="browser-default grey-text" style="padding-left:1.2rem">
+          <li>Warframes</li>
+          <li>Primary weapons</li>
+          <li>Secondary weapons</li>
+          <li>Melee weapons</li>
+          <li>Arch-guns &amp; Arch-melee</li>
+          <li>Companions</li>
+          <li>Archwings</li>
+          <li>K-Drives / MOAs / Necramechs</li>
+          <li>Resources (crafting materials)</li>
+          <li>Component ingredients (crafting recipes)</li>
+          <li>Drop sources (farming locations)</li>
+          <li>Item images (downloaded &amp; cached locally)</li>
+        </ul>
+        <p class="grey-text" style="margin-top:1rem;font-size:.85rem">
+          Vaulted status and Prime Resurgence availability are also updated on each sync.
+          Drop source data is fetched from WFCD item component data and
+          warframestat.us mission reward tables.
+          Images are downloaded once and served locally — already-cached images are not re-fetched.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Image Coverage -->
+<div class="row" style="margin-top:1.5rem">
+  <div class="col s12">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">image</i>Image Coverage</span>
+        <p class="grey-text" style="font-size:.85rem;margin-bottom:1rem">
+          Shows how many items have a locally-cached image. Re-run sync to fetch any that are missing.
+        </p>
+        <div id="coverage-body"><span class="grey-text">Loading…</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+$('#sync-btn').on('click', function() {
+  $(this).prop('disabled', true);
+  $('#sync-status').show();
+  $('#sync-result').hide();
+  $.ajax({
+    url: '{{ url_for("sync.run") }}',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify({}),
+    timeout: 240000,
+    success: function(r) {
+      $('#sync-progress').hide();
+      var cls, msg;
+      if (r.ok) {
+        var c = r.counts || {};
+        var details = [
+          'Warframes: '      + (c.warframes          || 0),
+          'Weapons: '        + (c.weapons            || 0),
+          'Companions: '     + (c.companions         || 0),
+          'Archwings: '      + (c.archwings          || 0),
+          'K-Drives: '       + (c.k_drives           || 0),
+          'Resources: '      + (c.resources          || 0),
+          'Ingredients: '    + (c.ingredients        || 0),
+          'Drop sources: '   + (c.drop_sources       || 0),
+          'Images cached: '  + ((c.images_downloaded || 0) + (c.images_already_cached || 0)),
+        ].join(' · ');
+        cls = r.total > 0 ? 'green darken-3' : 'orange darken-3';
+        msg = 'Sync complete — ' + (r.total || 0) + ' items. ' + details;
+      } else {
+        cls = 'red darken-3';
+        msg = 'Sync failed: ' + (r.error || 'unknown error');
+      }
+      $('#sync-result').removeClass().addClass('card-panel ' + cls + ' white-text').text(msg).show();
+      $('#sync-msg').hide();
+      $('#sync-btn').prop('disabled', false);
+      loadCoverage();
+    },
+    error: function() {
+      $('#sync-progress').hide();
+      $('#sync-result').removeClass().addClass('card-panel red darken-3 white-text')
+        .text('Request failed. Check server logs.').show();
+      $('#sync-msg').hide();
+      $('#sync-btn').prop('disabled', false);
+    }
+  });
+});
+
+// ── Image coverage ────────────────────────────────────────────────────────────
+
+function loadCoverage() {
+  $.getJSON('{{ url_for("sync.image_coverage") }}', function(r) {
+    if (!r.ok) { $('#coverage-body').html('<span class="red-text">Failed to load.</span>'); return; }
+
+    var html = '<table class="wf-table" style="margin-bottom:1rem">'
+             + '<thead><tr><th>Category</th><th class="center-align">Total</th>'
+             + '<th class="center-align">Cached</th><th class="center-align">Missing</th>'
+             + '<th style="min-width:140px">Coverage</th></tr></thead><tbody>';
+
+    r.categories.forEach(function(cat) {
+      var pct  = cat.total > 0 ? Math.round(cat.cached / cat.total * 100) : 100;
+      var color = pct === 100 ? 'teal' : pct >= 80 ? 'orange' : 'red';
+      var bar  = '<div class="progress blue-grey darken-3" style="margin:.2rem 0;height:6px">'
+               + '<div class="determinate ' + color + '" style="width:' + pct + '%"></div></div>';
+      html += '<tr>'
+            + '<td class="white-text" style="text-transform:capitalize">' + cat.category + '</td>'
+            + '<td class="grey-text center-align">' + cat.total + '</td>'
+            + '<td class="teal-text center-align">' + cat.cached + '</td>'
+            + '<td class="' + (cat.missing > 0 ? 'red-text' : 'grey-text') + ' center-align">' + cat.missing + '</td>'
+            + '<td>' + bar + '<span class="grey-text" style="font-size:.78rem">' + pct + '%</span></td>'
+            + '</tr>';
+    });
+    html += '</tbody></table>';
+
+    // Footer: disk stats + broken/orphan counts
+    html += '<div class="grey-text" style="font-size:.82rem;display:flex;gap:1.5rem;flex-wrap:wrap">';
+    html += '<span><i class="material-icons tiny">folder</i> ' + r.disk_count + ' files on disk</span>';
+    if (r.broken > 0) {
+      html += '<span class="red-text"><i class="material-icons tiny">broken_image</i> '
+            + r.broken + ' cached path' + (r.broken !== 1 ? 's' : '') + ' with missing file</span>';
+    }
+    if (r.orphans > 0) {
+      html += '<span class="orange-text"><i class="material-icons tiny">delete_sweep</i> '
+            + r.orphans + ' orphan file' + (r.orphans !== 1 ? 's' : '') + ' (no DB entry)</span>';
+    }
+    html += '</div>';
+
+    // Missing items detail (collapsible)
+    if (r.missing_items && r.missing_items.length) {
+      var listHtml = '';
+      var lastCat = '';
+      r.missing_items.forEach(function(item) {
+        if (item.category !== lastCat) {
+          if (lastCat) listHtml += '</ul>';
+          listHtml += '<p class="white-text" style="margin:.75rem 0 .25rem;font-weight:500;text-transform:capitalize">'
+                    + item.category + '</p><ul class="browser-default grey-text" style="padding-left:1.25rem;margin:0">';
+          lastCat = item.category;
+        }
+        listHtml += '<li style="font-size:.85rem">' + item.name + '</li>';
+      });
+      if (lastCat) listHtml += '</ul>';
+      html += '<details style="margin-top:.75rem">'
+            + '<summary class="grey-text" style="cursor:pointer;font-size:.85rem">'
+            + r.missing_items.length + ' item' + (r.missing_items.length !== 1 ? 's' : '') + ' with no image</summary>'
+            + '<div style="margin-top:.5rem">' + listHtml + '</div>'
+            + '</details>';
+    }
+
+    $('#coverage-body').html(html);
+  }).fail(function() {
+    $('#coverage-body').html('<span class="red-text">Request failed.</span>');
+  });
+}
+
+loadCoverage();
+</script>
+{% endblock %}

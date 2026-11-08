@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block title %}Settings — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">settings</i>Settings</h4>
+
+<div class="row">
+  <div class="col s12 m7">
+
+    <!-- Preferences -->
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">Preferences</span>
+        <form method="post">
+          <input type="hidden" name="action" value="save_preferences">
+          {% for key, label, default in settings_meta %}
+          <div class="input-field">
+            <input id="{{ key }}" name="{{ key }}" type="text"
+                   value="{{ prefs.get(key) or default }}" class="white-text">
+            <label for="{{ key }}" class="white-text active">{{ label }}</label>
+          </div>
+          {% endfor %}
+          <button class="btn teal waves-effect" type="submit">Save Preferences</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Change Password -->
+    {% if current_user.auth_type == 'local' %}
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">Change Password</span>
+        <form method="post">
+          <input type="hidden" name="action" value="change_password">
+          <div class="input-field">
+            <input id="current_password" name="current_password" type="password" class="white-text" required>
+            <label for="current_password" class="white-text">Current Password</label>
+          </div>
+          <div class="input-field">
+            <input id="new_password" name="new_password" type="password" class="white-text" required minlength="8">
+            <label for="new_password" class="white-text">New Password</label>
+          </div>
+          <div class="input-field">
+            <input id="confirm_password" name="confirm_password" type="password" class="white-text" required minlength="8">
+            <label for="confirm_password" class="white-text">Confirm New Password</label>
+          </div>
+          <button class="btn teal waves-effect" type="submit">Change Password</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Export / Import -->
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">Data Export &amp; Import</span>
+        <p class="grey-text">Export all your progress as a ZIP of CSV files (one per category).</p>
+        <a href="{{ url_for('settings.export_data') }}" class="btn blue-grey lighten-1 waves-effect">
+          <i class="material-icons left">download</i>Export ZIP
+        </a>
+
+        <div style="margin-top:1.5rem">
+          <p class="grey-text">Import from a previously exported ZIP. Conflicting rows are overwritten.</p>
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('settings.import_data') }}">
+            <div class="file-field input-field">
+              <div class="btn blue-grey lighten-1">
+                <span>File</span>
+                <input type="file" name="import_file" accept=".zip">
+              </div>
+              <div class="file-path-wrapper">
+                <input class="file-path white-text" type="text" placeholder="Choose ZIP…">
+              </div>
+            </div>
+            <button class="btn blue-grey lighten-1 waves-effect" type="submit">Import</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="card red darken-4">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">warning</i>Danger Zone</span>
+
+        <p>Clear all your progress data. Your account is kept.</p>
+        <form method="post" class="inline-form" style="margin-bottom:1.5rem">
+          <input type="hidden" name="action" value="clear_progress">
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <input name="confirm_clear" placeholder='Type CLEAR to confirm' class="danger-input white-text" style="flex:1;min-width:200px">
+            <button class="btn red darken-2 waves-effect" type="submit">Clear Progress</button>
+          </div>
+        </form>
+
+        <p>Permanently delete your account and all data. Irreversible.</p>
+        <form method="post" class="inline-form">
+          <input type="hidden" name="action" value="delete_account">
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            <input name="confirm_delete" placeholder='Type DELETE to confirm' class="danger-input white-text" style="flex:1;min-width:200px">
+            <button class="btn red darken-2 waves-effect" type="submit">Delete Account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="col s12 m5">
+    <!-- Backup -->
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">backup</i>Backup</span>
+        <p class="grey-text">
+          Configure backup destinations via environment variables
+          (<code>BACKUP_LOCAL_PATH</code>, <code>BACKUP_S3_BUCKET</code>, etc. — see TECH.md).
+        </p>
+        <form method="post">
+          <input type="hidden" name="action" value="backup_now">
+          <button class="btn blue-grey lighten-1 waves-effect" type="submit">
+            <i class="material-icons left">cloud_upload</i>Back Up Now
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Account info -->
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">account_circle</i>Account Info</span>
+        <p><strong>Username:</strong> {{ current_user.username }}</p>
+        <p><strong>Role:</strong> {{ current_user.role }}</p>
+        <p><strong>Auth type:</strong> {{ current_user.auth_type }}</p>
+        <p><strong>Last login:</strong> {{ current_user.last_login or '—' }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

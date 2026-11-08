@@ -1,0 +1,780 @@
+/* Global overrides for Materialize dark theme */
+
+body {
+  background-color: #263238;
+  color: #eceff1;
+}
+
+/* Materialize table dark */
+table.wf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+
+table.wf-table thead tr {
+  background-color: #37474f;
+  color: #b0bec5;
+}
+
+table.wf-table thead th {
+  padding: .6rem .75rem;
+  border-bottom: 1px solid #546e7a;
+}
+
+table.wf-table tbody tr {
+  border-bottom: 1px solid #37474f;
+}
+
+table.wf-table tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+table.wf-table.striped tbody tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+table.wf-table.striped tbody tr:nth-child(odd) {
+  background-color: transparent;
+}
+
+table.wf-table tbody tr:hover {
+  background-color: #354f5c !important;
+}
+
+table.wf-table tbody td {
+  padding: .55rem .75rem;
+  vertical-align: middle;
+}
+
+/* Input overrides */
+.input-field input[type=text]:focus,
+.input-field input[type=email]:focus,
+.input-field input[type=password]:focus,
+.input-field textarea:focus {
+  border-bottom-color: #4db6ac !important;
+  box-shadow: 0 1px 0 0 #4db6ac !important;
+}
+
+.input-field input[type=text]:focus + label,
+.input-field input[type=email]:focus + label,
+.input-field input[type=password]:focus + label,
+.input-field textarea:focus + label {
+  color: #4db6ac !important;
+}
+
+/* Nav */
+nav .brand-logo i {
+  vertical-align: middle;
+  margin-right: .3rem;
+}
+
+/* Card */
+.card {
+  background-color: #2e3f47;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+
+.card .card-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #eceff1;
+}
+
+.card-action {
+  border-top: 1px solid #37474f !important;
+}
+
+/* Chip category selector */
+.chip-group .chip {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: .3rem .75rem;
+  font-size: .85rem;
+  user-select: none;
+}
+
+/* Resurgence highlight row */
+tr.resurgence-row {
+  background-color: rgba(255, 160, 0, .08) !important;
+  border-left: 3px solid #ffa000;
+}
+
+/* Danger zone inputs */
+.danger-input {
+  background: transparent;
+  border: 1px solid #ef9a9a;
+  padding: .4rem .6rem;
+  border-radius: 3px;
+  color: #fff;
+}
+
+.danger-input::placeholder {
+  color: #ef9a9a;
+  opacity: .7;
+}
+
+/* Modal */
+.modal {
+  background-color: #2e3f47;
+}
+
+/* Flash messages already styled inline in base.html */
+
+/* Progress bar */
+.progress {
+  border-radius: 4px;
+  height: 8px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #263238; }
+::-webkit-scrollbar-thumb { background: #546e7a; border-radius: 3px; }
+
+/* ── Collection card grid ──────────────────────────────────────── */
+
+.coll-card {
+  margin-bottom: .75rem;
+}
+
+.resurgence-card {
+  border-left: 3px solid #ffa000;
+}
+
+.coll-card-portrait {
+  position: relative;
+  background: rgba(255, 255, 255, .04);
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px 4px 0 0;
+  overflow: hidden;
+}
+
+.coll-portrait-placeholder {
+  font-size: 2.5rem;
+  color: #546e7a;
+}
+
+.coll-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #2e3f47;
+}
+
+.coll-badge {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  font-size: .6rem;
+  padding: .1rem .35rem;
+  border-radius: 3px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.coll-card-name {
+  margin: 0 0 .2rem;
+  font-size: .82rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coll-card-source {
+  margin: 0 0 .3rem;
+  font-size: .72rem;
+  text-transform: capitalize;
+}
+
+.coll-card-icons {
+  display: flex;
+  gap: .15rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ── Farming Planner — compact goal card ───────────────────────────────── */
+
+.wf-goal-card {
+  transition: border .15s;
+  border: 1px solid transparent;
+}
+
+.wf-goal-card.wf-goal-active {
+  border-color: #4db6ac;
+}
+
+.wf-goal-compact {
+  display: flex;
+  align-items: stretch;
+}
+
+.wf-goal-compact-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-goal-compact-portrait {
+  width: 100%;
+  height: 140px;
+  position: relative;
+  overflow: hidden;
+  background: rgba(255,255,255,.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wf-goal-compact-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #2e3f47;
+}
+
+/* ── Goal card: expand / collapse side tab ──────────────────────────────── */
+
+.wf-goal-side-tab {
+  width: 16px;
+  flex-shrink: 0;
+  background: rgba(55,71,79,.8);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #78909c;
+  transition: background .15s, color .15s;
+}
+
+.wf-goal-side-tab:hover {
+  background: #4db6ac;
+  color: #fff;
+}
+
+.wf-goal-side-tab .material-icons {
+  font-size: .85rem;
+  user-select: none;
+}
+
+/* ── Plan detail panel header ───────────────────────────────────────────── */
+
+.wf-plan-detail-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .9rem;
+  padding-bottom: .6rem;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.wf-plan-detail-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #eceff1;
+}
+
+/* ── Visual plan layout ─────────────────────────────────────────────────── */
+
+.wf-plan-visual {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .wf-plan-visual { flex-direction: column; }
+}
+
+/* Left panel */
+
+.wf-plan-left {
+  flex-shrink: 0;
+  width: 160px;
+}
+
+.wf-plan-portrait {
+  width: 160px;
+  height: 160px;
+  background: rgba(255,255,255,.04);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: .75rem;
+}
+
+.wf-plan-portrait-ph {
+  font-size: 2.8rem;
+  color: #546e7a;
+}
+
+.wf-plan-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #2e3f47;
+}
+
+.wf-plan-item-info {
+  padding: 0 .1rem;
+}
+
+.wf-plan-item-name {
+  font-weight: 600;
+  color: #eceff1;
+  font-size: .95rem;
+  margin-bottom: .35rem;
+}
+
+.wf-plan-market-row {
+  margin-top: .5rem;
+  font-size: .8rem;
+  color: #b0bec5;
+}
+
+/* Right panel */
+
+.wf-plan-right {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: .5rem;
+}
+
+.wf-plan-section-lbl {
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: .55rem;
+  color: #78909c;
+}
+
+/* Component row */
+
+.wf-plan-comp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+}
+
+.wf-comp-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .3rem;
+  width: 82px;
+}
+
+.wf-comp-name {
+  font-size: .65rem;
+  text-align: center;
+  line-height: 1.25;
+  word-break: break-word;
+  max-width: 82px;
+  color: #90a4ae;
+}
+
+/* ── Component circle wrapper (positioning context for corner state badges) ───── */
+
+.wf-comp-wrap {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.wf-comp-wrap:hover .wf-comp-circle {
+  transform: scale(1.07);
+}
+
+.wf-comp-circle {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 2.5px solid #4db6ac;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: opacity .2s, transform .12s;
+  user-select: none;
+}
+
+/* Crafted: dim the circle; corner badges are siblings so they stay opaque */
+.wf-comp-circle.wf-comp-crafted {
+  opacity: .35;
+}
+
+/* Blueprint: amber border + subtle tint */
+.wf-comp-circle.wf-comp-blueprint {
+  border-color: #ffa000 !important;
+  background: rgba(255,160,0,.14) !important;
+}
+
+.wf-comp-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* ── Corner state badges ─────────────────────────────────────────────────────── */
+
+.wf-comp-corner-btn {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #263238;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+/* Ghost preview on item hover */
+.wf-comp-item:hover .wf-comp-corner-btn {
+  opacity: 0.38;
+}
+
+/* Active state — always fully visible */
+.wf-comp-corner-btn.wf-corner-active {
+  opacity: 1 !important;
+}
+
+/* Bottom-left: Blueprint owned */
+.wf-corner-bp {
+  bottom: -3px;
+  left: -3px;
+  border: 1.5px solid #ffa000;
+  color: #ffa000;
+}
+
+/* Bottom-right: Crafted */
+.wf-corner-craft {
+  bottom: -3px;
+  right: -3px;
+  border: 1.5px solid #4db6ac;
+  color: #4db6ac;
+}
+
+/* Resource grid */
+
+.wf-plan-res-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .7rem;
+}
+
+.wf-res-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .18rem;
+  width: 76px;
+  transition: opacity .2s;
+}
+
+.wf-res-item.wf-res-grayed {
+  opacity: .3;
+}
+
+.wf-res-name {
+  font-size: .64rem;
+  color: #90a4ae;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-res-circle {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+
+.wf-res-circle.wf-res-satisfied {
+  border-color: #4db6ac;
+  background: rgba(77,182,172,.08);
+}
+
+.wf-res-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.wf-res-done-badge {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgba(38,50,56,.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-res-dots {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  min-height: 8px;
+}
+
+.wf-res-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wf-res-qty {
+  font-size: .68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 76px;
+  text-align: center;
+}
+
+/* Mini per-resource progress bar */
+.wf-res-mini-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.1);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.wf-res-mini-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width .3s;
+}
+
+.wf-res-owned-input {
+  width: 58px;
+  height: 24px !important;
+  margin-bottom: 0 !important;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+  padding: 2px 4px !important;
+  color: #eceff1;
+  font-size: .76rem;
+  text-align: center;
+  outline: none;
+  line-height: 1 !important;
+  transition: border-color .15s;
+}
+
+.wf-res-owned-input:focus {
+  border: 1px solid #4db6ac !important;
+  box-shadow: none !important;
+}
+
+/* Hide browser number input spinners */
+.wf-res-owned-input::-webkit-inner-spin-button,
+.wf-res-owned-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.wf-res-owned-input { -moz-appearance: textfield; }
+
+.wf-advisor-loc-btn {
+  background: none;
+  border: none;
+  padding: 2px 5px;
+  cursor: pointer;
+  color: #4db6ac;
+  font-size: .62rem;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 3px;
+  line-height: 1.2;
+  transition: background .15s;
+  max-width: 76px;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wf-advisor-loc-btn:hover {
+  background: rgba(77,182,172,.18);
+}
+
+/* ── Goal card: expanded state ──────────────────────────────────────────── */
+
+.wf-goal-expanded-inner {
+  display: flex;
+  align-items: stretch;
+}
+
+.wf-goal-exp-left {
+  width: 170px;
+  flex-shrink: 0;
+  padding: .7rem .75rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255,255,255,.07);
+}
+
+.wf-goal-exp-portrait {
+  width: 148px;
+  height: 148px;
+  background: rgba(255,255,255,.04);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: .5rem;
+  flex-shrink: 0;
+}
+
+.wf-goal-exp-portrait-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #2e3f47;
+}
+
+.wf-goal-plan-panel {
+  flex: 1;
+  min-width: 0;
+  padding: .7rem .75rem .75rem;
+  overflow-x: auto;
+}
+
+/* ── Collection filter bar ──────────────────────────────────────────────── */
+
+.wf-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem .75rem;
+  align-items: center;
+}
+
+.wf-filter-group {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  flex-wrap: wrap;
+}
+
+.wf-filter-label {
+  font-size: .72rem;
+  color: #78909c;
+  white-space: nowrap;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.wf-filter-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem;
+}
+
+.wf-filter-btn {
+  background: transparent;
+  border: 1px solid #546e7a;
+  color: #90a4ae;
+  font-size: .72rem;
+  padding: .15rem .45rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.wf-filter-btn:hover {
+  border-color: #4db6ac;
+  color: #4db6ac;
+}
+
+.wf-filter-btn.wf-filter-active {
+  background: #4db6ac;
+  border-color: #4db6ac;
+  color: #1a2d34;
+  font-weight: 600;
+}
+
+.wf-filter-count {
+  font-size: .7rem;
+  color: #78909c;
+  white-space: nowrap;
+}
+
+/* ── Pagination controls ────────────────────────────────────────────────── */
+
+.wf-pagination {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.wf-pag-row {
+  margin-bottom: 0;
+}
+
+/* ── Dashboard MR rank widget ───────────────────────────────────────────── */
+
+#mr-rank-label {
+  transition: color .2s;
+}
+
+.mr-max-rank {
+  color: #ffd54f;
+}

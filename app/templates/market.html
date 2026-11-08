@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}Market Watch — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">store</i>Market Watch</h4>
+
+<div class="row">
+  <div class="col s12">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">Watched Items</span>
+        <p class="grey-text" style="font-size:.85rem">
+          Prices sourced from <a href="https://warframe.market" target="_blank" class="teal-text">warframe.market</a>.
+          Cached for {{ prefs.get('market_cache_hours', 6) }} hour(s). Click a price to refresh.
+        </p>
+        {% if watched %}
+        <table class="wf-table striped">
+          <thead>
+            <tr><th>Name</th><th>Category</th><th>Price (plat)</th><th>Last fetch</th><th>Market</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for item in watched %}
+            <tr>
+              <td class="white-text">
+                {% if item.wiki_url %}<a href="{{ item.wiki_url }}" target="_blank" class="teal-text">{{ item.name }}</a>
+                {% else %}{{ item.name }}{% endif %}
+              </td>
+              <td class="grey-text">{{ item.category }}</td>
+              <td>
+                <a href="#" class="refresh-price teal-text" data-item="{{ item.id }}" id="price-{{ item.id }}">
+                  {% if item.platinum_price %}{{ item.platinum_price }}p{% else %}—{% endif %}
+                </a>
+              </td>
+              <td class="grey-text" style="font-size:.8rem">{{ item.fetched_at or '—' }}</td>
+              <td>
+                {% if item.market_url %}
+                <a href="{{ item.market_url }}" target="_blank" class="grey-text" title="warframe.market">
+                  <i class="material-icons small">open_in_new</i>
+                </a>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <a href="#" class="unwatch-btn red-text" data-item="{{ item.id }}" title="Remove from watchlist">
+                  <i class="material-icons small">remove_circle_outline</i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="grey-text">
+          No items on your watchlist. Add items from the
+          <a href="{{ url_for('collection.index') }}" class="teal-text">Collection browser</a>
+          by clicking the market watch icon on tradable items.
+        </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+$(function() {
+  $(document).on('click', '.refresh-price', function(e) {
+    e.preventDefault();
+    var id = $(this).data('item'), $el = $(this);
+    $el.text('…');
+    $.get('{{ url_for("market.price", item_id=0) }}'.replace('/0', '/' + id), function(r) {
+      $el.text(r.platinum ? r.platinum + 'p' : '—');
+    });
+  });
+
+  $(document).on('click', '.unwatch-btn', function(e) {
+    e.preventDefault();
+    var id = $(this).data('item'), $row = $(this).closest('tr');
+    $.ajax({
+      url: '{{ url_for("market.unwatch") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({item_id: id}),
+      success: function(r) { if (r.ok) $row.fadeOut(); }
+    });
+  });
+});
+</script>
+{% endblock %}

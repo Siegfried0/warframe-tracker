@@ -1,0 +1,302 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard — Warframe Tracker{% endblock %}
+{% block content %}
+
+<h4 class="white-text"><i class="material-icons left">dashboard</i>Session Focus</h4>
+
+<!-- Row 1: MR rank widget (primary) + Resurgence alerts -->
+<div class="row">
+  <div class="col s12 {% if resurgence %}m7{% else %}m6{% endif %}">
+    <!-- PRIMARY MR Rank Widget -->
+    <div class="card blue-grey darken-2" id="mr-widget">
+      <div class="card-content white-text">
+        <span class="card-title" style="margin-bottom:.75rem">Mastery Rank</span>
+
+        <!-- Rank + progress-to-next -->
+        <div style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap">
+          <div id="mr-rank-label" style="font-size:2.8rem;font-weight:700;line-height:1;color:#4db6ac;white-space:nowrap">
+            {{ summary.mr_rank_label }}
+          </div>
+          <div style="flex:1;min-width:160px">
+            {% if summary.next_rank %}
+            <div class="progress blue-grey darken-3" style="height:12px;border-radius:6px;margin-bottom:.4rem">
+              <div id="mr-progress-bar" class="determinate teal"
+                   style="width:{{ summary.pct_to_next }}%"></div>
+            </div>
+            <div id="mr-progress-label" class="grey-text" style="font-size:.82rem">
+              {{ '{:,}'.format(summary.pts_in_rank) }}
+              / {{ '{:,}'.format(summary.pts_for_next) }} pts
+              &mdash; {{ '{:,}'.format(summary.pts_for_next - summary.pts_in_rank) }} to {{ summary.next_rank_label }}
+            </div>
+            {% else %}
+            <div class="teal-text" style="font-size:.9rem;font-weight:600">Maximum rank reached!</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Total MR earned -->
+        <p class="grey-text" style="font-size:.8rem;margin:.65rem 0 0">
+          Total MR points: <strong class="white-text">{{ '{:,}'.format(summary.total_mr) }}</strong>
+        </p>
+
+        <!-- Secondary: overall completion (demoted, smaller) -->
+        <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid rgba(255,255,255,.08)">
+          <div class="grey-text" style="font-size:.72rem;margin-bottom:.3rem">
+            Overall completion: {{ summary.total_mastered }} / {{ summary.total_items }} items mastered
+          </div>
+          {% set overall_pct = (summary.total_mastered / summary.total_items * 100) if summary.total_items else 0 %}
+          <div class="progress blue-grey darken-3" style="height:5px;border-radius:3px;margin:0 0 .2rem">
+            <div id="mr-overall-bar" class="determinate blue-grey lighten-1"
+                 style="width:{{ overall_pct | round(1) }}%"></div>
+          </div>
+          <small id="mr-overall-label" class="grey-text" style="font-size:.7rem">
+            {{ overall_pct | round(1) }}% mastered
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resurgence Alerts -->
+  {% if resurgence %}
+  <div class="col s12 m5">
+    <div class="card red darken-3">
+      <div class="card-content white-text">
+        <span class="card-title">
+          <i class="material-icons left">notifications_active</i>Prime Resurgence — Available Now!
+        </span>
+        {% for item in resurgence %}
+        <div style="margin-bottom:.5rem">
+          <strong>{{ item.name }}</strong>
+          {% if item.wiki_url %}
+          <a href="{{ item.wiki_url }}" target="_blank" class="white-text" title="Wiki">
+            <i class="material-icons tiny">open_in_new</i>
+          </a>
+          {% endif %}
+          <span class="badge white red-text text-darken-3 new" data-badge-caption="">Resurgence</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row">
+  <!-- Immediate Gains -->
+  <div class="col s12 m6">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title">
+          <i class="material-icons left">bolt</i>Immediate Gains
+          <span class="badge blue-grey lighten-1 white-text new" data-badge-caption="" id="gains-badge">
+            {{ immediate | length }}
+          </span>
+        </span>
+        <p class="grey-text" style="font-size:.85rem">Owned but not mastered — level these now.</p>
+        {% if immediate %}
+        <table class="wf-table striped" id="gains-table">
+          <thead><tr><th></th><th>Name</th><th>Category</th></tr></thead>
+          <tbody>
+            {% for item in immediate %}
+            <tr id="gains-row-{{ item.id }}">
+              <td style="width:2rem;padding-right:0">
+                <a href="#" class="dash-master-btn grey-text"
+                   data-item="{{ item.id }}" data-category="{{ item.category }}"
+                   title="Mark as Mastered">
+                  <i class="material-icons small">star_border</i>
+                </a>
+              </td>
+              <td>
+                {% if item.wiki_url %}
+                <a href="{{ item.wiki_url }}" target="_blank" class="teal-text">{{ item.name }}</a>
+                {% else %}{{ item.name }}{% endif %}
+              </td>
+              <td class="grey-text">{{ item.category }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="grey-text">Nothing in possession waiting to be mastered. Go farm!</p>
+        {% endif %}
+      </div>
+      {% if immediate %}
+      <div class="card-action">
+        <a href="{{ url_for('collection.index') }}" class="teal-text">View Collection</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Farm Next -->
+  <div class="col s12 m6">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">agriculture</i>Farm Next</span>
+        {% if pinned_goals %}
+        <p class="grey-text" style="font-size:.85rem">Pinned farming goals.</p>
+        {% for goal in pinned_goals %}
+        <div style="margin-bottom:.6rem">
+          <div style="display:flex;align-items:center;gap:.5rem">
+            {% if goal.image_url %}
+            <img src="{{ goal.image_url }}" alt="{{ goal.item_name }}"
+                 style="width:32px;height:32px;object-fit:contain;border-radius:3px"
+                 onerror="this.style.display='none'">
+            {% endif %}
+            <div style="flex:1">
+              <span class="white-text">{{ goal.item_name }}</span>
+              {% if goal.vaulted %}<span class="orange-text" style="font-size:.75rem"> Vaulted</span>{% endif %}
+              <span class="grey-text" style="font-size:.78rem"> · {{ goal.category }}</span>
+            </div>
+            <span class="teal-text" style="font-size:.8rem">{{ goal.progress_pct }}%</span>
+          </div>
+          <div class="progress blue-grey darken-3" style="margin:.3rem 0 0">
+            <div class="determinate teal" style="width:{{ goal.progress_pct }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+        {% if active_node and advisor_opportunities %}
+        <div style="margin-top:.75rem;padding-top:.5rem;border-top:1px solid rgba(255,255,255,.1)">
+          <p class="grey-text" style="font-size:.8rem;margin:.1rem 0 .4rem">
+            <i class="material-icons tiny">gps_fixed</i> Farming {{ active_node }} — secondary drops:
+          </p>
+          {% for opp in advisor_opportunities %}
+          <div style="font-size:.82rem;margin-bottom:.2rem">
+            <span class="white-text">{{ opp.name }}</span>
+            <span class="{{ opp.rating_class }}"> {{ opp.rating }}</span>
+            <span class="grey-text"> ({{ opp.drop_pct }})</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% else %}
+        <p class="grey-text" style="font-size:.85rem">
+          Pin goals in the Farming Planner to track them here.
+        </p>
+        {% if farm_next %}
+        <table class="wf-table">
+          <thead><tr><th>Name</th><th>Category</th><th>Market</th></tr></thead>
+          <tbody>
+            {% for item in farm_next %}
+            <tr>
+              <td>
+                {% if item.wiki_url %}
+                <a href="{{ item.wiki_url }}" target="_blank" class="teal-text">{{ item.name }}</a>
+                {% else %}{{ item.name }}{% endif %}
+                {% if item.vaulted %}
+                <span class="badge orange darken-3 white-text new" data-badge-caption="">Vaulted</span>
+                {% endif %}
+              </td>
+              <td class="grey-text">{{ item.category }}</td>
+              <td>
+                {% if item.recommend_buy %}
+                <span class="green-text" title="{{ item.recommend_reason }}">
+                  Buy {{ item.market_price }}p <i class="material-icons tiny">thumb_up</i>
+                </span>
+                {% elif item.market_price %}
+                <span class="grey-text">{{ item.market_price }}p</span>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="grey-text">All items mastered or no items in database. Try a Wiki Sync.</p>
+        {% endif %}
+        {% endif %}
+      </div>
+      <div class="card-action">
+        <a href="{{ url_for('farming.index') }}" class="teal-text">Farming Planner</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// MR rank thresholds (cumulative pts to reach rank n) and per-category point values
+var MR_THRESHOLDS = {{ summary.rank_thresholds | tojson }};
+var MR_CAT_PTS    = {{ {'warframe':6000,'primary':3000,'secondary':3000,'melee':3000,'companion':3000,'archwing':6000,'arch-gun':3000,'arch-melee':3000,'k-drive':6000} | tojson }};
+var catCounts     = {{ summary.by_category | tojson }};
+var totalItemsAll = {{ summary.total_items }};
+var gainsBadge    = {{ immediate | length }};
+
+function fmtN(n) { return n.toLocaleString(); }
+
+function rankLabel(rank) {
+  return rank <= 30 ? 'MR ' + rank : 'L' + (rank - 30);
+}
+
+function calcMR(counts) {
+  var totalMR = 0, totalMastered = 0;
+  for (var cat in counts) {
+    totalMR      += (MR_CAT_PTS[cat] || 0) * (counts[cat] || 0);
+    totalMastered += (counts[cat] || 0);
+  }
+  var rank = 0;
+  for (var i = 0; i < MR_THRESHOLDS.length; i++) {
+    if (totalMR >= MR_THRESHOLDS[i]) rank = i;
+  }
+  var nextRank    = rank < MR_THRESHOLDS.length - 1 ? rank + 1 : null;
+  var ptsAtRank   = MR_THRESHOLDS[rank];
+  var ptsInRank   = totalMR - ptsAtRank;
+  var ptsForNext  = nextRank ? MR_THRESHOLDS[nextRank] - ptsAtRank : 0;
+  var pct         = ptsForNext ? Math.min(100, ptsInRank / ptsForNext * 100) : 100;
+  var overallPct  = totalItemsAll ? totalMastered / totalItemsAll * 100 : 0;
+  return { totalMR: totalMR, rank: rank, nextRank: nextRank,
+           ptsInRank: ptsInRank, ptsForNext: ptsForNext, pct: pct,
+           totalMastered: totalMastered, overallPct: overallPct };
+}
+
+function updateMRWidget(counts) {
+  var d = calcMR(counts);
+  $('#mr-rank-label').text(rankLabel(d.rank));
+  if (d.nextRank) {
+    var toNext = d.ptsForNext - d.ptsInRank;
+    $('#mr-progress-bar').css('width', d.pct.toFixed(1) + '%');
+    $('#mr-progress-label').html(
+      fmtN(d.ptsInRank) + ' / ' + fmtN(d.ptsForNext) + ' pts &mdash; ' +
+      fmtN(toNext) + ' to ' + rankLabel(d.nextRank)
+    );
+  }
+  $('#mr-overall-bar').css('width', d.overallPct.toFixed(1) + '%');
+  $('#mr-overall-label').text(d.overallPct.toFixed(1) + '% mastered');
+}
+
+$(function() {
+  // Mastery toggle from the Immediate Gains panel
+  $(document).on('click', '.dash-master-btn', function(e) {
+    e.preventDefault();
+    var $btn     = $(this);
+    var itemId   = $btn.data('item');
+    var category = $btn.data('category');
+
+    $.ajax({
+      url: '{{ url_for("collection.toggle") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({ item_id: itemId, field: 'mastered' }),
+      success: function(r) {
+        if (!r.ok) return;
+        if (r.new_value == 1) {
+          catCounts[category] = (catCounts[category] || 0) + 1;
+          gainsBadge = Math.max(0, gainsBadge - 1);
+          $('#gains-badge').text(gainsBadge);
+          $('#gains-row-' + itemId).fadeOut(300, function() { $(this).remove(); });
+        } else {
+          catCounts[category] = Math.max(0, (catCounts[category] || 0) - 1);
+          gainsBadge += 1;
+          $('#gains-badge').text(gainsBadge);
+          $btn.find('i').text('star_border');
+        }
+        updateMRWidget(catCounts);
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

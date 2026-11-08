@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Login — Warframe Tracker{% endblock %}
+{% block content %}
+<div class="row" style="margin-top:5rem">
+  <div class="col s12 m6 offset-m3">
+    <div class="card blue-grey darken-2">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">login</i>Login</span>
+        <form method="post">
+          <div class="input-field">
+            <input id="username" name="username" type="text" class="white-text" required autofocus>
+            <label for="username" class="white-text">Username</label>
+          </div>
+          <div class="input-field">
+            <input id="password" name="password" type="password" class="white-text" required>
+            <label for="password" class="white-text">Password</label>
+          </div>
+          <label>
+            <input type="checkbox" name="remember" class="filled-in">
+            <span class="white-text">Remember me</span>
+          </label>
+          <div style="margin-top:1.5rem">
+            <button class="btn blue-grey lighten-1 waves-effect waves-light" type="submit">Login</button>
+            <a href="{{ url_for('auth.register') }}" class="btn-flat white-text" style="margin-left:1rem">Register</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

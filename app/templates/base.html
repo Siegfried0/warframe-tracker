@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Warframe Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/materialize/css/materialize.min.css') }}">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="blue-grey darken-4" style="color:#eceff1">
+
+{% if current_user.is_authenticated %}
+<nav class="blue-grey darken-3" role="navigation">
+  <div class="nav-wrapper container">
+    <a href="{{ url_for('dashboard.index') }}" class="brand-logo">
+      <i class="material-icons">shield</i> WF Tracker
+    </a>
+    <a href="#" data-target="mobile-nav" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+    <ul class="right hide-on-med-and-down">
+      <li{% if request.endpoint and request.endpoint.startswith('dashboard') %} class="active"{% endif %}>
+        <a href="{{ url_for('dashboard.index') }}"><i class="material-icons left">dashboard</i>Dashboard</a>
+      </li>
+      <li{% if request.endpoint and request.endpoint.startswith('collection') %} class="active"{% endif %}>
+        <a href="{{ url_for('collection.index') }}"><i class="material-icons left">list</i>Collection</a>
+      </li>
+      <li{% if request.endpoint and request.endpoint.startswith('farming') %} class="active"{% endif %}>
+        <a href="{{ url_for('farming.index') }}"><i class="material-icons left">agriculture</i>Farming</a>
+      </li>
+      <li{% if request.endpoint and request.endpoint.startswith('market') %} class="active"{% endif %}>
+        <a href="{{ url_for('market.index') }}"><i class="material-icons left">store</i>Market</a>
+      </li>
+      {% if current_user.is_admin %}
+      <li{% if request.endpoint and request.endpoint.startswith('admin') %} class="active"{% endif %}>
+        <a href="{{ url_for('admin.index') }}"><i class="material-icons left">admin_panel_settings</i>Admin</a>
+      </li>
+      <li{% if request.endpoint and request.endpoint.startswith('sync') %} class="active"{% endif %}>
+        <a href="{{ url_for('sync.index') }}"><i class="material-icons left">sync</i>Sync</a>
+      </li>
+      {% endif %}
+      <li{% if request.endpoint and request.endpoint.startswith('settings') %} class="active"{% endif %}>
+        <a href="{{ url_for('settings.index') }}"><i class="material-icons left">settings</i>Settings</a>
+      </li>
+      <li><a href="{{ '/.auth/logout' if easyauth_enabled else url_for('auth.logout') }}"><i class="material-icons left">logout</i>{{ current_user.username }}</a></li>
+    </ul>
+  </div>
+</nav>
+
+<ul class="sidenav blue-grey darken-3" id="mobile-nav">
+  <li><a href="{{ url_for('dashboard.index') }}"><i class="material-icons">dashboard</i>Dashboard</a></li>
+  <li><a href="{{ url_for('collection.index') }}"><i class="material-icons">list</i>Collection</a></li>
+  <li><a href="{{ url_for('farming.index') }}"><i class="material-icons">agriculture</i>Farming</a></li>
+  <li><a href="{{ url_for('market.index') }}"><i class="material-icons">store</i>Market</a></li>
+  {% if current_user.is_admin %}
+  <li><a href="{{ url_for('admin.index') }}"><i class="material-icons">admin_panel_settings</i>Admin</a></li>
+  <li><a href="{{ url_for('sync.index') }}"><i class="material-icons">sync</i>Wiki Sync</a></li>
+  {% endif %}
+  <li><a href="{{ url_for('settings.index') }}"><i class="material-icons">settings</i>Settings</a></li>
+  <li><div class="divider"></div></li>
+  <li><a href="{{ '/.auth/logout' if easyauth_enabled else url_for('auth.logout') }}"><i class="material-icons">logout</i>Logout</a></li>
+</ul>
+{% endif %}
+
+<main class="container" style="padding-top:2rem;padding-bottom:4rem">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="card-panel {% if category == 'error' %}red darken-3{% elif category == 'warning' %}orange darken-3{% elif category == 'success' %}green darken-3{% else %}blue-grey darken-2{% endif %} white-text" style="margin-bottom:1rem">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/materialize/js/materialize.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

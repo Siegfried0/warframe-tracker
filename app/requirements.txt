@@ -1,0 +1,12 @@
+flask==3.1.0
+flask-login==0.6.3
+werkzeug==3.1.3
+requests==2.32.3
+beautifulsoup4==4.12.3
+apscheduler==3.10.4
+
+# Optional — install for S3 backup support
+boto3==1.35.0
+
+# Optional — only required for MSSQL/Azure SQL backend (set MSSQL_CONNECTION_STRING env var)
+pyodbc==5.2.0
