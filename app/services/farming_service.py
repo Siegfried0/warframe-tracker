@@ -402,8 +402,17 @@ def set_goal_progress(user_id: int, goal_id: int, row_type: str,
       'blueprint' → blueprint obtained, resources still needed
       'crafted'   → done; resources excluded from totals
     For ingredient rows, only quantity_owned matters.
+
+    Writes only into a goal the user owns: returns False and writes nothing for a goal
+    id that is another user's or no goal at all; True after the write.
     """
     db = get_db()
+
+    owned = db.execute(
+        'SELECT 1 FROM farming_goals WHERE id = ? AND user_id = ?', (goal_id, user_id),
+    ).fetchone()
+    if owned is None:
+        return False
 
     if row_type == 'component':
         # Normalise comp_state; derive from legacy acquired flag if needed
@@ -440,6 +449,7 @@ def set_goal_progress(user_id: int, goal_id: int, row_type: str,
             (user_id, goal_id, row_type, row_key, acquired_int, int(quantity_owned)),
         )
     db.commit()
+    return True
 
 
 def _get_progress_map(goal_id: int) -> dict:

@@ -117,8 +117,10 @@ def goals_progress(goal_id):
         return jsonify({'ok': False, 'error': 'Invalid payload'}), 400
     if row_type not in ('component', 'ingredient'):
         return jsonify({'ok': False, 'error': 'row_type must be component or ingredient'}), 400
-    set_goal_progress(current_user.id, goal_id, row_type, row_key,
-                      comp_state=comp_state, acquired=acquired, quantity_owned=quantity_owned)
+    written = set_goal_progress(current_user.id, goal_id, row_type, row_key, comp_state=comp_state,
+                                acquired=acquired, quantity_owned=quantity_owned)
+    if not written:
+        return jsonify({'ok': False, 'error': 'Goal not found'}), 404
     return jsonify({'ok': True})
 
 
