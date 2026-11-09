@@ -10,15 +10,14 @@ Only catalogue data is written; user progress rows are never touched.
 """
 
 import logging
-import os
 from datetime import datetime
-from pathlib import Path
 from urllib.parse import unquote
 
 import requests
 
 from models.db import get_db
 from models.item import Item
+from services import image_cache
 from services.resurgence_sync import sync_resurgence
 
 log = logging.getLogger(__name__)
@@ -1024,12 +1023,16 @@ _INGREDIENT_SOURCES = [
 _SKIP_COMPONENT_NAMES = frozenset({'Forma', 'Exilus Adapter'})
 
 
-def _sync_component_ingredients() -> int:
+def _sync_component_ingredients(status: dict | None = None) -> int:
     """Rebuild component_ingredients table from WFCD item component data.
 
     Each WFCD component that has a nested components[] array represents a
     craftable sub-item. Those nested entries are the crafting ingredients
     (e.g., Alloy Plate × 500, Morphics × 2, etc.).
+
+    ``status['complete']`` is set to False when item_component_meta could not be
+    rebuilt in full (a source failed to load): the component picture sweep then
+    skips this run, so the files of the rows not rebuilt are kept.
     """
     log.info('Syncing component ingredients…')
     db = get_db()
@@ -1040,6 +1043,8 @@ def _sync_component_ingredients() -> int:
         # Table may not exist yet if the server hasn't restarted since migration v5.
         # Silently skip — component images won't be populated this run, but the
         # ingredient sync itself can still complete successfully.
+        if status is not None:
+            status['complete'] = False
         log.warning('item_component_meta not found — restart the server to apply migration v5')
 
     count = 0
@@ -1048,6 +1053,8 @@ def _sync_component_ingredients() -> int:
             items_data = _fetch_wfcd(filename)
         except Exception as exc:
             log.warning('Skipping %s for ingredient sync: %s', filename, exc)
+            if status is not None:
+                status['complete'] = False
             continue
 
         for item_data in items_data:
@@ -1310,44 +1317,8 @@ def _sync_warframe_component_ingredients_from_wiki(db) -> int:
 # Image caching
 # ---------------------------------------------------------------------------
 
-def _images_dir() -> Path:
-    """Return (and create) the local item image cache directory."""
-    from flask import current_app
-    d = Path(current_app.root_path) / 'static' / 'images' / 'items'
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _url_ext(url: str) -> str:
-    """Infer a safe file extension from a URL, defaulting to .png."""
-    _, ext = os.path.splitext(url.split('?')[0].rstrip('/'))
-    return ext.lower() if ext.lower() in ('.png', '.jpg', '.jpeg', '.webp') else '.png'
-
-
-def _download_image(url: str, dest: Path) -> bool:
-    """Stream-download url to dest. Return True on success."""
-    try:
-        r = requests.get(url, timeout=15, stream=True)
-        r.raise_for_status()
-        with dest.open('wb') as fh:
-            for chunk in r.iter_content(8192):
-                fh.write(chunk)
-        return True
-    except Exception as exc:
-        log.debug('Image download failed (%s): %s', url, exc)
-        try:
-            dest.unlink()
-        except FileNotFoundError:
-            pass
-        return False
-
-
-def _cached_local_url(item_id: int, images_dir: Path) -> str | None:
-    """Return the /static/... URL if a local image already exists for this item."""
-    for ext in ('.png', '.jpg', '.jpeg', '.webp'):
-        if (images_dir / f'{item_id}{ext}').exists():
-            return f'/static/images/items/{item_id}{ext}'
-    return None
+# Naming, adoption of older files, downloads, the repair and the sweep live in
+# services/image_cache.py.
 
 
 def _wiki_batch_images(titles: list[str]) -> dict[str, str]:
@@ -1490,34 +1461,35 @@ def _sync_item_images(db) -> tuple[int, int]:
     """Download and locally cache images for all items that still have a remote URL.
 
     - Items already pointing at /static/... are skipped.
-    - Items whose local file already exists from a previous sync are updated in
-      the DB without re-downloading.
+    - An item uses a cached file only when it was made for its current URL (or is an
+      older file not older than the item, adopted under the new name); otherwise the
+      picture is downloaded.
     Returns (downloaded, already_cached) counts.
     """
     rows = db.execute(
-        "SELECT id, image_url FROM items WHERE image_url IS NOT NULL AND image_url NOT LIKE '/static/%'"
+        "SELECT id, image_url, date_added FROM items "
+        "WHERE image_url IS NOT NULL AND image_url NOT LIKE '/static/%'"
     ).fetchall()
     if not rows:
         return 0, 0
 
-    images_dir = _images_dir()
+    images_dir = image_cache.folder(image_cache.ITEMS)
     downloaded = 0
     already_cached = 0
 
     for row in rows:
         item_id = row['id']
         url = row['image_url']
+        name = image_cache.item_file(item_id, url)
+        local_url = image_cache.static_url(image_cache.ITEMS, name)
 
-        local_url = _cached_local_url(item_id, images_dir)
-        if local_url:
+        if image_cache.resolve(images_dir, name, image_cache.legacy_item_files(item_id),
+                               image_cache.parse_added(row['date_added'])):
             db.execute('UPDATE items SET image_url = ? WHERE id = ?', (local_url, item_id))
             already_cached += 1
             continue
 
-        ext = _url_ext(url)
-        dest = images_dir / f'{item_id}{ext}'
-        if _download_image(url, dest):
-            local_url = f'/static/images/items/{item_id}{ext}'
+        if image_cache.download(url, images_dir / name):
             db.execute('UPDATE items SET image_url = ? WHERE id = ?', (local_url, item_id))
             downloaded += 1
 
@@ -1594,33 +1566,21 @@ def _sync_component_wiki_images(db) -> int:
 # Component image caching
 # ---------------------------------------------------------------------------
 
-def _components_images_dir() -> Path:
-    """Return (and create) the local component image cache directory."""
-    from flask import current_app
-    d = Path(current_app.root_path) / 'static' / 'images' / 'components'
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _comp_slug(component_name: str) -> str:
-    """Safe filename segment for a component name."""
-    return component_name.lower().replace(' ', '_').replace('/', '-')
-
-
 def _sync_component_images(db) -> tuple[int, int]:
     """Download and locally cache images for all component entries in item_component_meta
-    that still have a remote URL.
+    that still have a remote URL (the same rule as items; the date is the item's).
 
     Returns (downloaded, already_cached) counts.
     """
     rows = db.execute(
-        "SELECT item_id, component_name, image_url FROM item_component_meta "
-        "WHERE image_url IS NOT NULL AND image_url NOT LIKE '/static/%'"
+        "SELECT m.item_id, m.component_name, m.image_url, i.date_added "
+        "FROM item_component_meta m LEFT JOIN items i ON i.id = m.item_id "
+        "WHERE m.image_url IS NOT NULL AND m.image_url NOT LIKE '/static/%'"
     ).fetchall()
     if not rows:
         return 0, 0
 
-    images_dir = _components_images_dir()
+    images_dir = image_cache.folder(image_cache.COMPONENTS)
     downloaded = 0
     already_cached = 0
 
@@ -1628,32 +1588,24 @@ def _sync_component_images(db) -> tuple[int, int]:
         item_id = row['item_id']
         comp_name = row['component_name']
         url = row['image_url']
-        slug = _comp_slug(comp_name)
+        name = image_cache.component_file(item_id, comp_name, url)
+        local_url = image_cache.static_url(image_cache.COMPONENTS, name)
+        legacy = image_cache.legacy_component_files(item_id, comp_name)
 
-        # Check if already downloaded
-        local_url = None
-        for ext in ('.png', '.jpg', '.jpeg', '.webp'):
-            p = images_dir / f'{item_id}__{slug}{ext}'
-            if p.exists():
-                local_url = f'/static/images/components/{item_id}__{slug}{ext}'
-                break
-
-        if local_url:
-            db.execute(
-                'UPDATE item_component_meta SET image_url = ? WHERE item_id = ? AND component_name = ?',
-                (local_url, item_id, comp_name),
-            )
-            already_cached += 1
+        if image_cache.resolve(images_dir, name, legacy,
+                               image_cache.parse_added(row['date_added'])):
+            cached = True
+        elif image_cache.download(url, images_dir / name):
+            cached = False
+        else:
             continue
-
-        ext = _url_ext(url)
-        dest = images_dir / f'{item_id}__{slug}{ext}'
-        if _download_image(url, dest):
-            local_url = f'/static/images/components/{item_id}__{slug}{ext}'
-            db.execute(
-                'UPDATE item_component_meta SET image_url = ? WHERE item_id = ? AND component_name = ?',
-                (local_url, item_id, comp_name),
-            )
+        db.execute(
+            'UPDATE item_component_meta SET image_url = ? WHERE item_id = ? AND component_name = ?',
+            (local_url, item_id, comp_name),
+        )
+        if cached:
+            already_cached += 1
+        else:
             downloaded += 1
 
     if downloaded or already_cached:
@@ -1878,6 +1830,11 @@ def run_sync(app=None):
         if ctx:
             ctx.push()
         log.info('Sync started at %s', datetime.utcnow().isoformat())
+        db = get_db()
+        # A stored picture that came from a deleted row with the same ID is cleared first,
+        # so the catalogue pass below gives the item its URL again.
+        repaired = image_cache.repair_stale_items(db)
+        component_rows = {'complete': True}
         counts = {
             'warframes':        _sync_warframes(),
             'weapons':          _sync_weapons(),
@@ -1889,10 +1846,10 @@ def run_sync(app=None):
             'mods':         _sync_mods(),
             'arcanes':      _sync_arcanes(),
             'resources':    _sync_resources(),
-            'ingredients':  _sync_component_ingredients(),
+            'ingredients':  _sync_component_ingredients(component_rows),
             'drop_sources': _sync_drop_sources(),
         }
-        db = get_db()
+        counts['images_repaired'] = repaired
         # Targeted backfill for weapon categories where WFCD may omit thumbnail
         # fields (confirmed: Sporelacer, Vermisplicer, and other kitgun/melee items).
         # Also covers primary/arch weapons with no wikiaThumbnail in the payload.
@@ -1917,6 +1874,11 @@ def run_sync(app=None):
         counts['comp_images_downloaded'] = comp_downloaded
         counts['comp_images_already_cached'] = comp_cached
         log.info('Component images: %d downloaded, %d already cached', comp_downloaded, comp_cached)
+        # Files no row references are removed once the rows are rebuilt; a failure above
+        # ends the sync before this point, so no folder is swept after a failed pass.
+        counts['images_swept'] = image_cache.sweep(db, image_cache.ITEMS)
+        counts['images_comp_swept'] = (
+            image_cache.sweep(db, image_cache.COMPONENTS) if component_rows['complete'] else 0)
         # Prime Resurgence's current stock: a failure is reported, never a failed sync
         log.info('Reading Prime Resurgence stock…')
         resurgence = sync_resurgence()

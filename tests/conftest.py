@@ -52,6 +52,16 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket.socket, 'connect', _guarded_connect)
 
 
+@pytest.fixture(autouse=True)
+def image_cache_root(tmp_path, monkeypatch):
+    """Point the picture cache at a temporary folder: no test reads, writes or deletes the
+    pictures the app downloaded into its own static folder."""
+    from services import image_cache
+    root = tmp_path / 'images'
+    monkeypatch.setattr(image_cache, 'cache_root', lambda: root)
+    return root
+
+
 @pytest.fixture
 def app(tmp_path):
     """A fresh app on an empty database of its own (migrations applied, no scheduler)."""

@@ -353,7 +353,7 @@ def test_the_full_sync_reports_a_failed_resurgence_read_and_still_succeeds(app, 
     for name in ('_sync_warframes', '_sync_weapons', '_sync_kitgun_chambers', '_sync_companions',
                  '_sync_archwings', '_sync_k_drives', '_sync_amps', '_sync_mods', '_sync_arcanes',
                  '_sync_resources', '_sync_component_ingredients', '_sync_drop_sources'):
-        monkeypatch.setattr(wiki_sync, name, lambda: 1)
+        monkeypatch.setattr(wiki_sync, name, lambda *args: 1)
     monkeypatch.setattr(wiki_sync, '_backfill_null_item_images', lambda db, cats: 0)
     monkeypatch.setattr(wiki_sync, '_sync_wiki_images_for_missing', lambda db: 0)
     monkeypatch.setattr(wiki_sync, '_sync_item_images', lambda db: (0, 0))
