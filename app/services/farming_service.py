@@ -12,6 +12,7 @@ from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
 from services.market_api import cached_prices, get_price, market_url_for
+from services.relic_sources import is_relic_source, relics_by_part
 from services.relic_sync import is_relic_name
 from services.resurgence_sync import resurgence_status, vaulted_note
 
@@ -34,6 +35,9 @@ def get_item_plan(item_id: int, user_id: int) -> dict:
             component_name,
             acquired,            # bool — user ticked this off
             drops: [...],        # best drop locations for this component
+            relics: [            # relics holding it, those dropping somewhere first
+              {part, relic, drop_chance, vaulted, locations: [...]}
+            ],
             ingredients: [
               {ingredient_name, ingredient_qty, drops: [...]}
             ]
@@ -47,18 +51,17 @@ def get_item_plan(item_id: int, user_id: int) -> dict:
     if not item_row:
         return {}
 
-    # All component drop entries for this item, grouped by component name. A relic row
-    # (the relic as its location, no average runs) comes after the rows with runs, the
-    # likeliest relic first.
+    # All component drop entries for this item, grouped by component name. A relic is no
+    # place to run: the relics holding a part are listed apart, below.
     drop_rows = db.execute(
         '''SELECT notes AS component_name, mission_type, location,
                   drop_chance, avg_runs, source_type
              FROM drop_sources
-            WHERE item_id = ? AND source_type IN ('component', 'relic')
-            ORDER BY notes, CASE WHEN avg_runs IS NULL THEN 1 ELSE 0 END, avg_runs,
-                     drop_chance DESC''',
+            WHERE item_id = ? AND source_type = 'component'
+            ORDER BY notes, avg_runs''',
         (item_id,),
     ).fetchall()
+    drop_rows = [r for r in drop_rows if not is_relic_source(r['source_type'], r['location'])]
 
     # Build component → drops map (keep best 3 per component)
     comp_drops: dict[str, list] = defaultdict(list)
@@ -114,8 +117,11 @@ def get_item_plan(item_id: int, user_id: int) -> dict:
             'drops':           _ingredient_drops(r['ingredient_name']),
         })
 
-    # Assemble component list — union of those with drops and those with ingredients
-    all_comp_names = sorted(set(list(comp_drops.keys()) + list(comp_ingredients.keys())))
+    # Relics holding each part, with each relic's best locations
+    comp_relics = relics_by_part(item_id, db)
+
+    # Assemble component list — union of those with drops, relics or ingredients
+    all_comp_names = sorted(set(comp_drops) | set(comp_relics) | set(comp_ingredients))
     # Remove empty-string key that can appear if notes was NULL
     all_comp_names = [c for c in all_comp_names if c]
 
@@ -125,6 +131,7 @@ def get_item_plan(item_id: int, user_id: int) -> dict:
             'component_name': cname,
             'acquired':       checklist.get(cname, False),
             'drops':          comp_drops.get(cname, []),
+            'relics':         comp_relics.get(cname, []),
             'ingredients':    comp_ingredients.get(cname, []),
         })
 
@@ -161,12 +168,6 @@ def set_checklist(user_id: int, item_id: int, component_name: str, acquired: boo
     db.commit()
 
 
-def _is_relic_source(source_type, location) -> bool:
-    """A relic row, or a row of another source whose location is a relic ('Lith A1 Relic'):
-    a relic is no mission or node to run."""
-    return source_type == 'relic' or is_relic_name(location)
-
-
 def get_drop_sources(item_id: int) -> list[dict]:
     """The item's mission, component and resource drop rows, fewest average runs first.
     Relic sources are left out: a relic is no mission to run."""
@@ -176,7 +177,7 @@ def get_drop_sources(item_id: int) -> list[dict]:
             ORDER BY avg_runs''',
         (item_id,),
     ).fetchall()
-    return [dict(r) for r in rows if not _is_relic_source(r['source_type'], r['location'])]
+    return [dict(r) for r in rows if not is_relic_source(r['source_type'], r['location'])]
 
 
 def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict]:

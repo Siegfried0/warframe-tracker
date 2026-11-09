@@ -1,10 +1,10 @@
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from models.db import get_db
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
 from services.collection_service import ToggleError, toggle_progress
+from services.relic_sources import item_drop_sources
 from services.request_ids import (
     RequestIdError,
     json_object,
@@ -190,22 +190,8 @@ def update_target():
 @collection_bp.route('/drops/<id64:item_id>')
 @login_required
 def drops(item_id):
-    """Return drop sources for an item (used by the Farm-it modal for mods/arcanes)."""
+    """Return an item's drop sources and the relics holding its parts (the Farm-it modal)."""
     item = Item.get_by_id(item_id)
     if not item:
         return jsonify({'ok': False, 'error': 'item not found'}), 404
-
-    rows = get_db().execute(
-        '''SELECT mission_type, location, drop_chance, avg_runs, notes
-             FROM drop_sources
-            WHERE item_id = ?
-            ORDER BY drop_chance DESC
-            LIMIT 20''',
-        (item_id,),
-    ).fetchall()
-
-    return jsonify({
-        'ok': True,
-        'item_name': item.name,
-        'drops': [dict(r) for r in rows],
-    })
+    return jsonify({'ok': True, 'item_name': item.name, **item_drop_sources(item_id)})

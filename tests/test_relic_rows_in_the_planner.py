@@ -111,12 +111,13 @@ def test_the_goal_plan_answers_with_relic_rows_present(seeded, admin_client):
     assert admin_client.get('/farming/').status_code == 200
 
 
-def test_the_plan_lists_a_parts_relics_after_its_sources_with_runs(seeded):
+def test_the_plan_lists_a_parts_relics_apart_from_its_drops(seeded):
     db, ids, admin = seeded
     comps = {c['component_name']: c for c in fs.get_item_plan(ids['Ash Prime'], admin)['components']}
-    assert [d['location'] for d in comps['Neuroptics']['drops']] == [
-        COMPONENT_RELIC, 'Lith A1 Relic', 'Axi V1 Relic']
-    assert [d['location'] for d in comps['Blueprint']['drops']] == ['Lith A1 Relic']
+    assert comps['Neuroptics']['drops'] == [] and comps['Blueprint']['drops'] == []
+    assert [r['relic'] for r in comps['Neuroptics']['relics']] == [
+        'Lith A1 Relic', 'neo s1 RELIC', 'Axi V1 Relic']
+    assert [r['relic'] for r in comps['Blueprint']['relics']] == ['Lith A1 Relic']
 
 
 def test_the_drop_modal_answers_with_relic_rows_present(seeded, admin_client):

@@ -404,6 +404,9 @@
             <i class="material-icons small">agriculture</i>
           </a>
           {% elif current_cat != 'resource' %}
+          <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Drop sources">
+            <i class="material-icons small">agriculture</i>
+          </a>
           <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
             <i class="material-icons small">add_task</i>
           </a>
@@ -566,7 +569,10 @@
                 </a>
               </td>
               {% elif current_cat != 'resource' %}
-              <td class="center-align">
+              <td class="center-align" style="white-space:nowrap">
+                <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Drop sources">
+                  <i class="material-icons small">agriculture</i>
+                </a>
                 <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
                   <i class="material-icons small">add_task</i>
                 </a>
@@ -634,7 +640,7 @@
   </div>
 </div>
 
-<!-- Farm-it modal (mod/arcane drop sources) -->
+<!-- Farm-it modal (an item's drop sources and the relics holding its parts) -->
 <div id="farm-modal" class="modal blue-grey darken-2">
   <div class="modal-content white-text">
     <h5 id="farm-modal-title">Drop Sources</h5>
@@ -958,7 +964,12 @@ $(function() {
     });
   });
 
-  // Farm it — show drop sources in modal (mods and arcanes)
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+  }
+
+  // Farm it — show drop sources and the relics holding the item's parts in a modal
   $(document).on('click', '.wf-farm-it', function(e) {
     e.preventDefault();
     var $a     = $(this);
@@ -968,19 +979,44 @@ $(function() {
     $.getJSON(dropBase + itemId,
       function(r) {
         $('#farm-modal-title').text(name + ' — Drop Sources');
-        if (!r.ok || !r.drops || !r.drops.length) {
+        var drops  = (r.ok && r.drops)  || [];
+        var relics = (r.ok && r.relics) || [];
+        if (!drops.length && !relics.length) {
           $('#farm-modal-body').html('<p class="grey-text">No drop data available for this item.</p>');
         } else {
-          var html = '<table class="wf-table" style="font-size:.85rem"><thead><tr>' +
-            '<th>Location</th><th>Mission</th><th class="right-align">Chance</th>' +
-            '</tr></thead><tbody>';
-          r.drops.forEach(function(d) {
-            html += '<tr><td>' + (d.location || '—') + '</td>' +
-                    '<td class="grey-text">' + (d.mission_type || '—') + '</td>' +
-                    '<td class="right-align grey-text">' + (d.drop_chance ? d.drop_chance.toFixed(2) + '%' : '—') + '</td>' +
-                    '</tr>';
-          });
-          html += '</tbody></table>';
+          var html = '';
+          if (drops.length) {
+            html += '<table class="wf-table" style="font-size:.85rem"><thead><tr>' +
+              '<th>Location</th><th>Mission</th><th class="right-align">Chance</th>' +
+              '</tr></thead><tbody>';
+            drops.forEach(function(d) {
+              html += '<tr><td>' + escHtml(d.location || '—') + '</td>' +
+                      '<td class="grey-text">' + escHtml(d.mission_type || '—') + '</td>' +
+                      '<td class="right-align grey-text">' + (d.drop_chance ? d.drop_chance.toFixed(2) + '%' : '—') + '</td>' +
+                      '</tr>';
+            });
+            html += '</tbody></table>';
+          }
+          if (relics.length) {
+            html += '<table class="wf-table" style="font-size:.85rem"><thead><tr>' +
+              '<th>Part</th><th>Relic</th><th class="right-align">Intact</th><th>Best locations</th>' +
+              '</tr></thead><tbody>';
+            relics.forEach(function(rl) {
+              var where = rl.locations && rl.locations.length
+                ? rl.locations.map(function(loc) {
+                    return escHtml((loc.mission_type || '') + ' — ' + (loc.location || '')) +
+                           (loc.rotation ? ' · Rot. ' + escHtml(loc.rotation) : '') +
+                           ' <span class="grey-text">(' + (loc.drop_chance ? loc.drop_chance.toFixed(2) + '%' : '?%') +
+                           (loc.avg_runs ? ' · ~' + loc.avg_runs + ' runs' : '') + ')</span>';
+                  }).join('<br>')
+                : '<span class="orange-text">Vaulted: drops from no mission now</span>';
+              html += '<tr><td>' + escHtml(rl.part || '—') + '</td>' +
+                      '<td style="overflow-wrap:anywhere">' + escHtml(rl.relic || '—') + '</td>' +
+                      '<td class="right-align grey-text">' + (rl.drop_chance ? rl.drop_chance.toFixed(2) + '%' : '—') + '</td>' +
+                      '<td style="overflow-wrap:anywhere">' + where + '</td></tr>';
+            });
+            html += '</tbody></table>';
+          }
           $('#farm-modal-body').html(html);
         }
         M.Modal.getInstance($('#farm-modal')[0]).open();

@@ -237,8 +237,29 @@ function dropBadge(drop) {
   var pct  = drop.drop_chance ? drop.drop_chance.toFixed(2) + '%' : '?%';
   var runs = drop.avg_runs ? ' · ~' + drop.avg_runs + ' runs' : '';
   return '<span class="grey-text" style="font-size:.78rem">' +
-         (drop.mission_type || '') + ' — ' + (drop.location || '') +
+         escText((drop.mission_type || '') + ' — ' + (drop.location || '')) +
          ' <span class="teal-text">(' + pct + runs + ')</span></span>';
+}
+
+// A relic holding a part: its Intact chance and its best locations, or that it is vaulted
+function relicBadge(relic) {
+  if (!relic) return '';
+  var pct = relic.drop_chance ? relic.drop_chance.toFixed(2) + '%' : '?%';
+  var html = '<span class="grey-text" style="font-size:.78rem;overflow-wrap:anywhere">' +
+             '<i class="material-icons tiny" style="vertical-align:middle">diamond</i> ' +
+             escText(relic.relic) + ' <span class="teal-text">(' + pct + ' Intact)</span>';
+  if (!relic.locations || !relic.locations.length) {
+    html += ' — <span class="orange-text">vaulted: drops from no mission now</span>';
+  } else {
+    html += ' — ' + relic.locations.map(function(loc) {
+      var where = escText((loc.mission_type || '') + ' — ' + (loc.location || '')) +
+                  (loc.rotation ? ' · Rot. ' + escText(loc.rotation) : '');
+      var runs = loc.avg_runs ? ' · ~' + loc.avg_runs + ' runs' : '';
+      return where + ' <span class="teal-text">(' + (loc.drop_chance ? loc.drop_chance.toFixed(2) + '%' : '?%') +
+             runs + ')</span>';
+    }).join('; ');
+  }
+  return html + '</span>';
 }
 
 function progressBar(pct, color) {
@@ -359,7 +380,7 @@ function renderTreeView(plan, goalId) {
               'onerror="this.style.display=\'none\'">';
     }
     html += '<div style="flex:1">';
-    html += '<strong class="white-text">' + comp.component_name + '</strong>';
+    html += '<strong class="white-text" style="overflow-wrap:anywhere">' + escText(comp.component_name) + '</strong>';
     if (comp.vaulted) html += vaultedLock(comp.vaulted_note, plan.in_resurgence);
     if (comp.drops && comp.drops.length) {
       html += '<br>' + dropBadge(comp.drops[0]);
@@ -367,6 +388,16 @@ function renderTreeView(plan, goalId) {
         html += ' <a href="#" class="teal-text more-toggle" style="font-size:.78rem" data-target="more-' + cbId + '">+' + (comp.drops.length - 1) + ' more</a>';
         html += '<div id="more-' + cbId + '" style="display:none">';
         comp.drops.slice(1).forEach(function(d) { html += dropBadge(d) + '<br>'; });
+        html += '</div>';
+      }
+    }
+    if (comp.relics && comp.relics.length) {
+      html += '<br>' + relicBadge(comp.relics[0]);
+      if (comp.relics.length > 1) {
+        html += ' <a href="#" class="teal-text more-toggle" style="font-size:.78rem" data-target="relics-' + cbId + '">+' +
+                (comp.relics.length - 1) + ' more relic' + (comp.relics.length > 2 ? 's' : '') + '</a>';
+        html += '<div id="relics-' + cbId + '" style="display:none">';
+        comp.relics.slice(1).forEach(function(r) { html += relicBadge(r) + '<br>'; });
         html += '</div>';
       }
     }
@@ -523,7 +554,7 @@ function renderVisualPlanBody(plan, goalId) {
               '<i class="material-icons" style="font-size:.62rem">check</i></div>';
 
       html += '</div>'; // /.wf-comp-wrap
-      html += '<div class="wf-comp-name grey-text">' + comp.component_name +
+      html += '<div class="wf-comp-name grey-text">' + escText(comp.component_name) +
               (plan.vaulted ? vaultedLock(plan.vaulted_note, false) : '') + '</div>';
       html += '</div>'; // /.wf-comp-item
     });
