@@ -221,6 +221,56 @@
   </div>
 </div>
 
+<!-- Market watch: cached prices of the watchlist (no request on page load) -->
+<div class="row">
+  <div class="col s12 m6">
+    <div class="card blue-grey darken-2" id="market-watch">
+      <div class="card-content white-text">
+        <span class="card-title"><i class="material-icons left">store</i>Market Watch</span>
+        <p class="grey-text" style="font-size:.85rem">
+          Last cached prices; a price older than {{ market_cache_hours }} hour(s) is marked stale.
+          Refresh them on the market page.
+        </p>
+        {% if market_watch %}
+        <table class="wf-table" id="market-watch-table">
+          <thead><tr><th>Name</th><th>Price</th><th></th></tr></thead>
+          <tbody>
+            {% for item in market_watch %}
+            <tr class="market-watch-row">
+              <td class="market-watch-name">{{ item.name }}</td>
+              <td class="market-watch-price">
+                {% if item.platinum_price is not none %}{{ item.platinum_price }}p{% else %}—{% endif %}
+                {% if item.stale %}
+                <span class="orange-text market-watch-stale" style="font-size:.75rem"
+                      title="Fetched {{ item.fetched_label }}">stale ({{ item.fetched_label }})</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if item.market_url %}
+                <a href="{{ item.market_url }}" target="_blank" rel="noopener" class="grey-text market-watch-link"
+                   title="warframe.market"><i class="material-icons tiny">open_in_new</i></a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="grey-text market-watch-empty">
+          Your watchlist is empty. Watch tradable items to see their prices here; the
+          <a href="{{ url_for('market.index') }}" class="teal-text">market page</a> explains how.
+        </p>
+        {% endif %}
+      </div>
+      {% if market_watch %}
+      <div class="card-action">
+        <a href="{{ url_for('market.index') }}" class="teal-text" id="market-watch-all">All watched items</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}

@@ -4,7 +4,7 @@ from flask_login import current_user, login_required
 from models.db import get_db
 from models.item import Item
 from services.auth_service import get_setting_int
-from services.market_api import get_price, market_url_for
+from services.market_api import get_price, watchlist_prices
 from services.request_ids import RequestIdError, json_object, parse_item_id, require_item
 
 market_bp = Blueprint('market', __name__, url_prefix='/market')
@@ -14,20 +14,8 @@ market_bp = Blueprint('market', __name__, url_prefix='/market')
 @login_required
 def index():
     uid = current_user.id
-    db = get_db()
-    rows = db.execute('''
-        SELECT i.*, mc.platinum_price, mc.fetched_at
-        FROM user_market_watchlist w
-        JOIN items i ON i.id = w.item_id
-        LEFT JOIN market_cache mc ON mc.item_id = i.id
-        WHERE w.user_id = ?
-        ORDER BY i.name
-    ''', (uid,)).fetchall()
-    watched = [dict(r) for r in rows]
-    for item in watched:
-        if item.get('market_url_name'):
-            item['market_url'] = market_url_for(item['market_url_name'])
     cache_hours = get_setting_int(uid, 'market_cache_hours')
+    watched = watchlist_prices(uid, cache_hours)
     return render_template('market.html', watched=watched,
                            prefs={'market_cache_hours': cache_hours})
 

@@ -8,11 +8,15 @@ from services.farming_service import (
     get_pinned_goals,
 )
 from services.auth_service import get_setting_int
+from services.market_api import watchlist_prices
 from services.resurgence_sync import resurgence_status
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
 _SESSION_NODE_KEY = 'advisor_node'
+
+# Rows in the dashboard's market watch panel; the market page lists them all.
+MARKET_WATCH_ROWS = 10
 
 
 @dashboard_bp.route('/dashboard')
@@ -42,6 +46,9 @@ def index():
     unowned = Progress.get_unowned_items(uid)[:10]
     farm_next = enrich_with_market(uid, unowned, cache_hours, buy_threshold, plat_per_hour)
 
+    # Market watch panel: cached prices only, never a request
+    market_watch = watchlist_prices(uid, cache_hours, limit=MARKET_WATCH_ROWS)
+
     return render_template(
         'dashboard.html',
         summary=summary,
@@ -52,5 +59,7 @@ def index():
         pinned_goals=pinned_goals,
         active_node=active_node,
         advisor_opportunities=advisor_opportunities,
+        market_watch=market_watch,
+        market_cache_hours=cache_hours,
     )
 
