@@ -63,7 +63,9 @@
         </a>
 
         <div style="margin-top:1.5rem">
-          <p class="grey-text">Import from a previously exported ZIP (older exports too). Rows in
+          <p class="grey-text">Import from a previously exported ZIP (older exports too), or from
+            one CSV file of an export under its export name (such as <code>warframe.csv</code>):
+            only that file's data changes. Rows in
             the file overwrite yours for the same item, new items are added, and anything the
             file does not name is kept. The file is checked first: one invalid cell refuses the
             whole import and nothing is written.</p>
@@ -71,10 +73,10 @@
             <div class="file-field input-field">
               <div class="btn blue-grey lighten-1">
                 <span>File</span>
-                <input type="file" name="import_file" accept=".zip">
+                <input type="file" name="import_file" accept=".zip,.csv">
               </div>
               <div class="file-path-wrapper">
-                <input class="file-path white-text" type="text" placeholder="Choose ZIP…">
+                <input class="file-path white-text" type="text" placeholder="Choose a ZIP or one CSV file of an export…">
               </div>
             </div>
             <button class="btn blue-grey lighten-1 waves-effect" type="submit">Import</button>

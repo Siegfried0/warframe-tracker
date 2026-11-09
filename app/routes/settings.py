@@ -96,7 +96,7 @@ def import_data():
         flash('No file uploaded.', 'error')
         return redirect(url_for('settings.index'))
     try:
-        result = import_user_data(current_user.id, uploaded.stream)
+        result = import_user_data(current_user.id, uploaded.stream, uploaded.filename or '')
     except ImportRefused as exc:
         flash(str(exc), 'error')
     else:

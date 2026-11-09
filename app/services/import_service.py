@@ -1,4 +1,5 @@
-"""Import of a user's tracker data from an export ZIP (formats 1, 2 and 3).
+"""Import of a user's tracker data from an export ZIP (formats 1, 2 and 3), or from one
+CSV file of an export.
 
 The import reads and checks every row of every known file first; any invalid cell
 refuses the whole import (``ImportRefused``, naming file, line and column) and nothing is
@@ -11,6 +12,10 @@ A ZIP holding ``format.csv`` (one row ``format, 3``) is format 3: every cell of 
 that starts with ``'`` followed by one of the export's escape triggers loses that first
 ``'`` before anything else reads it, which reverses the export's formula escape exactly.
 A ZIP without the marker (formats 1 and 2) is read as written, nothing unescaped.
+
+One CSV file uploaded alone (not a ZIP) is the export file its upload name says
+(``import_reader.export_name``) and is read as that member of a format-3 ZIP: unescaped,
+validated and written the same way; the user's other data is untouched.
 """
 import re
 from dataclasses import dataclass, field
@@ -22,7 +27,7 @@ from services.export_service import (CHECKLIST_FILE, FORMAT_FILE, GOALS_FILE, PR
 # The bounds and ImportRefused are the route's interface to the import; they live in the
 # reader and are re-exported here.
 from services.import_reader import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE,  # noqa: F401
-                                    ImportRefused, csv_rows, read_format, read_zip, refuse,
+                                    ImportRefused, csv_rows, read_format, read_upload, refuse,
                                     show)
 from services.import_writer import write_plan
 
@@ -109,14 +114,15 @@ class _Plan:
     ignored_settings: int = 0
 
 
-def _parse(texts: dict) -> _Plan:
+def _parse(texts: dict, bare: bool = False) -> _Plan:
+    """``bare``: one CSV file of an export, read as a member of a format-3 ZIP."""
     plan = _Plan()
     texts = dict(texts)
     marked = FORMAT_FILE in texts
     if marked:
         read_format(texts.pop(FORMAT_FILE))
     for fname in sorted(texts):
-        cols, rows = csv_rows(fname, texts[fname], unescape=marked)
+        cols, rows = csv_rows(fname, texts[fname], unescape=marked or bare)
         target, seen = _target(plan, fname), {}
         for line, row in rows:
             try:
@@ -217,10 +223,12 @@ def _parse_progress_row(cols: set, row: dict):
     return (name, cat, row_type, _name(row, 'row_key')), values
 
 
-def import_user_data(user_id: int, stream) -> ImportResult:
+def import_user_data(user_id: int, stream, filename=None) -> ImportResult:
     """Validate the whole upload, then write it for ``user_id`` in one transaction.
-    Raises ``ImportRefused`` (nothing written) on any invalid input or failed write."""
-    plan = _parse(read_zip(stream))
+    ``filename`` is the upload's file name: it says which file a bare CSV is (``None``: the
+    upload is a ZIP). Raises ``ImportRefused`` (nothing written) on any invalid input or
+    failed write."""
+    plan = _parse(*read_upload(stream, filename))
     db = get_db()
     _check_progress_goals(db, user_id, plan)
     try:
