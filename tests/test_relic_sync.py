@@ -201,6 +201,33 @@ def test_mission_rewards_still_give_their_mission_rows(ctx, source):
     assert rows == 1
 
 
+# the catalogue holds Ash, Ash Prime and Gyre, but no Gyre Prime
+MISSION_DROPS = [
+    ('a prime part missing from the catalogue', 'Gyre Prime Systems Blueprint', None),
+    ('a prime missing from the catalogue', 'Gyre Prime', None),
+    ('prime before plain', 'Ash Prime Neuroptics Blueprint', 'Ash Prime'),
+    ('plain item part', 'Ash Neuroptics Blueprint', 'Ash'),
+    ('plain item without a prime', 'Gyre Systems Blueprint', 'Gyre'),
+    ('a primed remainder is another word', 'Gyre Primed Systems Blueprint', 'Gyre'),
+    ('the item itself', 'Gyre', 'Gyre'),
+    ('a name prefix but not a word', 'Ashen Neuroptics Blueprint', None),
+]
+
+
+@pytest.mark.parametrize('case, reward, item', MISSION_DROPS, ids=[m[0] for m in MISSION_DROPS])
+def test_a_mission_reward_files_no_missing_primes_part_under_the_plain_item(
+        ctx, source, case, reward, item):
+    tables = copy.deepcopy(TABLES)
+    tables['missionRewards']['Venus']['Kiliken']['rewards'].append(
+        {'itemName': reward, 'rarity': 'Rare', 'chance': 5})
+    source.response = FakeResponse(payload=tables)
+    wiki_sync._sync_drop_sources()
+    filed = [r['name'] for r in ctx.execute(
+        "SELECT i.name FROM drop_sources d JOIN items i ON i.id = d.item_id "
+        "WHERE d.source_type = 'mission' AND d.notes = ?", (reward,))]
+    assert filed == ([item] if item else [])
+
+
 # ── Repetition (axis 3) ──────────────────────────────────────────────────────
 
 def test_a_second_sync_rebuilds_the_same_rows(ctx, source):

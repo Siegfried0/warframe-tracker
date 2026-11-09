@@ -1632,9 +1632,18 @@ def _build_item_prefix_lookup(db) -> list[tuple[str, int]]:
 
 def _match_drop_to_item(drop_name: str,
                         prefix_lookup: list[tuple[str, int]]) -> int | None:
-    """Return item_id if drop_name starts with a known item name, else None."""
+    """Return item_id if drop_name starts with a known item name, else None.
+
+    A Prime the catalogue lacks is no match: when the rest of the name begins with the
+    word 'Prime' and the item's name does not end in it ('Gyre Prime Systems Blueprint'
+    with Gyre but no Gyre Prime), the drop is skipped rather than filed under the plain
+    item; any shorter name it also starts with would be wrong too.
+    """
     for item_name, item_id in prefix_lookup:
         if drop_name == item_name or drop_name.startswith(item_name + ' '):
+            rest = drop_name[len(item_name):].split()
+            if rest and rest[0] == 'Prime' and item_name.split()[-1:] != ['Prime']:
+                return None
             return item_id
     return None
 

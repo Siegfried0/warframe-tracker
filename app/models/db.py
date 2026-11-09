@@ -153,6 +153,10 @@ def _migrate_v9(db, backend='sqlite'):
     """Add the relic_drops catalogue table: where each void relic drops.
 
     Expand only (a new table, no user data); the drop sync rebuilds its rows.
+
+    Filled by: a sync (Run Sync Now on the Wiki Sync page; the scheduled sync runs SYNC_INTERVAL_HOURS
+    after the app starts). The rows show as the relics holding a Prime part and where each relic drops,
+    on the Farming page and in an item's drop sources.
     """
     if backend == 'mssql':
         _migrate_v9_mssql(db)
