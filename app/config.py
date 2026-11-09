@@ -3,9 +3,50 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent  # app/
 
+# The key that older versions used when none was set. It is published with the source, so a
+# session or form token signed with it can be forged by anyone: the app refuses to start with it.
+PUBLISHED_DEFAULT_SECRET_KEY = 'dev-change-me-in-production'
+
+SECRET_KEY_HELP = (
+    'SECRET_KEY must be set to a long random value; it signs the login sessions and the form '
+    'tokens. Make one with: python -c "import secrets; print(secrets.token_hex(32))" '
+    'and set it in the environment before starting the app.'
+)
+
+
+class SecretKeyError(RuntimeError):
+    """The app was started without a usable SECRET_KEY. The message never holds a key value."""
+
+
+def secret_key_is_usable(value) -> bool:
+    """A key is usable when it is a non-blank string (or bytes) other than the published default.
+
+    Surrounding whitespace is ignored for the comparison; the default in another letter case is
+    a different key and is accepted.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = bytes(value).decode('utf-8')
+        except UnicodeDecodeError:
+            return len(value) > 0  # raw random bytes: nothing published can match them
+    if not isinstance(value, str):
+        return False
+    trimmed = value.strip()
+    return trimmed != '' and trimmed != PUBLISHED_DEFAULT_SECRET_KEY
+
+
+def require_usable_secret_key(value) -> None:
+    """Raise SecretKeyError when the key is missing, blank or the published default."""
+    if not secret_key_is_usable(value):
+        raise SecretKeyError(
+            'The app does not start: SECRET_KEY is missing, blank or the value published with '
+            'the source code. ' + SECRET_KEY_HELP
+        )
+
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-change-me-in-production')
+    # No default: create_app() refuses to start without a usable key.
+    SECRET_KEY = os.environ.get('SECRET_KEY')
     DATABASE_PATH = os.environ.get('DATABASE_PATH', str(BASE_DIR / 'warframe_tracker.db'))
 
     SESSION_LIFETIME_DAYS = int(os.environ.get('SESSION_LIFETIME_DAYS', 30))

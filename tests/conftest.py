@@ -2,8 +2,8 @@
 
 The app's modules import as top-level names from app/ (``from models.db import ...``), and
 importing ``app`` runs ``create_app()`` at import time. So app/ goes first on sys.path, and
-DATABASE_PATH names a throwaway database before the first import: no test ever opens the
-user's database.
+DATABASE_PATH names a throwaway database (and SECRET_KEY a random key) before the first
+import: no test ever opens the user's database.
 """
 import os
 import secrets
@@ -26,6 +26,9 @@ _IMPORT_DB = _IMPORT_ROOT / 'import.db'
 os.environ['DATABASE_PATH'] = str(_IMPORT_DB)
 os.environ['SYNC_INTERVAL_HOURS'] = '0'
 os.environ['AUTO_SYNC_ON_STARTUP'] = 'false'
+# The app refuses to start without a usable SECRET_KEY (importing it starts it): a random one
+# for this run, whatever the shell running the tests has set.
+os.environ['SECRET_KEY'] = secrets.token_hex(32)
 os.environ.pop('MSSQL_CONNECTION_STRING', None)
 os.environ.pop('EASYAUTH_ENABLED', None)
 sys.path.insert(0, str(APP_DIR))

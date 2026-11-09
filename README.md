@@ -33,9 +33,21 @@ pip install -r app/requirements.txt
 
 # 3 — jQuery 3.7 and Materialize CSS 1.0 are included in app/static/vendor/ (MIT licence)
 
-# 4 — start the server
+# 4 — make a secret key once and set it (it signs logins and form tokens; keep it private)
+python -c "import secrets; print(secrets.token_hex(32))"
+$env:SECRET_KEY = '<the printed value>'    # Windows (PowerShell)
+# export SECRET_KEY='<the printed value>'  # macOS / Linux
+
+# 5 — start the server
 python run.py
 ```
+
+The app does not start without `SECRET_KEY`, with a blank one, or with the example value
+older versions used (`dev-change-me-in-production`, published with the source): the message
+says how to make a key. Keep the same key across restarts, or everyone is logged out. Only
+`python app.py` run from inside `app/` starts without a key, for development: it then makes a
+random key for that run, listens on `127.0.0.1` only, and logs a warning (logins end when it
+stops).
 
 Open `http://localhost:5000`. On first run with an empty database the setup wizard creates the initial admin account.
 
@@ -58,11 +70,11 @@ The same codebase handles both targets. Mode is selected entirely by environment
 
 ### Private Server (default)
 
-No mandatory environment variables. SQLite and built-in login forms are used automatically.
+One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login forms are used automatically.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `SECRET_KEY` | *(insecure dev default)* | **Change this in production** |
+| `SECRET_KEY` | — (**required**) | Signs logins and form tokens: a long random value (`python -c "import secrets; print(secrets.token_hex(32))"`); the app does not start without one, with a blank one or with `dev-change-me-in-production` |
 | `DATABASE_PATH` | `warframe_tracker.db` | Absolute path to SQLite file |
 | `SESSION_LIFETIME_DAYS` | `30` | Session cookie lifetime |
 | `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS) |
@@ -95,7 +107,7 @@ Set these three variables; everything else is optional and identical to the priv
 
 | Variable | Required value | Effect |
 |---|---|---|
-| `SECRET_KEY` | A strong random value | **Required** — the App Service filesystem is ephemeral |
+| `SECRET_KEY` | A long random value (`python -c "import secrets; print(secrets.token_hex(32))"`) | **Required** — the app does not start without one; set it as an app setting (the App Service filesystem is ephemeral) |
 | `MSSQL_CONNECTION_STRING` | Full pyodbc connection string | Switches database backend from SQLite to Azure SQL |
 | `EASYAUTH_ENABLED` | `true` | Disables login forms; identity is read from EasyAuth HTTP headers |
 

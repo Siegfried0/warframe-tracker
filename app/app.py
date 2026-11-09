@@ -1,9 +1,10 @@
+import secrets
 from datetime import timedelta
 
 from flask import Flask, redirect, url_for
 from flask_login import LoginManager
 
-from config import Config
+from config import SECRET_KEY_HELP, Config, require_usable_secret_key, secret_key_is_usable
 from models.db import init_db
 from models.user import User
 from services import csrf
@@ -17,6 +18,9 @@ def create_app(config_overrides: dict = None):
     flask_app.config.from_object(Config)
     if config_overrides:
         flask_app.config.update(config_overrides)
+    # Sessions and form tokens are signed with this key: no start with a missing or published
+    # one, and nothing (the database included) is opened before this check.
+    require_usable_secret_key(flask_app.config.get('SECRET_KEY'))
 
     # <id64:...> in a route: a row id in the URL, 404 outside the signed 64-bit range.
     flask_app.url_map.converters['id64'] = Id64Converter
@@ -102,9 +106,36 @@ def _start_scheduler(flask_app):
         flask_app.logger.warning('APScheduler not installed — scheduled sync disabled.')
 
 
-# Module-level instance for Gunicorn / Azure App Service:
-#   gunicorn --bind=0.0.0.0 --timeout 600 app:app
-app = create_app()
+DEVELOPMENT_KEYLESS_WARNING = (
+    'SECRET_KEY is not set (or is blank or the published default): this development server '
+    'uses a random key for this process and listens on 127.0.0.1 only; logins end when it '
+    'stops. ' + SECRET_KEY_HELP
+)
+
+
+def development_run_settings(configured_key):
+    """How `python app.py` runs: (host, secret key to use or None, warning or None).
+
+    With a usable SECRET_KEY it runs as before (all interfaces, that key). Without one it is the single exemption from the startup check: a random key for this process only,
+    and the loopback address only, so the keyless start is reachable from this machine alone.
+    """
+    if secret_key_is_usable(configured_key):
+        return '0.0.0.0', None, None
+    return '127.0.0.1', secrets.token_hex(32), DEVELOPMENT_KEYLESS_WARNING
+
+
+def run_development_server():
+    """The development entry (`python app.py`): build the app and serve it with Flask."""
+    host, key, warning = development_run_settings(Config.SECRET_KEY)
+    flask_app = create_app({'SECRET_KEY': key} if key is not None else None)
+    if warning:
+        flask_app.logger.warning(warning)
+    flask_app.run(host=host, port=5000, debug=True)
+
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    run_development_server()
+else:
+    # Module-level instance for Gunicorn / Azure App Service (refused without a usable key):
+    #   gunicorn --bind=0.0.0.0 --timeout 600 app:app
+    app = create_app()
