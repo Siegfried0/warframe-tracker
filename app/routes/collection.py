@@ -5,6 +5,7 @@ from models.db import get_db
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
 from services.collection_service import ToggleError, toggle_progress
+from services.request_ids import RequestIdError, json_object, require_item
 from services.resurgence_sync import resurgence_status
 
 collection_bp = Blueprint('collection', __name__, url_prefix='/collection')
@@ -117,14 +118,14 @@ def toggle():
 @collection_bp.route('/note', methods=['POST'])
 @login_required
 def save_note():
-    data    = request.get_json(force=True)
-    item_id = data.get('item_id')
-    note    = data.get('note', '')
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        item = require_item(data.get('item_id'), strings=True)
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
+    note = data.get('note', '')
 
-    if not item_id:
-        return jsonify({'ok': False, 'error': 'item_id required'}), 400
-
-    Progress.upsert(current_user.id, item_id, note=note)
+    Progress.upsert(current_user.id, item.id, note=note)
     return jsonify({'ok': True})
 
 
@@ -132,25 +133,27 @@ def save_note():
 @login_required
 def update_rank():
     """Update owned_rank for an arcane (0 to mod_max_rank)."""
-    data       = request.get_json(force=True)
-    item_id    = data.get('item_id')
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        item = require_item(data.get('item_id'), strings=True)
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     owned_rank = data.get('owned_rank')
 
-    if item_id is None or owned_rank is None:
+    if owned_rank is None:
         return jsonify({'ok': False, 'error': 'item_id and owned_rank required'}), 400
 
     try:
         owned_rank = int(owned_rank)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return jsonify({'ok': False, 'error': 'owned_rank must be an integer'}), 400
 
-    item = Item.get_by_id(item_id)
-    if not item or item.category != 'arcane':
+    if item.category != 'arcane':
         return jsonify({'ok': False, 'error': 'item not found or not an arcane'}), 404
 
     max_rank = item.mod_max_rank or 0
     owned_rank = max(0, min(owned_rank, max_rank))
-    Progress.upsert(current_user.id, item_id, owned_rank=owned_rank)
+    Progress.upsert(current_user.id, item.id, owned_rank=owned_rank)
     return jsonify({'ok': True, 'owned_rank': owned_rank})
 
 
@@ -158,29 +161,31 @@ def update_rank():
 @login_required
 def update_target():
     """Update target_rank for an arcane (0 to mod_max_rank)."""
-    data        = request.get_json(force=True)
-    item_id     = data.get('item_id')
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        item = require_item(data.get('item_id'), strings=True)
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     target_rank = data.get('target_rank')
 
-    if item_id is None or target_rank is None:
+    if target_rank is None:
         return jsonify({'ok': False, 'error': 'item_id and target_rank required'}), 400
 
     try:
         target_rank = int(target_rank)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return jsonify({'ok': False, 'error': 'target_rank must be an integer'}), 400
 
-    item = Item.get_by_id(item_id)
-    if not item or item.category != 'arcane':
+    if item.category != 'arcane':
         return jsonify({'ok': False, 'error': 'item not found or not an arcane'}), 404
 
     max_rank = item.mod_max_rank or 0
     target_rank = max(0, min(target_rank, max_rank))
-    Progress.upsert(current_user.id, item_id, target_rank=target_rank)
+    Progress.upsert(current_user.id, item.id, target_rank=target_rank)
     return jsonify({'ok': True, 'target_rank': target_rank})
 
 
-@collection_bp.route('/drops/<int:item_id>')
+@collection_bp.route('/drops/<id64:item_id>')
 @login_required
 def drops(item_id):
     """Return drop sources for an item (used by the Farm-it modal for mods/arcanes)."""

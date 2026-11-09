@@ -25,6 +25,7 @@ from services.farming_service import (
     set_goal_progress,
     update_farming_goal,
 )
+from services.request_ids import RequestIdError, int64, item_ids_in, json_object, require_item
 
 farming_bp = Blueprint('farming', __name__, url_prefix='/farming')
 
@@ -65,28 +66,31 @@ def goals_search():
 @farming_bp.route('/goals/add', methods=['POST'])
 @login_required
 def goals_add():
-    data = request.get_json(force=True)
     try:
-        item_id = int(data['item_id'])
-    except (KeyError, TypeError, ValueError):
-        return jsonify({'ok': False, 'error': 'item_id required'}), 400
+        data = json_object(request.get_json(force=True, silent=True))
+        item_id = require_item(data.get('item_id'), strings=True).id
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     goal = add_farming_goal(current_user.id, item_id)
     if not goal:
         return jsonify({'ok': False, 'error': 'Item not found'}), 404
     return jsonify({'ok': True, 'goal': goal, 'already_exists': goal.get('already_exists', False)})
 
 
-@farming_bp.route('/goals/<int:goal_id>/remove', methods=['POST'])
+@farming_bp.route('/goals/<id64:goal_id>/remove', methods=['POST'])
 @login_required
 def goals_remove(goal_id):
     remove_farming_goal(current_user.id, goal_id)
     return jsonify({'ok': True})
 
 
-@farming_bp.route('/goals/<int:goal_id>/update', methods=['POST'])
+@farming_bp.route('/goals/<id64:goal_id>/update', methods=['POST'])
 @login_required
 def goals_update(goal_id):
-    data = request.get_json(force=True)
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     kwargs = {}
     if 'pinned' in data:
         kwargs['pinned'] = int(bool(data['pinned']))
@@ -94,14 +98,14 @@ def goals_update(goal_id):
         kwargs['display_mode'] = data['display_mode']
     if 'sort_order' in data:
         try:
-            kwargs['sort_order'] = int(data['sort_order'])
+            kwargs['sort_order'] = int64(data['sort_order'])
         except (TypeError, ValueError):
-            pass
+            pass  # not an integer, or outside the 64-bit range: ignored
     update_farming_goal(current_user.id, goal_id, **kwargs)
     return jsonify({'ok': True})
 
 
-@farming_bp.route('/goals/<int:goal_id>/progress', methods=['POST'])
+@farming_bp.route('/goals/<id64:goal_id>/progress', methods=['POST'])
 @login_required
 def goals_progress(goal_id):
     data = request.get_json(force=True)
@@ -109,7 +113,7 @@ def goals_progress(goal_id):
         row_type       = str(data['row_type'])
         row_key        = str(data['row_key'])
         acquired       = bool(data.get('acquired', False))
-        quantity_owned = max(0, int(data.get('quantity_owned', 0)))
+        quantity_owned = max(0, int64(data.get('quantity_owned', 0)))
         comp_state     = data.get('comp_state')  # None | 'pending' | 'blueprint' | 'crafted'
         if comp_state not in (None, 'pending', 'blueprint', 'crafted'):
             comp_state = None
@@ -124,7 +128,7 @@ def goals_progress(goal_id):
     return jsonify({'ok': True})
 
 
-@farming_bp.route('/goals/<int:goal_id>/plan')
+@farming_bp.route('/goals/<id64:goal_id>/plan')
 @login_required
 def goals_plan(goal_id):
     plan = get_goal_plan_with_progress(goal_id, current_user.id)
@@ -182,8 +186,8 @@ def advisor():
 @farming_bp.route('/compute', methods=['POST'])
 @login_required
 def compute():
-    data = request.get_json(force=True)
-    item_ids = [int(i) for i in data.get('item_ids', []) if str(i).isdigit()]
+    data = request.get_json(force=True, silent=True)
+    item_ids = item_ids_in(data.get('item_ids') if isinstance(data, dict) else None)
     if not item_ids:
         return jsonify({'ok': False, 'error': 'No items selected'}), 400
     route = compute_farming_route(current_user.id, item_ids)
@@ -209,8 +213,8 @@ def unpin():
 @farming_bp.route('/plan', methods=['POST'])
 @login_required
 def plan():
-    data = request.get_json(force=True)
-    item_ids = [int(i) for i in data.get('item_ids', []) if str(i).isdigit()]
+    data = request.get_json(force=True, silent=True)
+    item_ids = item_ids_in(data.get('item_ids') if isinstance(data, dict) else None)
     if not item_ids:
         return jsonify({'ok': False, 'error': 'No items selected'}), 400
     plans = [get_item_plan(iid, current_user.id) for iid in item_ids]
@@ -221,9 +225,12 @@ def plan():
 @farming_bp.route('/checklist', methods=['POST'])
 @login_required
 def checklist():
-    data = request.get_json(force=True)
     try:
-        item_id = int(data['item_id'])
+        data = json_object(request.get_json(force=True, silent=True))
+        item_id = require_item(data.get('item_id'), strings=True).id
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
+    try:
         component_name = str(data['component_name'])
         acquired = bool(data.get('acquired', False))
     except (KeyError, TypeError, ValueError):

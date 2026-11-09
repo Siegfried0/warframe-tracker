@@ -46,7 +46,7 @@ def create_user():
     return redirect(url_for('admin.index'))
 
 
-@admin_bp.route('/user/<int:uid>/role', methods=['POST'])
+@admin_bp.route('/user/<id64:uid>/role', methods=['POST'])
 @login_required
 @admin_required
 def set_role(uid):
@@ -65,7 +65,7 @@ def set_role(uid):
     return redirect(url_for('admin.index'))
 
 
-@admin_bp.route('/user/<int:uid>/toggle', methods=['POST'])
+@admin_bp.route('/user/<id64:uid>/toggle', methods=['POST'])
 @login_required
 @admin_required
 def toggle_active(uid):
@@ -81,7 +81,7 @@ def toggle_active(uid):
     return redirect(url_for('admin.index'))
 
 
-@admin_bp.route('/user/<int:uid>/reset-password', methods=['POST'])
+@admin_bp.route('/user/<id64:uid>/reset-password', methods=['POST'])
 @login_required
 @admin_required
 def reset_password(uid):
@@ -102,7 +102,7 @@ def reset_password(uid):
     return jsonify(ok=True)
 
 
-@admin_bp.route('/user/<int:uid>/delete', methods=['POST'])
+@admin_bp.route('/user/<id64:uid>/delete', methods=['POST'])
 @login_required
 @admin_required
 def delete_user(uid):

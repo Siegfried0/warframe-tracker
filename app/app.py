@@ -6,6 +6,7 @@ from flask_login import LoginManager
 from config import Config
 from models.db import init_db
 from models.user import User
+from services.request_ids import Id64Converter
 
 login_manager = LoginManager()
 
@@ -15,6 +16,9 @@ def create_app(config_overrides: dict = None):
     flask_app.config.from_object(Config)
     if config_overrides:
         flask_app.config.update(config_overrides)
+
+    # <id64:...> in a route: a row id in the URL, 404 outside the signed 64-bit range.
+    flask_app.url_map.converters['id64'] = Id64Converter
 
     flask_app.permanent_session_lifetime = timedelta(
         days=flask_app.config['SESSION_LIFETIME_DAYS']

@@ -5,6 +5,7 @@ from models.db import get_db
 from models.item import Item
 from services.auth_service import get_setting_int
 from services.market_api import get_price, market_url_for
+from services.request_ids import RequestIdError, json_object, parse_item_id, require_item
 
 market_bp = Blueprint('market', __name__, url_prefix='/market')
 
@@ -31,7 +32,7 @@ def index():
                            prefs={'market_cache_hours': cache_hours})
 
 
-@market_bp.route('/price/<int:item_id>')
+@market_bp.route('/price/<id64:item_id>')
 @login_required
 def price(item_id):
     item = Item.get_by_id(item_id)
@@ -46,9 +47,11 @@ def price(item_id):
 @market_bp.route('/watch', methods=['POST'])
 @login_required
 def watch():
-    item_id = request.get_json(force=True).get('item_id')
-    if not item_id:
-        return jsonify({'ok': False, 'error': 'item_id required'}), 400
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        item_id = require_item(data.get('item_id'), strings=True).id
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     db = get_db()
     db.execute(
         '''INSERT OR IGNORE INTO user_market_watchlist (user_id, item_id) VALUES (?, ?)''',
@@ -61,9 +64,12 @@ def watch():
 @market_bp.route('/unwatch', methods=['POST'])
 @login_required
 def unwatch():
-    item_id = request.get_json(force=True).get('item_id')
-    if not item_id:
-        return jsonify({'ok': False, 'error': 'item_id required'}), 400
+    # Idempotent: a well-formed id needs no existing item (nothing to remove is fine).
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        item_id = parse_item_id(data.get('item_id'), strings=True)
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     db = get_db()
     db.execute(
         'DELETE FROM user_market_watchlist WHERE user_id = ? AND item_id = ?',

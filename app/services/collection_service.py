@@ -5,13 +5,10 @@ toggled and the current flags in, the flags to write out. `toggle_progress` vali
 request's item and field, reads the user's row, applies the rule and writes it; the
 route only parses the request and turns the result or a `ToggleError` into JSON.
 """
-from models.item import Item
 from models.progress import Progress
+from services.request_ids import RequestIdError, require_item
 
 TOGGLE_FIELDS = ('in_possession', 'mastered', 'subsumed', 'resurgence_watch')
-
-# An item id outside SQLite's 64-bit INTEGER range cannot name a row: it is an unknown item.
-_ID_MIN, _ID_MAX = -(2 ** 63), 2 ** 63 - 1
 
 
 class ToggleError(Exception):
@@ -62,12 +59,13 @@ def toggle_progress(user_id: int, item_id, field) -> dict:
     outside the 64-bit integer range, is `ToggleError(404)`.
     Nothing is written when an error is raised.
     """
-    if (not isinstance(item_id, int) or isinstance(item_id, bool)
-            or not isinstance(field, str) or field not in TOGGLE_FIELDS):
+    if not isinstance(field, str) or field not in TOGGLE_FIELDS:
         raise ToggleError(400, 'invalid request')
-    item = Item.get_by_id(item_id) if _ID_MIN <= item_id <= _ID_MAX else None
-    if not item:
-        raise ToggleError(404, 'item not found')
+    try:
+        item = require_item(item_id)  # JSON integers only: the toggle takes no string form
+    except RequestIdError as err:
+        raise ToggleError(err.status, err.message) from err
+    item_id = item.id
     current = Progress.get_for_user(user_id, item_id) or {}
     writes = toggle_flags(field, current, item.category, item.source)
     Progress.upsert(user_id, item_id, **writes)
