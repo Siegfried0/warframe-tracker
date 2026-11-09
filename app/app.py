@@ -6,6 +6,7 @@ from flask_login import LoginManager
 from config import Config
 from models.db import init_db
 from models.user import User
+from services import csrf
 from services.request_ids import Id64Converter, RequestJSONProvider
 
 login_manager = LoginManager()
@@ -25,6 +26,9 @@ def create_app(config_overrides: dict = None):
     flask_app.permanent_session_lifetime = timedelta(
         days=flask_app.config['SESSION_LIFETIME_DAYS']
     )
+
+    # Every unsafe request carries the session's CSRF token; checked before any other hook.
+    csrf.init_app(flask_app)
 
     login_manager.init_app(flask_app)
     login_manager.login_view = 'auth.login'

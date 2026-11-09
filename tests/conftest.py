@@ -6,6 +6,7 @@ DATABASE_PATH names a throwaway database before the first import: no test ever o
 user's database.
 """
 import os
+import secrets
 import shutil
 import socket
 import sys
@@ -13,6 +14,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from flask.testing import FlaskClient
+from werkzeug.datastructures import Headers
 
 APP_DIR = Path(__file__).resolve().parent.parent / 'app'
 
@@ -78,9 +81,38 @@ def app(tmp_path):
         scheduler.shutdown(wait=False)
 
 
+class TokenClient(FlaskClient):
+    """A test client that sends the session's CSRF token on every unsafe request, in the
+    X-CSRF-Token header, as the app's own pages do (the hidden field or app.js). A request
+    that sets the header itself keeps it. Tests of the refusal use ``app.test_client()``,
+    which sends no token."""
+
+    def open(self, *args, **kwargs):
+        method = str(kwargs.get('method') or 'GET').upper()
+        plain = not args or isinstance(args[0], str)
+        if plain and method not in ('GET', 'HEAD', 'OPTIONS'):
+            headers = Headers(kwargs.pop('headers', None) or {})
+            if 'X-CSRF-Token' not in headers:
+                headers['X-CSRF-Token'] = self.csrf_token()
+            kwargs['headers'] = headers
+        return super().open(*args, **kwargs)
+
+    def csrf_token(self) -> str:
+        """The session's token, put into the session first if it has none yet (as the first
+        page the browser loads would)."""
+        from services import csrf
+        with self.session_transaction() as sess:
+            token = sess.get(csrf.SESSION_KEY)
+            if not token:
+                token = secrets.token_urlsafe(32)
+                sess[csrf.SESSION_KEY] = token
+        return token
+
+
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    """The app's client, sending the session's CSRF token like the app's pages."""
+    return TokenClient(app, app.response_class, use_cookies=True)
 
 
 @pytest.fixture

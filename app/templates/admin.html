@@ -10,6 +10,7 @@
   <div class="card-content white-text">
     <span class="card-title">Create Local User</span>
     <form method="post" action="{{ url_for('admin.create_user') }}">
+      {{ csrf_field() }}
       <div class="row" style="margin-bottom:0">
         <div class="input-field col s12 m3">
           <input id="new_username" name="username" type="text" class="white-text" required>
@@ -66,6 +67,7 @@
           <td>
             {% if u.id != current_user.id %}
             <form method="post" action="{{ url_for('admin.set_role', uid=u.id) }}" style="display:inline">
+              {{ csrf_field() }}
               <select name="role" class="browser-default blue-grey darken-3 white-text"
                       style="border:none;background:transparent;cursor:pointer;font-size:.9rem"
                       onchange="this.form.submit()">
@@ -87,6 +89,7 @@
           <td>
             {% if u.id != current_user.id %}
             <form method="post" action="{{ url_for('admin.toggle_active', uid=u.id) }}" style="display:inline">
+              {{ csrf_field() }}
               <button class="btn-flat {{ 'orange-text' if u.is_active else 'green-text' }} waves-effect" type="submit"
                       title="{{ 'Deactivate' if u.is_active else 'Activate' }}">
                 <i class="material-icons">{{ 'block' if u.is_active else 'check_circle' }}</i>
@@ -102,6 +105,7 @@
             {% endif %}
             <form method="post" action="{{ url_for('admin.delete_user', uid=u.id) }}" style="display:inline"
                   onsubmit="return confirm('Delete {{ u.username }}? This cannot be undone.')">
+              {{ csrf_field() }}
               <input type="hidden" name="confirm" value="DELETE">
               <button class="btn-flat red-text waves-effect" type="submit" title="Delete user">
                 <i class="material-icons">delete_forever</i>
@@ -163,7 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     fetch('/admin/user/' + _pwUid + '/reset-password', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken()},
       body: JSON.stringify({password: pw})
     })
     .then(function (r) { return r.json(); })

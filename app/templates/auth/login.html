@@ -7,6 +7,7 @@
       <div class="card-content white-text">
         <span class="card-title"><i class="material-icons left">login</i>Login</span>
         <form method="post">
+          {{ csrf_field() }}
           <div class="input-field">
             <input id="username" name="username" type="text" class="white-text" required autofocus>
             <label for="username" class="white-text">Username</label>

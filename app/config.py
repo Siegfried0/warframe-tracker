@@ -10,6 +10,10 @@ class Config:
 
     SESSION_LIFETIME_DAYS = int(os.environ.get('SESSION_LIFETIME_DAYS', 30))
 
+    # The session cookie is not sent on cross-site posts (defence in depth beside the CSRF
+    # token); 'Strict', 'Lax' or 'None' (the last needs HTTPS).
+    SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+
     MARKET_CACHE_HOURS = int(os.environ.get('MARKET_CACHE_HOURS', 6))
 
     AUTO_SYNC_ON_STARTUP = os.environ.get('AUTO_SYNC_ON_STARTUP', 'false').lower() == 'true'

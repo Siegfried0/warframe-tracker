@@ -15,6 +15,7 @@
           {% endfor %}
         {% endwith %}
         <form method="post">
+          {{ csrf_field() }}
           <div class="input-field">
             <input id="username" name="username" type="text" class="white-text" required autofocus>
             <label for="username" class="white-text">Username</label>

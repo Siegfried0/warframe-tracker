@@ -2,6 +2,7 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from flask_login import current_user, login_required, login_user, logout_user
 
 from models.user import User
+from services.csrf import rotate_token
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -31,6 +32,7 @@ def setup():
         else:
             user = User.create(username=username, password=password,
                                email=email, role='admin')
+            rotate_token()
             login_user(user, remember=True)
             flash(f'Welcome, {user.username}! Admin account created.', 'success')
             return redirect(url_for('dashboard.index'))
@@ -53,6 +55,7 @@ def login():
 
         user = User.get_by_username(username)
         if user and user.is_active and user.check_password(password):
+            rotate_token()
             login_user(user, remember=remember)
             user.update_last_login()
             next_url = request.args.get('next') or url_for('dashboard.index')
@@ -61,9 +64,11 @@ def login():
     return render_template('auth/login.html')
 
 
-@auth_bp.route('/logout')
+# POST only (with the CSRF token, like every unsafe request): a GET never signs anyone out.
+@auth_bp.route('/logout', methods=['POST'])
 @login_required
 def logout():
+    rotate_token()
     if current_app.config.get('EASYAUTH_ENABLED'):
         return redirect('/.auth/logout')
     logout_user()
@@ -100,6 +105,7 @@ def register():
             flash(error, 'error')
         else:
             user = User.create(username=username, password=password, email=email)
+            rotate_token()
             login_user(user, remember=True)
             user.update_last_login()
             flash(f'Account created. Welcome, {user.username}!', 'success')

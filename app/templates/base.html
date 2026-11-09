@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}Warframe Tracker{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/materialize/css/materialize.min.css') }}">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -41,7 +42,16 @@
       <li{% if request.endpoint and request.endpoint.startswith('settings') %} class="active"{% endif %}>
         <a href="{{ url_for('settings.index') }}"><i class="material-icons left">settings</i>Settings</a>
       </li>
-      <li><a href="{{ '/.auth/logout' if easyauth_enabled else url_for('auth.logout') }}"><i class="material-icons left">logout</i>{{ current_user.username }}</a></li>
+      <li>
+        {% if easyauth_enabled %}
+        <a href="/.auth/logout"><i class="material-icons left">logout</i>{{ current_user.username }}</a>
+        {% else %}
+        <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
+          {{ csrf_field() }}
+          <button type="submit" title="Log out"><i class="material-icons left">logout</i>{{ current_user.username }}</button>
+        </form>
+        {% endif %}
+      </li>
     </ul>
   </div>
 </nav>
@@ -57,7 +67,16 @@
   {% endif %}
   <li><a href="{{ url_for('settings.index') }}"><i class="material-icons">settings</i>Settings</a></li>
   <li><div class="divider"></div></li>
-  <li><a href="{{ '/.auth/logout' if easyauth_enabled else url_for('auth.logout') }}"><i class="material-icons">logout</i>Logout</a></li>
+  <li>
+    {% if easyauth_enabled %}
+    <a href="/.auth/logout"><i class="material-icons">logout</i>Logout</a>
+    {% else %}
+    <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
+      {{ csrf_field() }}
+      <button type="submit"><i class="material-icons">logout</i>Logout</button>
+    </form>
+    {% endif %}
+  </li>
 </ul>
 {% endif %}
 

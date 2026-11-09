@@ -65,6 +65,7 @@ No mandatory environment variables. SQLite and built-in login forms are used aut
 | `SECRET_KEY` | *(insecure dev default)* | **Change this in production** |
 | `DATABASE_PATH` | `warframe_tracker.db` | Absolute path to SQLite file |
 | `SESSION_LIFETIME_DAYS` | `30` | Session cookie lifetime |
+| `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS) |
 | `MARKET_CACHE_HOURS` | `6` | Market price cache TTL |
 | `AUTO_SYNC_ON_STARTUP` | `false` | Run wiki sync at server start |
 | `SYNC_INTERVAL_HOURS` | `24` | Background sync interval (0 = off) |
@@ -80,6 +81,14 @@ No mandatory environment variables. SQLite and built-in login forms are used aut
 | `BACKUP_S3_ACCESS_KEY` | — | S3 credentials |
 | `BACKUP_S3_SECRET_KEY` | — | |
 
+**Forms and cross-site requests.** Every form and every change the pages send carries a
+per-session security token, and the server refuses a change without it (protection against
+cross-site request forgery). Logging out is a button in the menu that sends it too. A form left
+open across a login, a logout or an expired session is refused once with a page saying
+"Reload the page and try again"; after a reload it works. A script or tool outside the browser
+that posts to the app must first read the token from a page (`<meta name="csrf-token">`) and
+send it in the `X-CSRF-Token` header with the same session cookie.
+
 ### Azure App Service
 
 Set these three variables; everything else is optional and identical to the private-server table above.
@@ -93,7 +102,7 @@ Set these three variables; everything else is optional and identical to the priv
 **EasyAuth setup note**: EasyAuth must also be enabled at the Azure portal level (App Service → Authentication blade) independently of this environment variable. The variable tells the app to trust the injected headers; it does not configure the Azure platform itself.
 
 When `EASYAUTH_ENABLED=true`:
-- The app's login, register, and first-run setup pages redirect to `/.auth/login` and `/.auth/logout`.
+- The app's login, register, and first-run setup pages redirect to `/.auth/login`; the menu's logout entry links to `/.auth/logout`.
 - The first user to access the app is auto-provisioned as `admin`.
 - Account creation via the admin panel is hidden (accounts are created automatically on first EasyAuth access); role assignment remains available.
 

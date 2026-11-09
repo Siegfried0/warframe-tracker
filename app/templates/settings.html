@@ -12,6 +12,7 @@
       <div class="card-content white-text">
         <span class="card-title">Preferences</span>
         <form method="post">
+          {{ csrf_field() }}
           <input type="hidden" name="action" value="save_preferences">
           {% for key, label, default in settings_meta %}
           <div class="input-field">
@@ -31,6 +32,7 @@
       <div class="card-content white-text">
         <span class="card-title">Change Password</span>
         <form method="post">
+          {{ csrf_field() }}
           <input type="hidden" name="action" value="change_password">
           <div class="input-field">
             <input id="current_password" name="current_password" type="password" class="white-text" required>
@@ -70,6 +72,7 @@
             file does not name is kept. The file is checked first: one invalid cell refuses the
             whole import and nothing is written.</p>
           <form method="post" enctype="multipart/form-data" action="{{ url_for('settings.import_data') }}">
+            {{ csrf_field() }}
             <div class="file-field input-field">
               <div class="btn blue-grey lighten-1">
                 <span>File</span>
@@ -92,6 +95,7 @@
 
         <p>Clear all your progress data. Your account is kept.</p>
         <form method="post" class="inline-form" style="margin-bottom:1.5rem">
+          {{ csrf_field() }}
           <input type="hidden" name="action" value="clear_progress">
           <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
             <input name="confirm_clear" placeholder='Type CLEAR to confirm' class="danger-input white-text" style="flex:1;min-width:200px">
@@ -101,6 +105,7 @@
 
         <p>Permanently delete your account and all data. Irreversible.</p>
         <form method="post" class="inline-form">
+          {{ csrf_field() }}
           <input type="hidden" name="action" value="delete_account">
           <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
             <input name="confirm_delete" placeholder='Type DELETE to confirm' class="danger-input white-text" style="flex:1;min-width:200px">
@@ -122,6 +127,7 @@
           (<code>BACKUP_LOCAL_PATH</code>, <code>BACKUP_S3_BUCKET</code>, etc. — see the README).
         </p>
         <form method="post">
+          {{ csrf_field() }}
           <input type="hidden" name="action" value="backup_now">
           <button class="btn blue-grey lighten-1 waves-effect" type="submit">
             <i class="material-icons left">cloud_upload</i>Back Up Now
