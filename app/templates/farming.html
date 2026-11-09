@@ -29,9 +29,27 @@
 </div>
 
 <!-- ── Goal Cards ────────────────────────────────────────────────────────── -->
+{#- Move up / move down: a goal moves within its pin group (pinned goals stay first), so the
+    first card of a group cannot move up and the last cannot move down. -#}
+{% macro move_buttons(goal, first_in_group, last_in_group, style='', icon_style='') -%}
+            <button type="button" class="btn-small blue-grey waves-effect goal-move-btn"
+                    data-goal="{{ goal.goal_id }}" data-direction="up"
+                    title="Move goal up" aria-label="Move {{ goal.item_name }} up"
+                    {% if style %}style="{{ style }}"{% endif %}{% if first_in_group %} disabled{% endif %}>
+              <i class="material-icons" aria-hidden="true"{% if icon_style %} style="{{ icon_style }}"{% endif %}>arrow_upward</i>
+            </button>
+            <button type="button" class="btn-small blue-grey waves-effect goal-move-btn"
+                    data-goal="{{ goal.goal_id }}" data-direction="down"
+                    title="Move goal down" aria-label="Move {{ goal.item_name }} down"
+                    {% if style %}style="{{ style }}"{% endif %}{% if last_in_group %} disabled{% endif %}>
+              <i class="material-icons" aria-hidden="true"{% if icon_style %} style="{{ icon_style }}"{% endif %}>arrow_downward</i>
+            </button>
+{%- endmacro %}
 {% if goals %}
 <div class="row" id="goals-section" style="margin-bottom:.5rem">
   {% for goal in goals %}
+  {% set first_in_group = loop.first or loop.previtem.pinned != goal.pinned %}
+  {% set last_in_group = loop.last or loop.nextitem.pinned != goal.pinned %}
   <div class="col s12 m6 l4 goal-col" id="goal-col-{{ goal.goal_id }}">
     <div class="card blue-grey darken-2 wf-goal-card" data-goal-id="{{ goal.goal_id }}">
 
@@ -71,6 +89,7 @@
                     data-goal="{{ goal.goal_id }}" data-pinned="{{ goal.pinned }}" title="Pin to dashboard">
               <i class="material-icons">push_pin</i>
             </button>
+            {{ move_buttons(goal, first_in_group, last_in_group) }}
             <button class="btn-small red darken-3 waves-effect goal-remove-btn"
                     data-goal="{{ goal.goal_id }}" title="Remove goal">
               <i class="material-icons">delete</i>
@@ -125,6 +144,7 @@
                     style="padding:0 .5rem">
               <i class="material-icons" style="font-size:.9rem">push_pin</i>
             </button>
+            {{ move_buttons(goal, first_in_group, last_in_group, 'padding:0 .5rem', 'font-size:.9rem') }}
             <button class="btn-small red darken-3 waves-effect goal-remove-btn"
                     data-goal="{{ goal.goal_id }}" title="Remove goal" style="padding:0 .5rem">
               <i class="material-icons" style="font-size:.9rem">delete</i>
@@ -892,6 +912,38 @@ $(document).on('click', '.goal-pin-btn', function() {
         $('[data-goal="' + goalId + '"].goal-pin-btn').removeClass('amber darken-2').addClass('blue-grey');
         M.toast({html: 'Goal unpinned.'});
       }
+    }
+  });
+});
+
+// ── Move goal up / down ───────────────────────────────────────────────────────
+// The server moves the goal within its pin group and renumbers the order; the page then
+// reloads, so the cards, their groups (a pin toggle does not reorder in place) and the
+// buttons' edge states all come from the order the server wrote. The buttons stay
+// disabled while a move is in flight, so a double click moves once.
+
+$(document).on('click', '.goal-move-btn', function() {
+  var $btn = $(this);
+  if ($btn.prop('disabled')) return;
+  var goalId = $btn.data('goal');
+  var $all = $('.goal-move-btn');
+  var wasDisabled = $all.map(function() { return $(this).prop('disabled'); }).get();
+  $all.prop('disabled', true);
+  function restore() {
+    $all.each(function(i) { $(this).prop('disabled', wasDisabled[i]); });
+  }
+  $.ajax({
+    url: '/farming/goals/' + goalId + '/move',
+    method: 'POST', contentType: 'application/json',
+    data: JSON.stringify({direction: $btn.data('direction')}),
+    success: function(r) {
+      if (r.ok) { location.reload(); return; }
+      restore();
+      M.toast({html: escText(r.error || 'Could not move the goal.')});
+    },
+    error: function() {
+      restore();
+      M.toast({html: 'Could not move the goal.'});
     }
   });
 });

@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 from models.progress import Progress
 from services.auth_service import get_setting
 from services.farming_service import (
+    GOAL_MOVE_DIRECTIONS,
     add_farming_goal,
     clear_pinned_route,
     compute_farming_route,
@@ -18,6 +19,7 @@ from services.farming_service import (
     get_item_plan,
     get_pinned_goals,
     get_pinned_route,
+    move_farming_goal,
     pin_route,
     remove_farming_goal,
     search_goal_items,
@@ -102,6 +104,21 @@ def goals_update(goal_id):
         except (TypeError, ValueError):
             pass  # not an integer, or outside the 64-bit range: ignored
     update_farming_goal(current_user.id, goal_id, **kwargs)
+    return jsonify({'ok': True})
+
+
+@farming_bp.route('/goals/<id64:goal_id>/move', methods=['POST'])
+@login_required
+def goals_move(goal_id):
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
+    direction = data.get('direction')
+    if not isinstance(direction, str) or direction not in GOAL_MOVE_DIRECTIONS:
+        return jsonify({'ok': False, 'error': 'direction must be up or down'}), 400
+    if not move_farming_goal(current_user.id, goal_id, direction):
+        return jsonify({'ok': False, 'error': 'Goal not found'}), 404
     return jsonify({'ok': True})
 
 

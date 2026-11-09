@@ -289,7 +289,7 @@ def get_farming_goals(user_id: int) -> list[dict]:
              FROM farming_goals fg
              JOIN items i ON i.id = fg.item_id
             WHERE fg.user_id = ?
-            ORDER BY fg.pinned DESC, fg.sort_order, fg.created_at''',
+            ORDER BY fg.pinned DESC, fg.sort_order, fg.created_at, fg.id''',
         (user_id,),
     ).fetchall()
     goals = []
@@ -309,7 +309,7 @@ def get_pinned_goals(user_id: int) -> list[dict]:
              FROM farming_goals fg
              JOIN items i ON i.id = fg.item_id
             WHERE fg.user_id = ? AND fg.pinned = 1
-            ORDER BY fg.sort_order, fg.created_at''',
+            ORDER BY fg.sort_order, fg.created_at, fg.id''',
         (user_id,),
     ).fetchall()
     goals = []
@@ -331,12 +331,15 @@ def add_farming_goal(user_id: int, item_id: int) -> dict:
         return {}
 
     existing = db.execute(
-        'SELECT id FROM farming_goals WHERE user_id = ? AND item_id = ?',
+        '''SELECT id, pinned, display_mode, sort_order FROM farming_goals
+            WHERE user_id = ? AND item_id = ?''',
         (user_id, item_id),
     ).fetchone()
 
     if existing:
         goal_id = existing['id']
+        pinned, display_mode, sort_order = (
+            existing['pinned'], existing['display_mode'], existing['sort_order'])
         already_exists = True
     else:
         max_row = db.execute(
@@ -353,6 +356,7 @@ def add_farming_goal(user_id: int, item_id: int) -> dict:
             'SELECT id FROM farming_goals WHERE user_id = ? AND item_id = ?',
             (user_id, item_id),
         ).fetchone()['id']
+        pinned, display_mode, sort_order = 0, 'tree', next_order
         already_exists = False
 
     return {
@@ -362,9 +366,9 @@ def add_farming_goal(user_id: int, item_id: int) -> dict:
         'category':      item_row['category'],
         'vaulted':       item_row['vaulted'],
         'image_url':     item_row['image_url'],
-        'pinned':        0,
-        'display_mode':  'tree',
-        'sort_order':    0,
+        'pinned':        pinned,
+        'display_mode':  display_mode,
+        'sort_order':    sort_order,
         'progress_pct':  _compute_progress_pct(user_id, goal_id, item_id),
         'already_exists': already_exists,
     }
@@ -389,6 +393,64 @@ def update_farming_goal(user_id: int, goal_id: int, **kwargs):
         list(fields.values()) + [goal_id, user_id],
     )
     db.commit()
+
+
+GOAL_MOVE_DIRECTIONS = ('up', 'down')
+
+
+def move_farming_goal(user_id: int, goal_id: int, direction: str) -> bool:
+    """Move one of the user's goals one place up or down within its pin group.
+
+    The goals are taken in the planner's order (pinned first, then `sort_order`,
+    `created_at`, `id`); the goal swaps places with its neighbour in that order when the
+    neighbour has the same pin state. Then every goal of the user gets `sort_order` 0..n-1
+    in the resulting order, so goals that shared a value are told apart by the first move.
+    At the edge of its group the goal stays put and nothing is written. Pinning or
+    unpinning never touches `sort_order`.
+
+    One transaction. Its first statement is a write on the user's rows, so a concurrent
+    move of the same user waits for this one to commit (SQLite: the write lock; MSSQL: the
+    rows' locks) and then reads the order this one wrote: whatever the interleaving, the
+    result is a valid order with every goal once.
+
+    Returns False, writing nothing, when the user has no goal `goal_id` or `direction` is
+    not `up` or `down`; True otherwise, also when the goal is at the edge of its group.
+    """
+    if direction not in GOAL_MOVE_DIRECTIONS:
+        return False
+    db = get_db()
+    try:
+        db.execute(
+            'UPDATE farming_goals SET sort_order = sort_order WHERE user_id = ?',
+            (user_id,),
+        )
+        rows = db.execute(
+            '''SELECT id, pinned, sort_order FROM farming_goals
+                WHERE user_id = ?
+                ORDER BY pinned DESC, sort_order, created_at, id''',
+            (user_id,),
+        ).fetchall()
+        order = [(r['id'], r['pinned'], r['sort_order']) for r in rows]
+        index = next((i for i, row in enumerate(order) if row[0] == goal_id), None)
+        if index is None:
+            db.rollback()
+            return False
+        other = index - 1 if direction == 'up' else index + 1
+        if not (0 <= other < len(order) and order[other][1] == order[index][1]):
+            db.rollback()  # at the edge of its group: nothing changes
+            return True
+        order[index], order[other] = order[other], order[index]
+        for position, (row_id, _pinned, current) in enumerate(order):
+            if current != position:
+                db.execute(
+                    'UPDATE farming_goals SET sort_order = ? WHERE id = ? AND user_id = ?',
+                    (position, row_id, user_id),
+                )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return True
 
 
 # ── Goal Progress Tracking ───────────────────────────────────────────────────

@@ -249,7 +249,8 @@ def test_a_rank_that_is_no_finite_integer_is_400_and_writes_nothing(app, admin_c
 OUT_OF_RANGE_PATHS = ['9223372036854775808', '18446744073709551616', '1' + '0' * 30,
                       '9' * 400, '%D9%A1', '%EF%BC%91', '-1', '+1', '1.0', '0x10', '%201']
 
-URL_ROUTE_IDS = ['drops', 'price', 'goal-update', 'goal-progress', 'goal-plan', 'goal-remove',
+URL_ROUTE_IDS = ['drops', 'price', 'goal-update', 'goal-progress', 'goal-plan', 'goal-move',
+                 'goal-remove',
                  'admin-role', 'admin-toggle', 'admin-reset-password', 'admin-delete']
 
 
@@ -263,6 +264,7 @@ def url_cases(world):
         ('POST', '/farming/goals/{}/progress', goal,
          {'json': {'row_type': 'component', 'row_key': 'Barrel', 'acquired': True}}),
         ('GET', '/farming/goals/{}/plan', goal, {}),
+        ('POST', '/farming/goals/{}/move', goal, {'json': {'direction': 'up'}}),
         ('POST', '/farming/goals/{}/remove', goal, {'json': {}}),
         ('POST', '/admin/user/{}/role', other, form),
         ('POST', '/admin/user/{}/toggle', other, {}),
