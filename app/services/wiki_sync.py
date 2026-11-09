@@ -1823,7 +1823,8 @@ def _sync_mission_reward_drops(db, prefix_lookup: list[tuple[str, int]],
 
 def _sync_drop_sources() -> int:
     """Rebuild drop_sources and relic_drops in one transaction from WFCD component data,
-    resource drops, and the warframestat.us drop tables (mission rewards and relics)."""
+    resource drops, and the warframestat.us drop tables (mission rewards, bounty rewards and
+    relics)."""
     log.info('Syncing drop sources…')
     db = get_db()
     try:

@@ -1,6 +1,6 @@
 """Void relic drop sources, read from the drop tables the drop sync already fetches.
 
-Two sections of the one drop-table response are read:
+These sections of the one drop-table response are read:
 
 - ``relics``: every relic per refinement state with its rewards. Each reward of a relic's
   *Intact* list whose name starts with a catalogue item's name (an item that is built from
@@ -8,10 +8,16 @@ Two sections of the one drop-table response are read:
   relic's name as ``location``, the Intact chance in percent, the part in ``notes``.
 - ``missionRewards``: every reward entry whose name is a relic becomes a ``relic_drops``
   row (relic, location, mission type, rotation, chance, average runs).
+- the bounty reward sections (``BOUNTY_SECTIONS``): every relic reward of a bounty becomes a
+  ``relic_drops`` row too, with the bounty and its hub as ``location`` ('Level 5 - 15 Cetus
+  Bounty — Cetus'), ``Bounty`` as ``mission_type`` and the rotation and stage as ``rotation``
+  ('A · Stage 2'); its average runs count bounty stages completed.
 
 Both tables are catalogue data and are rebuilt, never appended to. When the response is
-missing, or either section has the wrong shape, no relic row is written at all: relic
-contents without locations would show every relic as dropping nowhere.
+missing, or ``relics`` or ``missionRewards`` has the wrong shape, no relic row is written at
+all: relic contents without locations would show every relic as dropping nowhere. A bounty
+section that is missing or has the wrong shape is skipped with a warning: bounty locations
+only add to the mission locations.
 """
 
 import logging
@@ -25,6 +31,22 @@ RELIC_CATEGORIES = ('warframe', 'primary', 'secondary', 'melee', 'companion',
                     'archwing', 'arch-gun', 'arch-melee', 'k-drive')
 
 RELIC_MISSION_TYPE = 'Relic'
+
+# The bounty reward sections read for relic locations, each with the hub its bounties are
+# taken at. A fixed list: no other section of the response is read.
+BOUNTY_SECTIONS = (
+    ('cetusBountyRewards', 'Cetus'),
+    ('solarisBountyRewards', 'Orb Vallis'),
+    ('deimosRewards', 'Cambion Drift'),
+    ('zarimanRewards', 'Zariman'),
+    ('entratiLabRewards', 'Sanctum Anatomica'),
+    ('hexRewards', 'Höllvania'),
+)
+BOUNTY_MISSION_TYPE = 'Bounty'
+
+# Widths of the relic_drops columns a bounty row fills from free text (the MSSQL widths)
+LOCATION_WIDTH = 500
+ROTATION_WIDTH = 50
 
 
 class DropTableShapeError(ValueError):
@@ -135,6 +157,76 @@ def parse_relic_locations(mission_rewards) -> list[dict]:
     return list(found.values())
 
 
+def clip(text: str, width: int) -> str:
+    """The text, cut to at most ``width`` characters with '…' at the end when it is longer."""
+    return text if len(text) <= width else text[:width - 1].rstrip() + '…'
+
+
+def bounty_rotation(rotation, stage) -> str | None:
+    """A bounty reward's rotation and stage as one ``rotation`` value ('A · Stage 2', 'A',
+    'Stage 2'), at most ROTATION_WIDTH characters; None when it has neither."""
+    said = [part for part in (clean(rotation), clean(stage)) if part]
+    return clip(' · '.join(said), ROTATION_WIDTH) if said else None
+
+
+def parse_bounty_locations(section, hub: str) -> list[dict]:
+    """Every relic reward of one bounty reward section, one dict per (relic, location,
+    rotation) with the highest chance: relic, location ('<bounty> — <hub>'), mission_type
+    ('Bounty'), rotation (rotation and stage), drop_chance.
+
+    The section is a list of bounties, each with its name in ``bountyLevel`` (or ``name``)
+    and its rewards as a list or as lists by rotation; a reward has ``itemName``,
+    ``chance`` and an optional ``stage``. Bounties without a name and rewards without a
+    relic name or a valid chance are skipped; a section that is not a list raises
+    DropTableShapeError."""
+    if not isinstance(section, list):
+        raise DropTableShapeError('is not a list')
+    found: dict[tuple[str, str, str], dict] = {}
+    for entry in section:
+        if not isinstance(entry, dict):
+            continue
+        bounty = clean(entry.get('bountyLevel')) or clean(entry.get('name'))
+        if not bounty:
+            continue
+        location = clip(f'{bounty} — {hub}', LOCATION_WIDTH)
+        for rotation, rewards in _reward_lists(entry.get('rewards')):
+            for reward in rewards:
+                if not isinstance(reward, dict):
+                    continue
+                name = clean(reward.get('itemName'))
+                chance = drop_chance(reward.get('chance'))
+                if not is_relic_name(name) or chance is None:
+                    continue
+                where = bounty_rotation(rotation, reward.get('stage'))
+                key = (name_key(name), name_key(location), name_key(where))
+                if key not in found or chance > found[key]['drop_chance']:
+                    found[key] = {'relic': name, 'location': location,
+                                  'mission_type': BOUNTY_MISSION_TYPE, 'rotation': where,
+                                  'drop_chance': chance}
+    return list(found.values())
+
+
+def bounty_locations(tables: dict) -> list[dict]:
+    """The relic locations of every bounty reward section in BOUNTY_SECTIONS. A section that
+    is missing or not a list is skipped with a warning; one line logs what each section gave."""
+    found: list[dict] = []
+    said: list[str] = []
+    for section, hub in BOUNTY_SECTIONS:
+        try:
+            if section not in tables:
+                raise DropTableShapeError('is missing')
+            locations = parse_bounty_locations(tables[section], hub)
+        except DropTableShapeError as exc:
+            log.warning('Relic locations from %s not read (non-fatal): %s %s',
+                        section, section, exc)
+            said.append(f'{section} skipped')
+            continue
+        found += locations
+        said.append(f'{section} {len(locations)}')
+    log.info('Relic locations from bounties: %s', ', '.join(said))
+    return found
+
+
 def item_lookup(db) -> list[tuple[list[str], int]]:
     """(name words case-folded, item id) of every item a relic part can belong to, the
     longest name first, so 'Ash Prime ...' resolves to Ash Prime and never to Ash."""
@@ -240,8 +332,10 @@ def sync_relic_drops(db, tables) -> int:
     except DropTableShapeError as exc:
         log.warning('Relic drop tables not read (non-fatal): %s', exc)
         return 0
+    bounties = bounty_locations(tables)
 
-    _write_locations(db, locations, {key: name for key, (name, _) in contents.items()})
+    _write_locations(db, locations + bounties,
+                     {key: name for key, (name, _) in contents.items()})
     rows = _relic_rows(db, contents)
     _drop_listed_twice(db, rows)
     for (item_id, _, _), (part, relic, chance) in rows.items():
@@ -252,5 +346,6 @@ def sync_relic_drops(db, tables) -> int:
                VALUES (?, ?, ?, ?, ?, ?, ?)''',
             (item_id, RELIC_MISSION_TYPE, relic, round(chance, 4), None, 'relic', part),
         )
-    log.info('Relic drops: %d relic rows, %d relic locations', len(rows), len(locations))
+    log.info('Relic drops: %d relic rows, %d mission locations, %d bounty locations',
+             len(rows), len(locations), len(bounties))
     return len(rows)
