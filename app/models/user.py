@@ -1,7 +1,7 @@
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .db import get_db
+from .db import INTEGRITY_ERRORS, get_db
 
 
 class User(UserMixin):
@@ -131,15 +131,21 @@ class User(UserMixin):
     def create_first_admin(cls, username, password, email=None):
         """Insert the local admin only while no user exists, decided inside the insert: the
         new admin, or None when any row exists by then (a second setup racing the first is
-        refused, never made a ``user``). Raises the backend's integrity error on a unique
-        column."""
+        refused, never made a ``user``). A failure on a unique column is the same case: on
+        MSSQL under READ COMMITTED two setups can both read an empty table, and the second
+        insert then fails on the username or email the first one holds; it is rolled back
+        and None returned, nothing written."""
         db = get_db()
-        cur = db.execute(
-            '''INSERT INTO users (username, email, password_hash, role, auth_type, oidc_sub)
-               SELECT ?, ?, ?, 'admin', 'local', NULL
-               WHERE NOT EXISTS (SELECT 1 FROM users)''',
-            (username, email, generate_password_hash(password)),
-        )
+        try:
+            cur = db.execute(
+                '''INSERT INTO users (username, email, password_hash, role, auth_type, oidc_sub)
+                   SELECT ?, ?, ?, 'admin', 'local', NULL
+                   WHERE NOT EXISTS (SELECT 1 FROM users)''',
+                (username, email, generate_password_hash(password)),
+            )
+        except INTEGRITY_ERRORS:
+            db.rollback()
+            return None
         inserted = cur.rowcount == 1
         db.commit()
         return cls.get_by_username(username) if inserted else None

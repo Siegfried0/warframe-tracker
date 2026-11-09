@@ -4,6 +4,7 @@ Each refusal is one row of a table and must end on the login page with one messa
 nobody in, write nothing and log no token, code or secret.
 """
 import hashlib
+import json
 import logging
 import time
 
@@ -13,9 +14,9 @@ import requests
 from conftest import ADMIN, TokenClient
 from oidc_fixtures import (  # noqa: F401  (the fixtures are found by name)
     _UNSET, CLIENT_ID, CODE, DEACTIVATED, ISSUER, OIDC, REDIRECT_URI, REFUSED, SECRET, NotJson,
-    FakeProvider, _assert_no_secret_logged, _claim, _discovery, _make_app, _now, _provider,
-    _refused_without_write, b64url, callback, flashes, make_jwt, oidc_app, oidc_client, provider,
-    seeded, signed_in_user_id, start, user_rows)
+    FakeProvider, RawBody, _assert_no_secret_logged, _claim, _discovery, _make_app, _now,
+    _provider, _refused_without_write, b64url, callback, flashes, make_jwt, oidc_app,
+    oidc_client, provider, seeded, signed_in_user_id, start, user_rows)
 
 
 # ── The whole flow ───────────────────────────────────────────────────────────
@@ -160,7 +161,36 @@ CLAIM_REFUSALS = [
     pytest.param(_claim('sub', 12345), id='sub-number'),
     pytest.param(_claim('sub', _UNSET), id='sub-missing'),
     pytest.param(_claim('sub', 's' * 256), id='sub-256-chars'),
+    pytest.param(_claim('sub', '\ud800'), id='sub-lone-surrogate'),
+    pytest.param(_claim('sub', 'sub-\udc00-0001'), id='sub-lone-low-surrogate-inside'),
+    pytest.param(_claim('nonce', '\ud800'), id='nonce-lone-surrogate'),
 ]
+
+# Bodies a real ``requests.Response`` cannot parse, with what its ``json()`` raises: each is
+# a refusal, never a 500.
+DEPTH = 100_000
+UNPARSABLE_BODIES = [
+    pytest.param(b'[' * DEPTH + b']' * DEPTH, id='nested-too-deep'),          # RecursionError
+    pytest.param(b'{"a":' * DEPTH + b'1' + b'}' * DEPTH, id='objects-nested-too-deep'),
+    pytest.param(b'1' * 5000, id='number-past-the-digit-limit'),             # ValueError
+    pytest.param(b'{"id_token": ', id='truncated'),                          # JSONDecodeError
+    pytest.param(b'\xff\xfe\xfd\xfc{}', id='not-utf8'),
+    pytest.param(b'', id='empty'),
+]
+
+
+def _raw(attr, content):
+    return _provider(attr, RawBody(content))
+
+
+def _discovery_raw(key, json_text):
+    """The discovery document as the provider's own JSON text, ``key`` set to ``json_text``
+    (a JSON literal, so a ``\\ud800`` escape reaches the parser as the provider sent it)."""
+    def apply(provider):
+        document = {k: v for k, v in provider.discovery.items() if k != key}
+        body = json.dumps(document)[:-1] + f', "{key}": {json_text}}}'
+        provider.discovery = RawBody(body.encode('ascii'))
+    return apply
 
 TRANSPORT_REFUSALS = [
     pytest.param(_provider('token_error', requests.Timeout('slow')), id='token-timeout'),
@@ -187,6 +217,11 @@ TRANSPORT_REFUSALS = [
     pytest.param(_discovery('token_endpoint', _UNSET), id='discovery-no-token-endpoint'),
     pytest.param(_discovery('issuer', 'https://evil.example.test'),
                  id='discovery-other-issuer'),
+    pytest.param(_discovery_raw('token_endpoint', f'"{ISSUER}/token/\\ud800"'),
+                 id='token-endpoint-lone-surrogate'),
+] + [
+    pytest.param(_raw('token_body', body), id='token-' + param.id)
+    for param in UNPARSABLE_BODIES for body in param.values
 ]
 
 
@@ -225,6 +260,11 @@ DISCOVERY_REFUSALS = [
                  id='authorization-endpoint-javascript'),
     pytest.param(_discovery('token_endpoint', 'ftp://id.example.test/token'),
                  id='token-endpoint-ftp'),
+    pytest.param(_discovery_raw('authorization_endpoint', f'"{ISSUER}/auth/\\ud800"'),
+                 id='authorization-endpoint-lone-surrogate'),
+] + [
+    pytest.param(_raw('discovery', body), id=param.id)
+    for param in UNPARSABLE_BODIES for body in param.values
 ]
 
 

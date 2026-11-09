@@ -146,7 +146,9 @@ Notes:
 **Return page after login.** After a login (local or OpenID Connect) the app returns to the
 page that asked for it only when that is a page of this app; any other address (another site,
 `//host`, a backslash, a `javascript:` link, or an encoded form of these) goes to the
-dashboard.
+dashboard. So does an address longer than 200 characters (counted as written, before any
+`%` encoding is undone): it is never shortened, and the sign-in in progress always fits in
+the browser's session cookie.
 
 **First-run setup.** The setup page creates the admin only while the database has no account
 at all. If another setup or a first OpenID Connect sign-in made the first account in the

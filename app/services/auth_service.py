@@ -18,9 +18,17 @@ SETTING_VALUE_MAX = 2 ** 63 - 1
 _SETTING_DIGITS = len(str(SETTING_VALUE_MAX))
 _WHOLE = re.compile(r'[0-9]+')
 
+# The longest page to return to after a sign-in, in characters of the value as given (before
+# percent-decoding, so an encoded spelling counts at its encoded length). A longer one goes
+# to the dashboard, never cut: a cut path is another page. At this length even a path of
+# characters outside the Basic Multilingual Plane (12 bytes each in the session's JSON)
+# keeps the pending OIDC sign-in within the browsers' 4 KB cookie limit.
+RETURN_PATH_MAX = 200
+
 
 def safe_return_path(value):
-    """``value`` when it is a path on this site, else None (the caller goes to the dashboard).
+    """``value`` when it is a path on this site of at most ``RETURN_PATH_MAX`` characters,
+    else None (the caller goes to the dashboard).
 
     A path starts with one ``/``, so anything with a scheme (``https://evil``, ``javascript:``
     in any case) or a leading blank is refused. Also refused: a scheme-relative ``//evil``,
@@ -29,7 +37,7 @@ def safe_return_path(value):
     checks apply to the value percent-decoded, repeatedly, so an encoded spelling
     (``/%2F%2Fevil``, ``/%5Cevil``) is refused too.
     """
-    if not isinstance(value, str):
+    if not isinstance(value, str) or len(value) > RETURN_PATH_MAX:
         return None
     seen = value
     for _ in range(_DECODE_ROUNDS):

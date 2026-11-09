@@ -10,6 +10,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+import requests
 
 import app as app_module
 from conftest import ADMIN, TokenClient
@@ -46,6 +47,22 @@ class NotJson:
     """A response body that is not JSON."""
 
 
+class RawBody:
+    """A response body given as bytes, parsed by a real ``requests.Response``: whatever its
+    ``json()`` raises on them is what the sign-in sees."""
+
+    def __init__(self, content: bytes):
+        self.content = content
+
+
+def _real_response(status_code, content: bytes):
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = content
+    response.encoding = None
+    return response
+
+
 class FakeResponse:
     def __init__(self, status_code, body):
         self.status_code = status_code
@@ -55,6 +72,12 @@ class FakeResponse:
         if isinstance(self._body, NotJson):
             raise ValueError('not JSON')
         return self._body
+
+
+def _response(status_code, body):
+    if isinstance(body, RawBody):
+        return _real_response(status_code, body.content)
+    return FakeResponse(status_code, body)
 
 
 class FakeProvider:
@@ -92,7 +115,7 @@ class FakeProvider:
         self.gets.append((url, kwargs))
         if self.discovery_error:
             raise self.discovery_error
-        return FakeResponse(self.discovery_status, self.discovery)
+        return _response(self.discovery_status, self.discovery)
 
     def post(self, url, **kwargs):
         self.posts.append((url, kwargs))
@@ -101,7 +124,7 @@ class FakeProvider:
         body = self.token_body if self.token_body is not None else {
             'id_token': make_jwt(self.claims()), 'access_token': 'access-do-not-log',
             'token_type': 'Bearer'}
-        return FakeResponse(self.token_status, body)
+        return _response(self.token_status, body)
 
 
 @pytest.fixture

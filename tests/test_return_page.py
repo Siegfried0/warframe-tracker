@@ -4,6 +4,7 @@ Both sign-in paths take it: the local login form's ``next`` and the OIDC start (
 page passes its ``next`` to the OIDC button). Anything else goes to the dashboard.
 """
 import html
+import random
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
@@ -44,6 +45,14 @@ NEXT_SPELLINGS = [
     pytest.param('/%0d%0aSet-Cookie:x=1', False, id='encoded-crlf'),
     pytest.param('evil.test', False, id='bare-host'),
     pytest.param('', False, id='empty'),
+    # At most 200 characters, counted on the value as given (before percent-decoding).
+    pytest.param('/' + 'a' * 199, True, id='at-the-limit'),
+    pytest.param('/' + 'a' * 198, True, id='under-the-limit'),
+    pytest.param('/' + 'a' * 200, False, id='one-over-the-limit'),
+    pytest.param('/' + 'a' * 5000, False, id='very-long'),
+    pytest.param('/' + '%20' * 66 + 'a', True, id='encoded-at-the-limit'),
+    pytest.param('/' + '%61' * 67, False, id='encoded-over-the-limit-decoded-under'),
+    pytest.param('/market?q=' + 'a' * 191, False, id='query-over-the-limit'),
 ]
 
 
@@ -137,3 +146,56 @@ def test_a_value_still_encoded_after_five_decodings_is_no_return_page():
 
 def _query(value):
     return urlencode({'next': value})
+
+
+# Browsers keep a cookie of at most 4096 bytes (name, value and attributes); Werkzeug warns
+# from 4093. A path of 199 characters outside the Basic Multilingual Plane is the worst
+# case at the limit: each takes 12 bytes in the session's JSON (two \uXXXX escapes), and
+# random ones leave the session's compression little to save.
+COOKIE_LIMIT = 4093
+
+
+def _random_text(low, high, length, seed=47):
+    rng = random.Random(seed)
+    return ''.join(chr(rng.randint(low, high)) for _ in range(length))
+
+
+@pytest.mark.parametrize('value', [
+    pytest.param('/' + 'a' * 199, id='ascii-at-the-limit'),
+    pytest.param('/' + '\U0001F600' * 199, id='astral-repeated-at-the-limit'),
+    pytest.param('/' + _random_text(0x10000, 0x10FFFF, 199), id='astral-random-at-the-limit'),
+    pytest.param('/' + _random_text(0x0800, 0xD7FF, 199), id='bmp-random-at-the-limit'),
+    pytest.param('/' + 'é' * 199, id='latin-at-the-limit'),
+    pytest.param('/' + '"' * 199, id='quotes-at-the-limit'),
+])
+def test_a_very_long_next_keeps_the_oidc_session_cookie_within_browser_limits(
+        seeded, provider, recwarn, value):
+    response = seeded.get('/auth/oidc/login?' + _query(value))
+    cookies = [h for h in response.headers.getlist('Set-Cookie') if h.startswith('session=')]
+    assert len(cookies) == 1
+    assert len(cookies[0]) <= COOKIE_LIMIT, len(cookies[0])
+    assert not [w for w in recwarn if 'cookie' in str(w.message).lower()]
+    with seeded.session_transaction() as sess:
+        assert sess[PENDING_KEY_NAME]['next'] == value   # kept whole, not cut
+
+
+@pytest.mark.parametrize('value', [
+    pytest.param('/' + 'a' * 200, id='ascii-over-the-limit'),
+    pytest.param('/' + '\U0001F600' * 5000, id='astral-far-over-the-limit'),
+])
+def test_a_next_over_the_limit_is_not_kept_and_the_sign_in_goes_to_the_dashboard(
+        seeded, provider, value):
+    response, query = start(seeded, provider, path='/auth/oidc/login?' + _query(value))
+    assert len(response.headers['Set-Cookie']) <= COOKIE_LIMIT
+    with seeded.session_transaction() as sess:
+        assert sess[PENDING_KEY_NAME]['next'] == '/dashboard'
+    response = callback(seeded, code=CODE, state=query['state'])
+    assert response.headers['Location'].endswith('/dashboard')
+    assert signed_in_user_id(seeded) is not None
+
+
+def test_the_return_page_limit_is_200_characters():
+    from services.auth_service import RETURN_PATH_MAX, safe_return_path
+    assert RETURN_PATH_MAX == 200
+    assert safe_return_path('/' + 'b' * 199) == '/' + 'b' * 199
+    assert safe_return_path('/' + 'b' * 200) is None

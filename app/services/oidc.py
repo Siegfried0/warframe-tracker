@@ -26,9 +26,6 @@ from urllib.parse import quote_plus, urlencode, urlsplit
 
 import requests
 
-from models.db import INTEGRITY_ERRORS, get_db
-from models.user import User
-
 # The four settings OIDC needs, in the order the startup warning names them.
 SETTING_NAMES = ('OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_ISSUER_URL', 'OIDC_REDIRECT_URI')
 
@@ -38,8 +35,6 @@ CLOCK_LEEWAY_SECONDS = 60          # tolerated clock difference for exp and iat
 REQUEST_TIMEOUT_SECONDS = 10       # every request to the provider
 SCOPE = 'openid email profile'
 
-USERNAME_MAX = 64                  # a username taken from the token is cut to this length
-EMAIL_MAX = 254
 SUB_MAX = 255                      # OpenID Connect Core: sub is at most 255 ASCII characters
 
 REFUSED_MESSAGE = ('Sign-in with your identity provider did not complete. Nobody was signed '
@@ -85,9 +80,22 @@ def _setting(config, name) -> str:
 
 # ── Transport ────────────────────────────────────────────────────────────────
 
+def is_storable_text(value) -> bool:
+    """Whether ``value`` is a ``str`` that encodes as strict UTF-8. JSON can carry a lone
+    surrogate (``"\\ud800"``), which decodes to a ``str`` no database, header or hash can
+    take; such a value is never bound, sent or compared."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def url_allowed(url) -> bool:
     """An https URL with a host, or http to a loopback host (a provider on this machine)."""
-    if not isinstance(url, str):
+    if not is_storable_text(url):
         return False
     try:
         parts = urlsplit(url)
@@ -116,7 +124,9 @@ def _json_response(response, what: str) -> dict:
         raise SignInRefused(f'{what} answered HTTP {response.status_code}')
     try:
         body = response.json()
-    except ValueError:
+    except (ValueError, RecursionError):
+        # ValueError: not JSON (requests' JSONDecodeError, a number past the digit limit);
+        # RecursionError: JSON nested deeper than the parser's recursion limit.
         raise SignInRefused(f'{what} did not answer JSON') from None
     if not isinstance(body, dict):
         raise SignInRefused(f'{what} did not answer a JSON object')
@@ -216,7 +226,9 @@ def finish_sign_in(config, session, args):
     id_token = _exchange_code(config, document, code, pending['verifier'])
     claims = decode_id_token(id_token)
     sub = check_claims(config, document, claims, pending['nonce'])
-    return _account_for(sub, claims), pending['next']
+    # Imported here: the accounts module takes SignInRefused and the messages from this one.
+    from services.oidc_accounts import account_for
+    return account_for(sub, claims), pending['next']
 
 
 def _pending_valid(pending) -> bool:
@@ -319,82 +331,13 @@ def check_claims(config, document, claims, nonce, now=None) -> str:
     if iat > now + CLOCK_LEEWAY_SECONDS:
         raise SignInRefused('the id_token was issued in the future')
     token_nonce = claims.get('nonce')
-    if not isinstance(token_nonce, str) or not secrets.compare_digest(
+    if not is_storable_text(token_nonce) or not secrets.compare_digest(
             token_nonce.encode('utf-8'), nonce.encode('utf-8')):
         raise SignInRefused('the id_token nonce does not match')
     sub = claims.get('sub')
     if not isinstance(sub, str) or not sub.strip() or len(sub) > SUB_MAX:
         raise SignInRefused('the id_token sub is not a non-empty string of at most 255 characters')
+    if not is_storable_text(sub):
+        # The sub is the account's identity: it is never altered or replaced to fit.
+        raise SignInRefused('the id_token sub is not storable text')
     return sub
-
-
-# ── Accounts ─────────────────────────────────────────────────────────────────
-
-def _claim_text(claims, key, limit):
-    value = claims.get(key)
-    if not isinstance(value, str):
-        return None
-    value = ' '.join(value.split())  # no control characters or runs of blanks in a name
-    return value[:limit] if value else None
-
-
-def _account_for(sub: str, claims: dict):
-    """The OIDC account of ``sub``, created on its first sign-in. Never another row."""
-    user = User.get_oidc_account(sub)
-    if user is None:
-        user = _create_account(sub, claims)
-    if not user.is_active:
-        raise SignInRefused('the account is deactivated', DEACTIVATED_MESSAGE)
-    return user
-
-
-def _create_account(sub: str, claims: dict):
-    """Insert the OIDC account of ``sub``, never taking what another row holds: a taken
-    username gets a variant, a taken email is stored as NULL, and a ``sub`` another kind of
-    account holds (the column is unique) refuses the sign-in.
-
-    An insert that still fails on a unique column is told apart by re-reading the ``sub``
-    rather than by the backend's message: when an OIDC row of this ``sub`` exists now, a
-    parallel first sign-in made it and it is used; otherwise (a name or email taken in the
-    meantime, a second NULL email on MSSQL) the sign-in is refused, nothing written."""
-    if User.oidc_sub_held(sub, other_than='oidc'):
-        raise SignInRefused('another kind of account holds this sub')
-    base = (_claim_text(claims, 'preferred_username', USERNAME_MAX)
-            or _claim_text(claims, 'email', USERNAME_MAX)
-            or sub.strip()[:USERNAME_MAX])
-    email = _claim_text(claims, 'email', EMAIL_MAX)
-    if email is not None and User.email_taken(email):
-        email = None  # email is not an identity here; the account never takes another's
-    username = unique_username(base)
-    try:
-        User.create_oidc_account(username, email, sub)
-    except INTEGRITY_ERRORS:
-        get_db().rollback()
-        user = User.get_oidc_account(sub)
-        if user is None:
-            raise SignInRefused('the insert failed on a unique column') from None
-        return user
-    user = User.get_oidc_account(sub)
-    if user is None:
-        raise SignInRefused('the account could not be created')
-    return user
-
-
-USERNAME_NUMBERED_MAX = 99         # name-2 ... name-99, then name-<8 hex>
-USERNAME_RANDOM_TRIES = 20
-
-
-def unique_username(base: str) -> str:
-    """``base`` when no account has it, else ``base-2`` ... ``base-99``, then
-    ``base-<8 hex>``: never an existing name, and never longer than ``USERNAME_MAX`` (the
-    base is cut to make room for the suffix). Raises ``SignInRefused`` when every try is
-    taken."""
-    if not User.get_by_username(base):
-        return base
-    suffixes = [f'-{n}' for n in range(2, USERNAME_NUMBERED_MAX + 1)]
-    suffixes += [f'-{secrets.token_hex(4)}' for _ in range(USERNAME_RANDOM_TRIES)]
-    for suffix in suffixes:
-        candidate = base[:USERNAME_MAX - len(suffix)] + suffix
-        if not User.get_by_username(candidate):
-            return candidate
-    raise SignInRefused('no free username variant')

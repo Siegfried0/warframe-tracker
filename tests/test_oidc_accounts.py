@@ -159,9 +159,9 @@ def test_a_unique_failure_on_another_column_refuses_and_writes_nothing(
     """Another sign-in takes the chosen username or the email between the checks and the
     insert: the insert fails, the sub has no OIDC row, the sign-in is refused."""
     from models.user import User
-    from services import oidc
+    from services import oidc_accounts
     if race == 'username':
-        monkeypatch.setattr(oidc, 'unique_username', lambda base: ADMIN['username'])
+        monkeypatch.setattr(oidc_accounts, 'unique_username', lambda base: ADMIN['username'])
     else:
         _holders(seeded.application, {'username': 'holder', 'email': 'tenno@example.test'})
         monkeypatch.setattr(User, 'email_taken', classmethod(lambda cls, email: False))
@@ -179,6 +179,15 @@ USERNAME_SPELLINGS = [
     pytest.param({'preferred_username': 7}, 'tenno@example.test', id='number-then-email'),
     pytest.param({'preferred_username': _UNSET}, 'tenno@example.test', id='missing-then-email'),
     pytest.param({'preferred_username': _UNSET, 'email': _UNSET}, 'sub-0001', id='then-sub'),
+    # A name that is not storable text (a lone surrogate from the token's JSON) is absent.
+    pytest.param({'preferred_username': '\ud800'}, 'tenno@example.test',
+                 id='username-lone-surrogate-then-email'),
+    pytest.param({'preferred_username': 'ten\udfffno'}, 'tenno@example.test',
+                 id='username-lone-low-surrogate-inside-then-email'),
+    pytest.param({'preferred_username': '\ud800', 'email': 'x\udc00@example.test'}, 'sub-0001',
+                 id='username-and-email-lone-surrogate-then-sub'),
+    pytest.param({'preferred_username': 'tenno-\U0001F600'}, 'tenno-\U0001F600',
+                 id='astral-character-kept'),
 ]
 
 
@@ -194,6 +203,8 @@ def test_the_username_comes_from_the_token(seeded, provider, overrides, username
                  id='very-long-cut-to-254'),
     pytest.param(['x@example.test'], None, id='list'),
     pytest.param('', None, id='empty'),
+    pytest.param('\ud800@example.test', None, id='email-lone-surrogate'),
+    pytest.param('tenno\udc00@example.test', None, id='email-lone-low-surrogate-inside'),
 ])
 def test_the_email_comes_from_the_token(seeded, provider, email, stored):
     _sign_in(seeded, provider, email=email, preferred_username='p')

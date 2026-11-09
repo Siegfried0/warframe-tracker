@@ -143,6 +143,48 @@ def test_a_second_setup_racing_the_first_is_refused_and_writes_nothing(app, monk
     assert _rows(app) == before
 
 
+class _ReadCommittedDb:
+    """The connection as MSSQL under READ COMMITTED sees it for one racing setup: the
+    insert's "no user yet" check still reads an empty table, so the insert goes ahead and
+    the backend's own unique constraint refuses it."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def execute(self, sql, params=()):
+        return self._db.execute(sql.replace('WHERE NOT EXISTS (SELECT 1 FROM users)', ''),
+                                params)
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+
+@pytest.mark.parametrize('form', [
+    pytest.param({'username': ADMIN['username']}, id='username-taken-by-the-other-setup'),
+    pytest.param({'username': 'second', 'email': 'admin@example.org'},
+                 id='email-taken-by-the-other-setup'),
+])
+def test_a_setup_failing_on_a_unique_column_is_refused_and_writes_nothing(app, monkeypatch,
+                                                                         form):
+    from models import user as user_module
+    from routes import auth
+    first = TokenClient(app, app.response_class, use_cookies=True)
+    assert first.post('/auth/setup', data=dict(ADMIN, email='admin@example.org')
+                      ).status_code == 302
+    before = _rows(app)
+    monkeypatch.setattr(auth, '_first_run_needed', lambda: True)
+    real_get_db = user_module.get_db
+    monkeypatch.setattr(user_module, 'get_db', lambda: _ReadCommittedDb(real_get_db()))
+    second = TokenClient(app, app.response_class, use_cookies=True)
+    response = second.post('/auth/setup', data=dict(form, password='p' * 10, confirm='p' * 10))
+    assert response.status_code == 302 and response.headers['Location'].endswith('/auth/login')
+    with second.session_transaction() as sess:
+        assert [m for _, m in sess.get('_flashes', [])] == [
+            'The administrator account already exists. Sign in.']
+    assert _signed_in(second) is None
+    assert _rows(app) == before
+
+
 def test_setup_after_a_first_oidc_account_appeared_is_refused(app, monkeypatch):
     from routes import auth
     _insert(app, 'oidc-first', 'oidc', 'sub-0001', role='admin')
