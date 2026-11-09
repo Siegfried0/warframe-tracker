@@ -1,9 +1,11 @@
 """OpenID Connect sign-in: accounts, claim spellings, configuration and the pages.
 
-An OIDC sign-in only ever matches an OIDC row with the same sub; a username, email or sub
-another row holds refuses it.
+An OIDC sign-in only ever matches an OIDC row with the same sub and never takes what another
+row holds: a taken username gets a variant, a taken email is stored as NULL, a sub another
+kind of account holds refuses the sign-in.
 """
 import logging
+import re
 import time
 
 import pytest
@@ -15,31 +17,156 @@ from oidc_fixtures import (  # noqa: F401  (the fixtures are found by name)
     seeded, signed_in_user_id, start, user_rows)
 
 
-# ── Accounts: only an OIDC row with the same sub ─────────────────────────────
+# ── Accounts: never another row ──────────────────────────────────────────────
 
-def _holder(application, **fields):
-    from models.user import User
+def _holders(application, *rows):
+    """Insert rows directly (no password hashing: fast), each a dict of users columns."""
+    from models.db import get_db
     with application.app_context():
-        User.create(**fields)
+        db = get_db()
+        for row in rows:
+            fields = {'auth_type': 'local', 'email': None, 'oidc_sub': None, **row}
+            db.execute('INSERT INTO users (username, email, auth_type, oidc_sub) '
+                       'VALUES (?, ?, ?, ?)', (fields['username'], fields['email'],
+                                               fields['auth_type'], fields['oidc_sub']))
+        db.commit()
 
 
-@pytest.mark.parametrize('holder, overrides', [
-    pytest.param({'username': 'tenno', 'password': 'x' * 8}, {}, id='local-username'),
-    pytest.param({'username': 'holder', 'password': 'x' * 8, 'email': 'tenno@example.test'},
-                 {}, id='local-email'),
-    pytest.param({'username': 'sub-0001', 'password': 'x' * 8},
-                 {'preferred_username': _UNSET, 'email': _UNSET}, id='local-named-like-sub'),
-    pytest.param({'username': 'azure-user', 'auth_type': 'easyauth', 'oidc_sub': 'sub-0001'},
-                 {}, id='easyauth-same-sub'),
-])
-def test_an_account_another_row_holds_refuses_the_sign_in(seeded, provider, holder,
-                                                           overrides):
-    """A username, email or sub another row holds: no other row is matched, none is made."""
-    _holder(seeded.application, **holder)
+# (rows other accounts hold, token overrides, the new OIDC row's username and email)
+COLLISIONS = [
+    pytest.param([{'username': 'tenno'}], {}, 'tenno-2', 'tenno@example.test',
+                 id='username-taken'),
+    pytest.param([{'username': 'holder', 'email': 'tenno@example.test'}], {}, 'tenno', None,
+                 id='email-taken'),
+    pytest.param([{'username': 'tenno', 'email': 'tenno@example.test'}], {}, 'tenno-2', None,
+                 id='username-and-email-taken-by-one-row'),
+    pytest.param([{'username': 'tenno'}, {'username': 'other', 'email': 'tenno@example.test'}],
+                 {}, 'tenno-2', None, id='username-and-email-taken-by-two-rows'),
+    pytest.param([{'username': 'tenno@example.test', 'email': 'tenno@example.test'}],
+                 {'preferred_username': _UNSET}, 'tenno@example.test-2', None,
+                 id='email-as-username-taken'),
+    pytest.param([{'username': 'sub-0001'}], {'preferred_username': _UNSET, 'email': _UNSET},
+                 'sub-0001-2', None, id='sub-as-username-taken'),
+    pytest.param([{'username': 'Ünïcødé-テンノ'}], {'preferred_username': 'Ünïcødé-テンノ'},
+                 'Ünïcødé-テンノ-2', 'tenno@example.test', id='non-ascii-username-taken'),
+    pytest.param([{'username': 'é', 'email': 'é@example.test'}],
+                 {'preferred_username': 'é', 'email': 'é@example.test'}, 'é-2', None,
+                 id='non-ascii-email-taken'),
+    pytest.param([{'username': 'x' * 64}], {'preferred_username': 'x' * 300},
+                 'x' * 62 + '-2', 'tenno@example.test', id='taken-at-the-64-cut'),
+    pytest.param([{'username': 'x' * 64}] + [{'username': 'x' * 62 + '-2'}]
+                 + [{'username': 'x' * (64 - len(f'-{n}')) + f'-{n}'} for n in range(3, 10)],
+                 {'preferred_username': 'x' * 64}, 'x' * 61 + '-10', 'tenno@example.test',
+                 id='variant-cut-shorter-for-a-longer-suffix'),
+    # SQLite compares names and emails case-sensitively, the same way its UNIQUE does; the
+    # lookup and the constraint always agree, so a differently cased value is free.
+    pytest.param([{'username': 'TENNO', 'email': 'TENNO@EXAMPLE.TEST'}], {}, 'tenno',
+                 'tenno@example.test', id='mixed-case-is-another-value-on-sqlite'),
+]
+
+
+@pytest.mark.parametrize('held, overrides, username, email', COLLISIONS)
+def test_a_first_sign_in_never_takes_what_another_row_holds(seeded, provider, held,
+                                                            overrides, username, email):
+    _holders(seeded.application, *held)
+    others_before = user_rows(seeded.application)
+    _sign_in(seeded, provider, **overrides)
+    rows = _oidc_rows(seeded.application)
+    assert [(r['username'], r['email']) for r in rows] == [(username, email)]
+    assert len(rows[0]['username']) <= 64
+    assert signed_in_user_id(seeded) == str(rows[0]['id'])
+    assert [r for r in user_rows(seeded.application) if r['auth_type'] != 'oidc'] \
+        == others_before
+
+
+def test_a_second_account_with_the_taken_username_gets_the_next_variant(seeded, provider):
+    _sign_in(seeded, provider, preferred_username=ADMIN['username'])
+    seeded.post('/auth/logout')
+    provider.sub = 'sub-0002'
+    _sign_in(seeded, provider, preferred_username=ADMIN['username'])
+    names = [r['username'] for r in _oidc_rows(seeded.application)]
+    assert names == [ADMIN['username'] + '-2', ADMIN['username'] + '-3']
+
+
+def test_a_returning_account_with_a_variant_name_signs_in_as_itself(seeded, provider):
+    _sign_in(seeded, provider, preferred_username=ADMIN['username'])
+    first = _oidc_rows(seeded.application)
+    seeded.post('/auth/logout')
+    _sign_in(seeded, provider, preferred_username=ADMIN['username'])
+    again = _oidc_rows(seeded.application)
+    assert [(r['id'], r['username']) for r in again] == [(first[0]['id'], 'admin-2')]
+    assert signed_in_user_id(seeded) == str(first[0]['id'])
+
+
+def test_after_name_2_to_name_99_the_variant_is_random_hex(seeded, provider):
+    _holders(seeded.application, {'username': 'tenno'},
+             *({'username': f'tenno-{n}'} for n in range(2, 100)))
+    _sign_in(seeded, provider)
+    rows = _oidc_rows(seeded.application)
+    assert len(rows) == 1 and re.fullmatch(r'tenno-[0-9a-f]{8}', rows[0]['username'])
+
+
+def test_when_every_variant_is_taken_the_sign_in_is_refused(seeded, provider, monkeypatch):
+    from models.user import User
+    monkeypatch.setattr(User, 'get_by_username', classmethod(lambda cls, name: True))
     before = user_rows(seeded.application)
     _, query = start(seeded, provider)
-    for key, value in overrides.items():
-        provider.overrides[key] = value
+    response = callback(seeded, code=CODE, state=query['state'])
+    _refused_without_write(seeded, response, before)
+
+
+@pytest.mark.parametrize('auth_type', ['easyauth', 'local'])
+def test_a_sub_another_kind_of_account_holds_refuses_the_sign_in(seeded, provider, auth_type):
+    """The oidc_sub column is unique and no other row is ever matched."""
+    _holders(seeded.application, {'username': 'holder', 'auth_type': auth_type,
+                                  'oidc_sub': 'sub-0001'})
+    before = user_rows(seeded.application)
+    _, query = start(seeded, provider)
+    response = callback(seeded, code=CODE, state=query['state'])
+    _refused_without_write(seeded, response, before)
+
+
+def test_the_same_sub_created_at_the_same_moment_gives_the_one_account(
+        seeded, provider, monkeypatch):
+    """A parallel first sign-in of the sub inserts between this one's lookup and insert: the
+    insert fails on the unique sub, the sub is re-read and the account the other made is
+    signed in."""
+    from models.user import User
+    real = User.get_oidc_account.__func__
+    calls = []
+
+    def lookup(cls, sub):
+        calls.append(sub)
+        if len(calls) == 1:
+            _holders(seeded.application, {'username': 'raced', 'auth_type': 'oidc',
+                                          'oidc_sub': sub})
+            return None
+        return real(cls, sub)
+
+    monkeypatch.setattr(User, 'get_oidc_account', classmethod(lookup))
+    _sign_in(seeded, provider)
+    rows = _oidc_rows(seeded.application)
+    assert [r['username'] for r in rows] == ['raced']
+    assert signed_in_user_id(seeded) == str(rows[0]['id'])
+
+
+@pytest.mark.parametrize('race', [
+    pytest.param('username', id='username-taken-meanwhile'),
+    pytest.param('email', id='email-taken-meanwhile'),
+])
+def test_a_unique_failure_on_another_column_refuses_and_writes_nothing(
+        seeded, provider, monkeypatch, race):
+    """Another sign-in takes the chosen username or the email between the checks and the
+    insert: the insert fails, the sub has no OIDC row, the sign-in is refused."""
+    from models.user import User
+    from services import oidc
+    if race == 'username':
+        monkeypatch.setattr(oidc, 'unique_username', lambda base: ADMIN['username'])
+    else:
+        _holders(seeded.application, {'username': 'holder', 'email': 'tenno@example.test'})
+        monkeypatch.setattr(User, 'email_taken', classmethod(lambda cls, email: False))
+    before = user_rows(seeded.application)
+    _, query = start(seeded, provider)
     response = callback(seeded, code=CODE, state=query['state'])
     _refused_without_write(seeded, response, before)
 

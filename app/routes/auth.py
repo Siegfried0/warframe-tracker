@@ -4,6 +4,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from models.user import User
 from services import oidc
+from services.auth_service import safe_return_path
 from services.csrf import rotate_token
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -32,8 +33,11 @@ def setup():
         elif len(password) < 8:
             flash('Password must be at least 8 characters.', 'error')
         else:
-            user = User.create(username=username, password=password,
-                               email=email, role='admin')
+            user = User.create_first_admin(username, password, email)
+            if user is None:
+                # Another setup or first sign-in made the first account meanwhile.
+                flash('The administrator account already exists. Sign in.', 'error')
+                return redirect(url_for('auth.login'))
             rotate_token()
             login_user(user, remember=True)
             flash(f'Welcome, {user.username}! Admin account created.', 'success')
@@ -60,10 +64,10 @@ def login():
             rotate_token()
             login_user(user, remember=remember)
             user.update_last_login()
-            next_url = request.args.get('next') or url_for('dashboard.index')
-            return redirect(next_url)
+            return redirect(safe_return_path(request.args.get('next'))
+                            or url_for('dashboard.index'))
         flash('Invalid username or password.', 'error')
-    return render_template('auth/login.html')
+    return render_template('auth/login.html', next=safe_return_path(request.args.get('next')))
 
 
 @auth_bp.route('/oidc/login')
@@ -74,8 +78,9 @@ def oidc_login():
         abort(404)
     if current_user.is_authenticated:
         return redirect(url_for('dashboard.index'))
+    return_path = safe_return_path(request.args.get('next')) or url_for('dashboard.index')
     try:
-        target = oidc.start_sign_in(current_app.config, session)
+        target = oidc.start_sign_in(current_app.config, session, return_path)
     except oidc.SignInRefused as refused:
         current_app.logger.warning('OIDC sign-in refused: %s', refused.reason)
         flash(refused.message, 'error')
@@ -90,7 +95,7 @@ def oidc_callback():
     if not oidc.is_enabled(current_app.config):
         abort(404)
     try:
-        user = oidc.finish_sign_in(current_app.config, session, request.args)
+        user, return_path = oidc.finish_sign_in(current_app.config, session, request.args)
     except oidc.SignInRefused as refused:
         current_app.logger.warning('OIDC sign-in refused: %s', refused.reason)
         flash(refused.message, 'error')
@@ -98,7 +103,7 @@ def oidc_callback():
     rotate_token()
     login_user(user, remember=True)
     user.update_last_login()
-    return redirect(url_for('dashboard.index'))
+    return redirect(safe_return_path(return_path) or url_for('dashboard.index'))
 
 
 # POST only (with the CSRF token, like every unsafe request): a GET never signs anyone out.

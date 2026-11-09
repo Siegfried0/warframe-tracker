@@ -132,12 +132,25 @@ Notes:
   account there, so prefer a provider or client limited to your own users. An admin can
   deactivate or delete such accounts.
 - On an empty database the first account, local or OIDC, becomes the admin.
-- An OIDC account is never linked to another account. A first sign-in whose username (the
-  provider's `preferred_username`, else the email) or email another account already uses is
-  refused and creates nothing. Passwords cannot be reset for OIDC accounts.
+- An OIDC account is never linked to another account, not even one with the same name or
+  email. On the first sign-in the username is the provider's `preferred_username` (else the
+  email); when another account already has that name, the new account gets the first free of
+  `name-2`, `name-3`, … (at most 64 characters). When another account already uses the email,
+  the new account is created without an email. When an Azure EasyAuth account of an earlier
+  setup holds the same provider id, the sign-in is refused. Passwords cannot be reset for OIDC
+  accounts.
 - Logging out ends the session in this app only; you stay signed in at your provider.
 - Pointing `OIDC_ISSUER_URL` at another provider later gives its users new accounts; the old
   ones remain until an admin removes them.
+
+**Return page after login.** After a login (local or OpenID Connect) the app returns to the
+page that asked for it only when that is a page of this app; any other address (another site,
+`//host`, a backslash, a `javascript:` link, or an encoded form of these) goes to the
+dashboard.
+
+**First-run setup.** The setup page creates the admin only while the database has no account
+at all. If another setup or a first OpenID Connect sign-in made the first account in the
+meantime, the form is refused and you are sent to the login page.
 
 **Forms and cross-site requests.** Every form and every change the pages send carries a
 per-session security token, and the server refuses a change without it (protection against
@@ -161,7 +174,11 @@ Set these three variables; everything else is optional and identical to the priv
 
 When `EASYAUTH_ENABLED=true`:
 - The app's login, register, and first-run setup pages redirect to `/.auth/login`; the menu's logout entry links to `/.auth/logout`.
-- The first user to access the app is auto-provisioned as `admin`.
+- The first user to access the app is auto-provisioned as `admin`; later users as `user`.
+- An EasyAuth sign-in only ever matches an account EasyAuth created. When another account
+  already has the same name, or a local or OpenID Connect account of an earlier setup has the
+  same id, the request is refused (403) and nothing is created; an admin can delete that
+  account.
 - Account creation via the admin panel is hidden (accounts are created automatically on first EasyAuth access); role assignment remains available.
 
 **Deployment**: zip the contents of `app/` and deploy via zip-deploy. The default Gunicorn startup command requires no modification:

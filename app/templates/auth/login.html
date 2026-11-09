@@ -27,7 +27,7 @@
         </form>
         {% if oidc_enabled %}
         <div class="oidc-sign-in" style="margin-top:1.5rem">
-          <a href="{{ url_for('auth.oidc_login') }}"
+          <a href="{{ url_for('auth.oidc_login', next=next) if next else url_for('auth.oidc_login') }}"
              class="btn blue-grey lighten-1 waves-effect waves-light">
             <i class="material-icons left">vpn_key</i>Sign in with OpenID Connect
           </a>

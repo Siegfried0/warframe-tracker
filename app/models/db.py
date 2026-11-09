@@ -45,6 +45,10 @@ class _MSCursor:
         return [_MSRow(zip(cols, r)) for r in self._cur.fetchall()]
 
     @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    @property
     def lastrowid(self):
         c = self._raw_conn.cursor()
         c.execute('SELECT SCOPE_IDENTITY()')

@@ -1,5 +1,6 @@
 import re
 from functools import wraps
+from urllib.parse import unquote
 
 from flask import abort
 from flask_login import current_user
@@ -16,6 +17,38 @@ USER_SETTINGS = [
 SETTING_VALUE_MAX = 2 ** 63 - 1
 _SETTING_DIGITS = len(str(SETTING_VALUE_MAX))
 _WHOLE = re.compile(r'[0-9]+')
+
+
+def safe_return_path(value):
+    """``value`` when it is a path on this site, else None (the caller goes to the dashboard).
+
+    A path starts with one ``/``, so anything with a scheme (``https://evil``, ``javascript:``
+    in any case) or a leading blank is refused. Also refused: a scheme-relative ``//evil``,
+    any backslash (browsers read ``/\\evil`` as ``//evil``) and any control character
+    (browsers drop tabs and newlines, so ``/\\t/evil`` would become ``//evil``). The same
+    checks apply to the value percent-decoded, repeatedly, so an encoded spelling
+    (``/%2F%2Fevil``, ``/%5Cevil``) is refused too.
+    """
+    if not isinstance(value, str):
+        return None
+    seen = value
+    for _ in range(_DECODE_ROUNDS):
+        if not _plain_path(seen):
+            return None
+        decoded = unquote(seen)
+        if decoded == seen:
+            return value
+        seen = decoded
+    return None  # still encoded after that many rounds: not a plain path
+
+
+_DECODE_ROUNDS = 5
+
+
+def _plain_path(value: str) -> bool:
+    if not value.startswith('/') or value.startswith('//'):
+        return False
+    return '\\' not in value and not any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
 
 
 def admin_required(f):

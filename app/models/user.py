@@ -39,11 +39,6 @@ class User(UserMixin):
         return cls._from_row(row)
 
     @classmethod
-    def get_by_oidc_sub(cls, sub):
-        row = get_db().execute('SELECT * FROM users WHERE oidc_sub = ?', (sub,)).fetchone()
-        return cls._from_row(row)
-
-    @classmethod
     def get_oidc_account(cls, sub):
         """The OIDC account of ``sub``: only a row with auth_type 'oidc' matches, never a local
         or EasyAuth row."""
@@ -51,6 +46,29 @@ class User(UserMixin):
             "SELECT * FROM users WHERE auth_type = 'oidc' AND oidc_sub = ?", (sub,)
         ).fetchone()
         return cls._from_row(row)
+
+    @classmethod
+    def get_easyauth_account(cls, principal_id):
+        """The EasyAuth account of ``principal_id``: only a row with auth_type 'easyauth'
+        matches, never a local or OIDC row holding the same value."""
+        row = get_db().execute(
+            "SELECT * FROM users WHERE auth_type = 'easyauth' AND oidc_sub = ?", (principal_id,)
+        ).fetchone()
+        return cls._from_row(row)
+
+    @classmethod
+    def oidc_sub_held(cls, sub, other_than: str) -> bool:
+        """Whether a row whose auth_type is not ``other_than`` holds ``sub`` in the unique
+        oidc_sub column (so no ``other_than`` row can take it)."""
+        row = get_db().execute(
+            'SELECT 1 FROM users WHERE auth_type <> ? AND oidc_sub = ?', (other_than, sub)
+        ).fetchone()
+        return row is not None
+
+    @classmethod
+    def email_taken(cls, email) -> bool:
+        row = get_db().execute('SELECT 1 FROM users WHERE email = ?', (email,)).fetchone()
+        return row is not None
 
     @classmethod
     def get_all(cls):
@@ -80,20 +98,51 @@ class User(UserMixin):
 
     @classmethod
     def create_oidc_account(cls, username, email, sub):
-        """Insert an OIDC account (no password). Its role is decided in the same statement:
-        'admin' when the table is empty, else 'user'. On SQLite one statement holds the write
-        lock throughout, so two first sign-ins at once make at most one admin; on MSSQL under
-        READ COMMITTED both could read an empty table. Raises the backend's integrity error
-        when the username, email or sub is taken."""
+        """Insert an OIDC account (no password), admin only on an empty table
+        (``_insert_external``). Raises the backend's integrity error when the username, email
+        or sub is taken."""
+        cls._insert_external(username, email, 'oidc', sub)
+
+    @classmethod
+    def create_easyauth_account(cls, username, principal_id):
+        """Insert an EasyAuth account (no password, no email), admin only on an empty table
+        (``_insert_external``). Raises the backend's integrity error when the username or the
+        principal id is taken."""
+        cls._insert_external(username, None, 'easyauth', principal_id)
+
+    @classmethod
+    def _insert_external(cls, username, email, auth_type, sub):
+        """Insert an account signed in elsewhere. Its role is decided in the same statement:
+        'admin' when the table is empty, else 'user', never by a count read before it. On
+        SQLite one statement holds the write lock throughout, so two first sign-ins at once
+        make at most one admin; on MSSQL under READ COMMITTED both could read an empty
+        table."""
         db = get_db()
         db.execute(
             '''INSERT INTO users (username, email, password_hash, role, auth_type, oidc_sub)
                SELECT ?, ?, NULL,
                       CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END,
-                      'oidc', ?''',
-            (username, email, sub),
+                      ?, ?''',
+            (username, email, auth_type, sub),
         )
         db.commit()
+
+    @classmethod
+    def create_first_admin(cls, username, password, email=None):
+        """Insert the local admin only while no user exists, decided inside the insert: the
+        new admin, or None when any row exists by then (a second setup racing the first is
+        refused, never made a ``user``). Raises the backend's integrity error on a unique
+        column."""
+        db = get_db()
+        cur = db.execute(
+            '''INSERT INTO users (username, email, password_hash, role, auth_type, oidc_sub)
+               SELECT ?, ?, ?, 'admin', 'local', NULL
+               WHERE NOT EXISTS (SELECT 1 FROM users)''',
+            (username, email, generate_password_hash(password)),
+        )
+        inserted = cur.rowcount == 1
+        db.commit()
+        return cls.get_by_username(username) if inserted else None
 
     def check_password(self, password: str) -> bool:
         row = get_db().execute('SELECT password_hash FROM users WHERE id = ?', (self.id,)).fetchone()

@@ -3,7 +3,8 @@
 The flow, in two requests to the provider:
 
 1. ``start_sign_in`` reads the provider's discovery document, keeps a pending sign-in in the
-   signed session (``state``, ``nonce``, the PKCE verifier and the time it started) and returns the authorization URL the browser is sent to.
+   signed session (``state``, ``nonce``, the PKCE verifier, the page to return to and the
+   time it started) and returns the authorization URL the browser is sent to.
 2. ``finish_sign_in`` takes the pending sign-in out of the session (it is used once), checks
    the callback's ``state``, exchanges the code at the token endpoint and accepts the ID token
    from that response by its claims. The signature is not verified: the token comes straight
@@ -158,7 +159,7 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b'=').decode('ascii')
 
 
-def start_sign_in(config, session) -> str:
+def start_sign_in(config, session, return_path: str) -> str:
     """Keep a new pending sign-in in ``session`` (replacing any earlier one) and return the
     provider's authorization URL."""
     document = discover(config)
@@ -167,6 +168,7 @@ def start_sign_in(config, session) -> str:
         'state': secrets.token_urlsafe(32),
         'nonce': secrets.token_urlsafe(32),
         'verifier': verifier,
+        'next': return_path,
         'started': int(time.time()),
     }
     session[PENDING_KEY] = pending
@@ -192,7 +194,7 @@ def forget_pending(session) -> None:
 # ── Callback ─────────────────────────────────────────────────────────────────
 
 def finish_sign_in(config, session, args):
-    """Check the callback, exchange the code and return the user to sign in.
+    """Check the callback, exchange the code and return ``(user, return_path)``.
 
     The pending sign-in is taken out of the session first, so it is used once whatever the
     outcome. Raises ``SignInRefused``; nothing is written unless every check passed.
@@ -214,14 +216,14 @@ def finish_sign_in(config, session, args):
     id_token = _exchange_code(config, document, code, pending['verifier'])
     claims = decode_id_token(id_token)
     sub = check_claims(config, document, claims, pending['nonce'])
-    return _account_for(sub, claims)
+    return _account_for(sub, claims), pending['next']
 
 
 def _pending_valid(pending) -> bool:
     if not isinstance(pending, dict):
         return False
     if not all(isinstance(pending.get(k), str) and pending.get(k)
-               for k in ('state', 'nonce', 'verifier')):
+               for k in ('state', 'nonce', 'verifier', 'next')):
         return False
     started = pending.get('started')
     if not isinstance(started, int) or isinstance(started, bool):
@@ -347,18 +349,52 @@ def _account_for(sub: str, claims: dict):
 
 
 def _create_account(sub: str, claims: dict):
-    """Insert the OIDC account of ``sub``. A username, email or sub another row holds fails
-    the insert on its unique column: the sign-in is refused and nothing is written."""
-    username = (_claim_text(claims, 'preferred_username', USERNAME_MAX)
-                or _claim_text(claims, 'email', USERNAME_MAX)
-                or sub.strip()[:USERNAME_MAX])
+    """Insert the OIDC account of ``sub``, never taking what another row holds: a taken
+    username gets a variant, a taken email is stored as NULL, and a ``sub`` another kind of
+    account holds (the column is unique) refuses the sign-in.
+
+    An insert that still fails on a unique column is told apart by re-reading the ``sub``
+    rather than by the backend's message: when an OIDC row of this ``sub`` exists now, a
+    parallel first sign-in made it and it is used; otherwise (a name or email taken in the
+    meantime, a second NULL email on MSSQL) the sign-in is refused, nothing written."""
+    if User.oidc_sub_held(sub, other_than='oidc'):
+        raise SignInRefused('another kind of account holds this sub')
+    base = (_claim_text(claims, 'preferred_username', USERNAME_MAX)
+            or _claim_text(claims, 'email', USERNAME_MAX)
+            or sub.strip()[:USERNAME_MAX])
     email = _claim_text(claims, 'email', EMAIL_MAX)
+    if email is not None and User.email_taken(email):
+        email = None  # email is not an identity here; the account never takes another's
+    username = unique_username(base)
     try:
         User.create_oidc_account(username, email, sub)
     except INTEGRITY_ERRORS:
         get_db().rollback()
-        raise SignInRefused('another account holds the username, email or sub') from None
+        user = User.get_oidc_account(sub)
+        if user is None:
+            raise SignInRefused('the insert failed on a unique column') from None
+        return user
     user = User.get_oidc_account(sub)
     if user is None:
         raise SignInRefused('the account could not be created')
     return user
+
+
+USERNAME_NUMBERED_MAX = 99         # name-2 ... name-99, then name-<8 hex>
+USERNAME_RANDOM_TRIES = 20
+
+
+def unique_username(base: str) -> str:
+    """``base`` when no account has it, else ``base-2`` ... ``base-99``, then
+    ``base-<8 hex>``: never an existing name, and never longer than ``USERNAME_MAX`` (the
+    base is cut to make room for the suffix). Raises ``SignInRefused`` when every try is
+    taken."""
+    if not User.get_by_username(base):
+        return base
+    suffixes = [f'-{n}' for n in range(2, USERNAME_NUMBERED_MAX + 1)]
+    suffixes += [f'-{secrets.token_hex(4)}' for _ in range(USERNAME_RANDOM_TRIES)]
+    for suffix in suffixes:
+        candidate = base[:USERNAME_MAX - len(suffix)] + suffix
+        if not User.get_by_username(candidate):
+            return candidate
+    raise SignInRefused('no free username variant')
