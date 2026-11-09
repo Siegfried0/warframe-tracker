@@ -17,7 +17,7 @@ import requests
 
 from models.db import get_db
 from models.item import Item
-from services import image_cache
+from services import image_cache, relic_sync
 from services.market_slugs import sync_market_slugs
 from services.resurgence_sync import sync_resurgence
 
@@ -1733,24 +1733,37 @@ def _sync_wfcd_component_drops(db) -> int:
     return count
 
 
-def _sync_mission_reward_drops(db,
-                               prefix_lookup: list[tuple[str, int]]) -> int:
-    """Insert drop_sources from warframestat.us mission reward tables.
-
-    Matches each drop entry name against our items catalogue using prefix
-    matching (longest item name first), so 'Ash Prime Neuroptics Blueprint'
-    correctly resolves to 'Ash Prime' and not 'Ash'.
-    """
+def _fetch_drop_tables() -> dict | None:
+    """The warframestat.us drop tables (``all.json``), fetched once per drop sync; None when
+    the request fails or the answer is not a JSON object (non-fatal)."""
     try:
         resp = requests.get(_WARFRAMESTAT_DROPS, timeout=60)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
         log.warning('Could not fetch warframestat drop tables (non-fatal): %s', exc)
+        return None
+    if not isinstance(data, dict):
+        log.warning('Warframestat drop tables are not a JSON object (non-fatal)')
+        return None
+    return data
+
+
+def _sync_mission_reward_drops(db, prefix_lookup: list[tuple[str, int]],
+                               tables: dict | None) -> int:
+    """Insert drop_sources from warframestat.us mission reward tables.
+
+    Matches each drop entry name against our items catalogue using prefix
+    matching (longest item name first), so 'Ash Prime Neuroptics Blueprint'
+    correctly resolves to 'Ash Prime' and not 'Ash'. Entries without a name, or without
+    a chance above 0 and at most 100, are skipped; a section of another shape adds nothing.
+    """
+    mission_rewards = tables.get('missionRewards') if isinstance(tables, dict) else None
+    if not isinstance(mission_rewards, dict):
         return 0
 
     count = 0
-    for planet, nodes in data.get('missionRewards', {}).items():
+    for planet, nodes in mission_rewards.items():
         if not isinstance(nodes, dict):
             continue
         for node, node_data in nodes.items():
@@ -1764,25 +1777,27 @@ def _sync_mission_reward_drops(db,
             # Non-rotational missions have a flat list.
             if isinstance(rewards, list):
                 reward_list = [(None, rewards)]
-            else:
+            elif isinstance(rewards, dict):
                 reward_list = [
                     (rot, lst)
                     for rot, lst in rewards.items()
                     if isinstance(lst, list)
                 ]
+            else:
+                reward_list = []
 
             for rotation, items in reward_list:
                 for item in items:
                     if not isinstance(item, dict):
                         continue
-                    drop_name = item.get('itemName', '').strip()
-                    chance    = item.get('chance')
-                    if not drop_name or not chance:
+                    drop_name = relic_sync.clean(item.get('itemName'))
+                    chance    = relic_sync.drop_chance(item.get('chance'))
+                    if not drop_name or chance is None:
                         continue
                     item_id = _match_drop_to_item(drop_name, prefix_lookup)
                     if not item_id:
                         continue
-                    avg_runs = round(100.0 / chance, 1) if chance > 0 else None
+                    avg_runs = round(100.0 / chance, 1)
                     notes    = (f'Rot. {rotation}: {drop_name}'
                                 if rotation else drop_name)
                     db.execute(
@@ -1798,23 +1813,30 @@ def _sync_mission_reward_drops(db,
 
 
 def _sync_drop_sources() -> int:
-    """Rebuild drop_sources from WFCD component data, resource drops, and warframestat.us mission tables."""
+    """Rebuild drop_sources and relic_drops in one transaction from WFCD component data,
+    resource drops, and the warframestat.us drop tables (mission rewards and relics)."""
     log.info('Syncing drop sources…')
     db = get_db()
-    db.execute('DELETE FROM drop_sources')
+    try:
+        db.execute('DELETE FROM drop_sources')
 
-    count_comp = _sync_wfcd_component_drops(db)
-    log.info('WFCD component drops: %d', count_comp)
+        count_comp = _sync_wfcd_component_drops(db)
+        log.info('WFCD component drops: %d', count_comp)
 
-    count_res = _sync_resource_drops(db)
-    log.info('Resource drops: %d', count_res)
+        count_res = _sync_resource_drops(db)
+        log.info('Resource drops: %d', count_res)
 
-    prefix_lookup  = _build_item_prefix_lookup(db)
-    count_missions = _sync_mission_reward_drops(db, prefix_lookup)
-    log.info('Mission reward drops: %d', count_missions)
+        tables         = _fetch_drop_tables()
+        prefix_lookup  = _build_item_prefix_lookup(db)
+        count_missions = _sync_mission_reward_drops(db, prefix_lookup, tables)
+        log.info('Mission reward drops: %d', count_missions)
 
-    db.commit()
-    total = count_comp + count_res + count_missions
+        count_relics = relic_sync.sync_relic_drops(db, tables)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    total = count_comp + count_res + count_missions + count_relics
     log.info('Drop sources total: %d', total)
     return total
 

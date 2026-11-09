@@ -12,6 +12,7 @@ from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
 from services.market_api import cached_prices, get_price, market_url_for
+from services.relic_sync import is_relic_name
 from services.resurgence_sync import resurgence_status, vaulted_note
 
 # Categories whose items can be farming goals (excludes raw resources)
@@ -46,13 +47,16 @@ def get_item_plan(item_id: int, user_id: int) -> dict:
     if not item_row:
         return {}
 
-    # All component drop entries for this item, grouped by component name
+    # All component drop entries for this item, grouped by component name. A relic row
+    # (the relic as its location, no average runs) comes after the rows with runs, the
+    # likeliest relic first.
     drop_rows = db.execute(
         '''SELECT notes AS component_name, mission_type, location,
                   drop_chance, avg_runs, source_type
              FROM drop_sources
-            WHERE item_id = ? AND source_type = 'component'
-            ORDER BY notes, avg_runs''',
+            WHERE item_id = ? AND source_type IN ('component', 'relic')
+            ORDER BY notes, CASE WHEN avg_runs IS NULL THEN 1 ELSE 0 END, avg_runs,
+                     drop_chance DESC''',
         (item_id,),
     ).fetchall()
 
@@ -157,12 +161,22 @@ def set_checklist(user_id: int, item_id: int, component_name: str, acquired: boo
     db.commit()
 
 
+def _is_relic_source(source_type, location) -> bool:
+    """A relic row, or a row of another source whose location is a relic ('Lith A1 Relic'):
+    a relic is no mission or node to run."""
+    return source_type == 'relic' or is_relic_name(location)
+
+
 def get_drop_sources(item_id: int) -> list[dict]:
+    """The item's mission, component and resource drop rows, fewest average runs first.
+    Relic sources are left out: a relic is no mission to run."""
     rows = get_db().execute(
-        'SELECT * FROM drop_sources WHERE item_id = ? ORDER BY avg_runs',
+        '''SELECT * FROM drop_sources
+            WHERE item_id = ? AND (source_type IS NULL OR source_type <> 'relic')
+            ORDER BY avg_runs''',
         (item_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in rows if not _is_relic_source(r['source_type'], r['location'])]
 
 
 def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict]:
@@ -993,15 +1007,18 @@ def get_aggregate_shopping_list(user_id: int) -> dict:
 # ── Live Session Advisor ─────────────────────────────────────────────────────
 
 def get_all_nodes() -> list[str]:
-    """Return sorted distinct node locations from drop_sources."""
+    """Return sorted distinct node locations from drop_sources (a relic is no node)."""
     rows = get_db().execute(
-        'SELECT DISTINCT location FROM drop_sources WHERE location IS NOT NULL ORDER BY location'
+        '''SELECT DISTINCT location FROM drop_sources
+            WHERE location IS NOT NULL AND (source_type IS NULL OR source_type <> 'relic')
+            ORDER BY location'''
     ).fetchall()
-    return [r['location'] for r in rows if r['location']]
+    return [r['location'] for r in rows if r['location'] and not is_relic_name(r['location'])]
 
 
 def get_advisor_opportunities(user_id: int, node_location: str) -> dict:
-    """Cross-reference user's still-needed items against drops at the selected node."""
+    """Cross-reference user's still-needed items against drops at the selected node.
+    A relic is no node: its name finds no opportunities."""
     db = get_db()
 
     node_drops = db.execute(
@@ -1010,9 +1027,12 @@ def get_advisor_opportunities(user_id: int, node_location: str) -> dict:
              FROM drop_sources ds
              JOIN items i ON ds.item_id = i.id
             WHERE ds.location = ?
+              AND (ds.source_type IS NULL OR ds.source_type <> 'relic')
             ORDER BY ds.drop_chance DESC''',
         (node_location,),
     ).fetchall()
+    if is_relic_name(node_location):
+        node_drops = []
 
     if not node_drops:
         return {
@@ -1075,7 +1095,9 @@ def get_advisor_opportunities(user_id: int, node_location: str) -> dict:
 
     # Best drop chance per (item, source_type, notes) for efficiency rating
     best_rows = db.execute(
-        'SELECT item_id, source_type, notes, MAX(drop_chance) AS best FROM drop_sources GROUP BY item_id, source_type, notes'
+        '''SELECT item_id, source_type, notes, MAX(drop_chance) AS best FROM drop_sources
+            WHERE source_type IS NULL OR source_type <> 'relic'
+            GROUP BY item_id, source_type, notes'''
     ).fetchall()
     best_chances: dict[str, float] = {}
     for r in best_rows:

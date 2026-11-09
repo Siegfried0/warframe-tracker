@@ -7,7 +7,7 @@ try:
 except ImportError:
     _pyodbc = None
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 # What each backend raises for a violated constraint (UNIQUE, FOREIGN KEY, NOT NULL).
 INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
@@ -132,7 +132,8 @@ def _apply_migrations(db):
     row = db.execute('SELECT version FROM schema_version').fetchone()
     current = row['version'] if row else 0
 
-    migrations = [_migrate_v1, _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8]
+    migrations = [_migrate_v1, _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
+                  _migrate_v9]
     for i, migrate in enumerate(migrations, start=1):
         if current < i:
             migrate(db, backend)
@@ -142,6 +143,59 @@ def _apply_migrations(db):
                 db.execute('UPDATE schema_version SET version = ?', (i,))
             db.commit()
             current = i
+
+
+def _migrate_v9(db, backend='sqlite'):
+    """Add the relic_drops catalogue table: where each void relic drops.
+
+    Expand only (a new table, no user data); the drop sync rebuilds its rows.
+    """
+    if backend == 'mssql':
+        _migrate_v9_mssql(db)
+    else:
+        _migrate_v9_sqlite(db)
+
+
+def _migrate_v9_sqlite(db):
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS relic_drops (
+            id           INTEGER PRIMARY KEY,
+            relic_name   TEXT NOT NULL,
+            location     TEXT NOT NULL,
+            mission_type TEXT,
+            rotation     TEXT,
+            drop_chance  REAL,
+            avg_runs     REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_relic_drops_relic ON relic_drops(relic_name);
+    ''')
+    db.commit()
+
+
+def _migrate_v9_mssql(db):
+    stmts = [
+        """
+        IF OBJECT_ID('relic_drops', 'U') IS NULL
+        CREATE TABLE relic_drops (
+            id           INT           IDENTITY(1,1) PRIMARY KEY,
+            relic_name   NVARCHAR(255) NOT NULL,
+            location     NVARCHAR(500) NOT NULL,
+            mission_type NVARCHAR(255),
+            rotation     NVARCHAR(50),
+            drop_chance  FLOAT,
+            avg_runs     FLOAT
+        )
+        """,
+        """
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE name = 'idx_relic_drops_relic' AND object_id = OBJECT_ID('relic_drops')
+        ) CREATE INDEX idx_relic_drops_relic ON relic_drops(relic_name)
+        """,
+    ]
+    for stmt in stmts:
+        db.execute(stmt.strip())
+    db.commit()
 
 
 def _migrate_v8(db, backend='sqlite'):
