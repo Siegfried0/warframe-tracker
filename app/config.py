@@ -44,6 +44,33 @@ def require_usable_secret_key(value) -> None:
         )
 
 
+SAMESITE_VALUES = ('Strict', 'Lax', 'None')
+SAMESITE_DEFAULT = 'Lax'
+
+
+class SettingError(RuntimeError):
+    """A setting holds a value the app cannot use: it does not start (never a 500 per page)."""
+
+
+def session_cookie_samesite(value) -> str:
+    """The session cookie's SameSite value in the spelling the cookie needs: ``Strict``,
+    ``Lax`` or ``None`` in any letter case, surrounding blanks ignored. Unset, empty or blank
+    means the default ``Lax``. Raises SettingError for any other value (``off``, ``yes``)."""
+    if value is None:
+        return SAMESITE_DEFAULT
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed == '':
+            return SAMESITE_DEFAULT
+        for known in SAMESITE_VALUES:
+            if trimmed.lower() == known.lower():
+                return known
+    raise SettingError(
+        'The app does not start: SESSION_COOKIE_SAMESITE must be Strict, Lax or None (any '
+        'letter case; empty means the default, Lax), not ' + repr(value)[:60] + '.'
+    )
+
+
 class Config:
     # No default: create_app() refuses to start without a usable key.
     SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -52,7 +79,8 @@ class Config:
     SESSION_LIFETIME_DAYS = int(os.environ.get('SESSION_LIFETIME_DAYS', 30))
 
     # The session cookie is not sent on cross-site posts (defence in depth beside the CSRF
-    # token); 'Strict', 'Lax' or 'None' (the last needs HTTPS).
+    # token); 'Strict', 'Lax' or 'None' (the last needs HTTPS). create_app() normalises it
+    # (session_cookie_samesite) and refuses to start with any other value.
     SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 
     MARKET_CACHE_HOURS = int(os.environ.get('MARKET_CACHE_HOURS', 6))

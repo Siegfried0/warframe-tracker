@@ -51,6 +51,18 @@ def _plain_path(value: str) -> bool:
     return '\\' not in value and not any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
 
 
+def sign_out(session) -> None:
+    """End the signed-in session (logout, and the deletion of one's own account): the CSRF
+    token is replaced at once, a pending OIDC sign-in is dropped and the user is logged
+    out. The caller sends the browser on (in EasyAuth mode to Azure's sign-out)."""
+    # Imported here: services.csrf reaches this module through the export service.
+    from flask_login import logout_user
+    from services import csrf, oidc
+    csrf.rotate_token()
+    oidc.forget_pending(session)
+    logout_user()
+
+
 def admin_required(f):
     """Route decorator — 403 if the current user is not an admin."""
     @wraps(f)

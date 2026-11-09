@@ -6,7 +6,8 @@ from typing import NamedTuple, Optional
 from flask import Flask, redirect, url_for
 from flask_login import LoginManager
 
-from config import SECRET_KEY_HELP, Config, require_usable_secret_key, secret_key_is_usable
+from config import (SECRET_KEY_HELP, Config, require_usable_secret_key, secret_key_is_usable,
+                    SettingError, session_cookie_samesite)
 from models.db import init_db
 from models.user import User
 from services import csrf, oidc
@@ -23,6 +24,9 @@ def create_app(config_overrides: dict = None):
     # Sessions and form tokens are signed with this key: no start with a missing or published
     # one, and nothing (the database included) is opened before this check.
     require_usable_secret_key(flask_app.config.get('SECRET_KEY'))
+    # A SameSite value the cookie cannot carry would fail every response: refused here.
+    flask_app.config['SESSION_COOKIE_SAMESITE'] = session_cookie_samesite(
+        flask_app.config.get('SESSION_COOKIE_SAMESITE'))
 
     # <id64:...> in a route: a row id in the URL, 404 outside the signed 64-bit range.
     flask_app.url_map.converters['id64'] = Id64Converter
@@ -184,7 +188,10 @@ def run_development_server():
         run = development_run_settings(Config.SECRET_KEY)
     except DevelopmentRunRefused as refused:
         raise SystemExit(str(refused)) from None
-    flask_app = create_app({'SECRET_KEY': run.key} if run.key is not None else None)
+    try:
+        flask_app = create_app({'SECRET_KEY': run.key} if run.key is not None else None)
+    except SettingError as refused:
+        raise SystemExit(str(refused)) from None
     if run.warning:
         flask_app.logger.warning(run.warning)
     flask_app.run(host=run.host, port=5000, debug=run.debug)

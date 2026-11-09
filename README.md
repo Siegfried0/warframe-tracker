@@ -90,7 +90,7 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `FLASK_DEBUG` | off | Development server only: `1` or `true` turns on the debugger and reloader; refused with a host other than `127.0.0.1`, `localhost` or `::1` |
 | `DATABASE_PATH` | `warframe_tracker.db` | Absolute path to SQLite file |
 | `SESSION_LIFETIME_DAYS` | `30` | Session cookie lifetime |
-| `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS) |
+| `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS), in any letter case; empty means `Lax`; any other value and the app does not start, with a message naming the setting and its three values |
 | `MARKET_CACHE_HOURS` | `6` | Market price cache TTL |
 | `AUTO_SYNC_ON_STARTUP` | `false` | Run wiki sync at server start |
 | `SYNC_INTERVAL_HOURS` | `24` | Background sync interval (0 = off) |
@@ -156,7 +156,7 @@ meantime, the form is refused and you are sent to the login page.
 per-session security token, and the server refuses a change without it (protection against
 cross-site request forgery). Logging out is a button in the menu that sends it too. A form left
 open across a login, a logout or an expired session is refused once with a page saying
-"Reload the page and try again"; after a reload it works. A script or tool outside the browser
+"Reload the page and try again"; after a reload it works, in every tab that reloads. A script or tool outside the browser
 that posts to the app must first read the token from a page (`<meta name="csrf-token">`) and
 send it in the `X-CSRF-Token` header with the same session cookie.
 

@@ -1,8 +1,8 @@
 """CSRF protection: one secret token per session, checked for every unsafe request.
 
 The token is created on first use and kept in the signed session cookie; every form of a
-session and every tab share it. It is replaced when a user signs in or out, so a token seen
-before a sign-in is not the signed-in session's token. Every request whose method is not
+session and every tab share it. It is replaced by a new one when a user signs in or out, so a
+token seen before a sign-in is not the signed-in session's token. Every request whose method is not
 GET, HEAD or OPTIONS must carry it, as the form field ``csrf_token`` or the header
 ``X-CSRF-Token``; otherwise it is refused with 400 before any route runs and before
 anything is written. No route is exempt: the check reads the request, not a list of routes.
@@ -36,19 +36,24 @@ class _TooLarge(Exception):
     pass
 
 
+def _new_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def get_token() -> str:
     """The session's token, created on first use."""
     token = session.get(SESSION_KEY)
     if not isinstance(token, str) or not token:
-        token = secrets.token_urlsafe(32)
+        token = _new_token()
         session[SESSION_KEY] = token
     return token
 
 
 def rotate_token() -> None:
-    """Forget the session's token (at sign-in and sign-out): the old one is refused from
-    now on, and the next page the session renders gets a new one."""
-    session.pop(SESSION_KEY, None)
+    """Replace the session's token with a new one at once (at sign-in and sign-out): the old
+    one is refused from now on, and the response that signs in or out already carries the
+    new one, so every tab that reloads afterwards gets the same token."""
+    session[SESSION_KEY] = _new_token()
 
 
 def hidden_field() -> Markup:

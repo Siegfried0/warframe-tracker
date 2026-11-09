@@ -31,6 +31,7 @@ os.environ['AUTO_SYNC_ON_STARTUP'] = 'false'
 os.environ['SECRET_KEY'] = secrets.token_hex(32)
 os.environ.pop('MSSQL_CONNECTION_STRING', None)
 os.environ.pop('EASYAUTH_ENABLED', None)
+os.environ.pop('SESSION_COOKIE_SAMESITE', None)
 sys.path.insert(0, str(APP_DIR))
 
 import app as app_module  # noqa: E402  (sys.path and the environment must be set first)

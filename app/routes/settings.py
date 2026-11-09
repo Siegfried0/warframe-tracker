@@ -2,13 +2,13 @@ import json
 from datetime import datetime, timezone
 
 from flask import (Blueprint, Response, current_app, flash, redirect,
-                   render_template, request, url_for)
+                   render_template, request, session, url_for)
 from flask_login import current_user, login_required
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from models.progress import Progress
 from services.auth_service import (SETTING_VALUE_MAX, USER_SETTINGS, get_setting,
-                                   save_preferences)
+                                   save_preferences, sign_out)
 from services.backup_service import backup_now
 from services.export_service import export_user_data
 from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
@@ -61,6 +61,9 @@ def index():
             confirm = request.form.get('confirm_delete')
             if confirm == 'DELETE':
                 current_user.delete()
+                sign_out(session)
+                if current_app.config.get('EASYAUTH_ENABLED'):
+                    return redirect('/.auth/logout')
                 flash('Account deleted.', 'info')
                 return redirect(url_for('auth.login'))
             else:

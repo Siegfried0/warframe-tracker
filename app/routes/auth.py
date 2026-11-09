@@ -1,10 +1,10 @@
 from flask import (Blueprint, abort, current_app, flash, redirect, render_template, request,
                    session, url_for)
-from flask_login import current_user, login_required, login_user, logout_user
+from flask_login import current_user, login_required, login_user
 
 from models.user import User
 from services import oidc
-from services.auth_service import safe_return_path
+from services.auth_service import safe_return_path, sign_out
 from services.csrf import rotate_token
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -110,11 +110,9 @@ def oidc_callback():
 @auth_bp.route('/logout', methods=['POST'])
 @login_required
 def logout():
-    rotate_token()
-    oidc.forget_pending(session)
+    sign_out(session)
     if current_app.config.get('EASYAUTH_ENABLED'):
         return redirect('/.auth/logout')
-    logout_user()
     flash('You have been logged out.', 'info')
     return redirect(url_for('auth.login'))
 
