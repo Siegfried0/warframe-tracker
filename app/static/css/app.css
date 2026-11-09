@@ -292,6 +292,27 @@ tr.resurgence-row {
   text-transform: capitalize;
 }
 
+/* The market price of an item on the market: card line and table cell */
+.coll-card-price {
+  margin: 0 0 .3rem;
+  font-size: .75rem;
+}
+
+.wf-price {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .25rem;
+}
+
+.wf-price-stale {
+  font-size: .7rem;
+}
+
+.wf-price[aria-busy="true"] .wf-price-value {
+  opacity: .5;
+}
+
 .coll-card-icons {
   display: flex;
   gap: .15rem;

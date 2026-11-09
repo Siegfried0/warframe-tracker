@@ -115,6 +115,43 @@ def cached_prices(item_ids: list[int]) -> dict[int, int | None]:
     return {row['item_id']: row['platinum_price'] for row in rows}
 
 
+def page_prices(rows: list[dict], cache_hours: int) -> dict[int, dict]:
+    """The price shown for each item on the market among a collection page's rows.
+
+    Reads only the cache, in one query over the page's on-market items (none when the page
+    has none), and writes nothing: never requests a price. Keyed by item id, each dict holds
+    `platinum` (None when no price is cached), `cached` (a cache row exists), `stale` (a cache
+    row exists and is not younger than `cache_hours`; an unreadable fetch time counts as
+    stale), `fetched_label`, `market_slug` (the item's market slug, empty when it has none)
+    and `market_url` (None without a slug). A row not on the market (`on_market` 0) has no
+    entry.
+    """
+    listed = [row for row in rows if row.get('on_market')]
+    ids = list(dict.fromkeys(row['id'] for row in listed))
+    cache = {}
+    if ids:
+        placeholders = ','.join('?' for _ in ids)
+        cache = {r['item_id']: r for r in get_db().execute(
+            'SELECT item_id, platinum_price, fetched_at FROM market_cache '
+            f'WHERE item_id IN ({placeholders})',
+            ids,
+        ).fetchall()}
+    now = datetime.utcnow()
+    prices = {}
+    for row in listed:
+        cached = cache.get(row['id'])
+        slug = row.get('market_url_name') or ''
+        prices[row['id']] = {
+            'platinum': cached['platinum_price'] if cached else None,
+            'cached': cached is not None,
+            'stale': cached is not None and not is_fresh(cached['fetched_at'], cache_hours, now),
+            'fetched_label': _fetch_label(cached['fetched_at']) if cached else None,
+            'market_slug': slug,
+            'market_url': market_url_for(slug) if slug else None,
+        }
+    return prices
+
+
 def market_url_for(market_url_name: str) -> str:
     return f'https://warframe.market/items/{market_url_name}'
 

@@ -3,7 +3,9 @@ from flask_login import current_user, login_required
 
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
+from services.auth_service import get_setting_int
 from services.collection_service import ToggleError, toggle_progress
+from services.market_api import page_prices
 from services.relic_sources import item_drop_sources
 from services.request_ids import (
     RequestIdError,
@@ -80,10 +82,12 @@ def category(cat):
     next_url = _build_page_url(cat, filters, page + 1, per_page, q) if has_next else None
 
     filter_options = Progress.get_filter_options(current_user.id, cat)
+    prices = page_prices(rows, get_setting_int(current_user.id, 'market_cache_hours'))
 
     return render_template(
         'collection.html',
         rows=rows,
+        prices=prices,
         current_cat=cat,
         category_label=CATEGORY_LABELS[cat],
         categories=COLLECTION_CATEGORIES,

@@ -15,6 +15,34 @@
 </a>
 {%- endmacro %}
 
+{#- The price of an item on the market (both views), read from the price cache only: the cached
+    price or `—`, a stale mark with the fetch time when the cache row is older than the user's
+    cache setting, and the warframe.market link when the item has a market slug. With a slug
+    the price is a control that refreshes it (the script below); without one there is nothing
+    to request, so it is plain text. #}
+{% macro market_price(row) -%}
+{%- set p = prices.get(row.id) -%}
+{%- set shown = (p.platinum ~ 'p') if p.platinum is not none else '—' -%}
+{%- set fetched = p.fetched_label or 'at an unknown time' -%}
+<span class="wf-price" data-item="{{ row.id }}">
+  {%- if p.market_slug %}
+  <a href="#" class="wf-price-refresh teal-text" data-item="{{ row.id }}" role="button"
+     title="Refresh the price from warframe.market"
+     aria-label="Price {{ shown }}{{ ', stale' if p.stale else '' }}: refresh from warframe.market"><span class="wf-price-value">{{ shown }}</span></a>
+  {%- else %}
+  <span class="wf-price-value grey-text">{{ shown }}</span>
+  {%- endif %}
+  {%- if p.stale %}
+  <span class="wf-price-stale orange-text" title="Fetched {{ fetched }}">stale ({{ fetched }})</span>
+  {%- endif %}
+  {%- if p.market_url %}
+  <a href="{{ p.market_url }}" target="_blank" rel="noopener" class="wf-price-link grey-text" title="Open on warframe.market">
+    {{- icon('open_in_new', 'tiny', label='Open on warframe.market') -}}
+  </a>
+  {%- endif -%}
+</span>
+{%- endmacro %}
+
 {#- The accessible names of the icon-only toggles that read their state from a word that
     depends on the category: each names what the item is now and what a click does. #}
 {% macro mastered_label(row) -%}
@@ -375,6 +403,7 @@
         {% else %}
           {% if row.source %}<p class="grey-text coll-card-source">{{ row.source }}</p>{% endif %}
         {% endif %}
+        {% if row.on_market %}<p class="coll-card-price">{{ market_price(row) }}</p>{% endif %}
         <div class="coll-card-icons">
           {% if current_cat not in ('arcane',) %}
           <a href="#" class="wf-toggle {% if row.in_possession %}teal-text{% else %}grey-text{% endif %}"
@@ -472,6 +501,7 @@
               <th class="center-align">Plan</th>
               {% endif %}
               <th class="center-align">Market</th>
+              <th>Price</th>
               <th>Note</th>
               <th>Wiki</th>
             </tr>
@@ -595,6 +625,9 @@
               {% endif %}
               <td class="center-align">
                 {% if row.on_market %}{{ market_watch_toggle(row, '') }}{% else %}<span class="grey-text">—</span>{% endif %}
+              </td>
+              <td class="wf-price-cell">
+                {% if row.on_market %}{{ market_price(row) }}{% else %}<span class="grey-text">—</span>{% endif %}
               </td>
               <td>
                 <span class="wf-note-display grey-text" data-item="{{ row.id }}">{{ row.note or '' }}</span>
@@ -930,11 +963,11 @@ $(function() {
       contentType: 'application/json',
       data: JSON.stringify({item_id: itemId}),
       success: function(r) {
-        if (!r.ok) { M.toast({html: r.error || 'Failed to add goal.'}); return; }
+        if (!r.ok) { M.toast({html: escHtml(r.error || 'Failed to add goal.')}); return; }
         if (r.already_exists) {
-          M.toast({html: r.goal.item_name + ' is already in your farming goals.'});
+          M.toast({html: escHtml(r.goal.item_name) + ' is already in your farming goals.'});
         } else {
-          M.toast({html: r.goal.item_name + ' added to Farming Planner. <a href="{{ url_for("farming.index") }}" class="white-text">View</a>'});
+          M.toast({html: escHtml(r.goal.item_name) + ' added to Farming Planner. <a href="{{ url_for("farming.index") }}" class="white-text">View</a>'});
           wfSetIcon($a[0], 'check');
           $a.find('svg.wf-icon').css('color', '#26a69a').attr('aria-label', 'Added to Farming Planner');
         }
@@ -986,6 +1019,52 @@ $(function() {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;');
   }
+
+  // Market price — a click refreshes one item's price (GET /market/price/<id>, which fetches
+  // only when the cached price is not fresh) and updates every price of that item on the page
+  // (both views). A click while its request runs is ignored; a failure keeps the shown price
+  // and says so. The answer's values are inserted as text only.
+  var PRICE_BASE = '{{ url_for("market.price", item_id=0) }}'.replace(/\/0$/, '/');
+  var priceBusy = {};
+  function priceText(platinum) {
+    return (typeof platinum === 'number' && isFinite(platinum)) ? platinum + 'p' : '—';
+  }
+  function showPrice(itemId, platinum) {
+    var shown = priceText(platinum);
+    $('.wf-price[data-item="' + itemId + '"]').each(function() {
+      var $p = $(this);
+      $p.find('.wf-price-value').text(shown);
+      $p.find('.wf-price-stale').remove();
+      $p.find('.wf-price-refresh').attr('aria-label', 'Price ' + shown + ': refresh from warframe.market');
+    });
+  }
+  $(document).on('click', '.wf-price-refresh', function(e) {
+    e.preventDefault();
+    var itemId = parseInt($(this).attr('data-item'), 10);
+    if (!itemId || priceBusy[itemId]) return;
+    priceBusy[itemId] = true;
+    var $prices = $('.wf-price[data-item="' + itemId + '"]').attr('aria-busy', 'true');
+    $.ajax({
+      url: PRICE_BASE + itemId,
+      method: 'GET',
+      dataType: 'json',
+      success: function(r) {
+        if (!r || !r.ok) {
+          M.toast({html: escHtml('The price was not refreshed: ' + ((r && r.error) || 'no answer.'))});
+          return;
+        }
+        showPrice(itemId, r.platinum);
+      },
+      error: function(xhr) {
+        var r = xhr.responseJSON;
+        M.toast({html: escHtml('The price was not refreshed: ' + ((r && r.error) || 'request failed.'))});
+      },
+      complete: function() {
+        delete priceBusy[itemId];
+        $prices.removeAttr('aria-busy');
+      }
+    });
+  });
 
   // Farm it — show drop sources and the relics holding the item's parts in a modal
   $(document).on('click', '.wf-farm-it', function(e) {

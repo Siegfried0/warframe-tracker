@@ -37,6 +37,12 @@ ESCAPED_SITES = [
     ('/sync/', 'escText(cat.category)'),
     ('/sync/', 'escText(item.category)'),
     ('/sync/', 'escText(item.name)'),
+    ('/collection/warframe', "M.toast({html: escHtml(r.error || 'Failed to add goal.')})"),
+    ('/collection/warframe',
+     "M.toast({html: escHtml(r.goal.item_name) + ' is already in your farming goals.'})"),
+    ('/collection/warframe',
+     "M.toast({html: escHtml(r.goal.item_name) + ' added to Farming Planner. <a href=\"/farming/\" "
+     "class=\"white-text\">View</a>'})"),
 ]
 
 # A server string concatenated into the markup bare: `+ obj.field` (escText(obj.field) or
@@ -125,3 +131,50 @@ TOAST_OPENING_BARE = re.compile(r"M\.toast\(\{html:(?!\s*(?:['\"]|escText\())")
 def test_every_toast_a_page_script_shows_opens_with_a_literal_or_an_escape(admin_client, path):
     scripts = _scripts(_page(admin_client, path))
     assert TOAST_OPENING_BARE.findall(scripts) == []
+
+
+# The collection page draws its toasts with its own `escHtml`: every server value inside a
+# toast's html (a field of the answer `r`, or of the failed request's `xhr`) is inside an
+# escape, so only a toast's own fixed markup (a `View` link) is drawn as HTML.
+ESC_HTML = ("function escHtml(s) {\n"
+            "    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')\n"
+            "                    .replace(/\"/g, '&quot;');\n"
+            "  }")
+SERVER_VALUE = re.compile(r"\b(?:r|res|xhr)\b\s*(?:\.|&&|\|\|)")
+COLLECTION_TOAST_OPENING_BARE = re.compile(
+    r"M\.toast\(\{html:(?!\s*(?:['\"]|escHtml\(|watched \? '))")
+
+
+def _balanced_from(text, start):
+    """The index just past the parenthesis closing the one opened before `start`."""
+    depth, i = 1, start
+    while depth:
+        depth += {'(': 1, ')': -1}.get(text[i], 0)
+        i += 1
+    return i
+
+
+def _toast_calls(scripts):
+    """The text of each `M.toast({html: ...})` call."""
+    return [scripts[m.start():_balanced_from(scripts, m.end())]
+            for m in re.finditer(r'M\.toast\(\{html:', scripts)]
+
+
+def _outside_escapes(call):
+    """The call with every `escHtml(...)` and its argument removed."""
+    while 'escHtml(' in call:
+        start = call.index('escHtml(')
+        call = call[:start] + call[_balanced_from(call, start + len('escHtml(')):]
+    return call
+
+
+@pytest.mark.parametrize('category', ['warframe', 'mod', 'arcane'])
+def test_every_collection_toast_draws_server_values_only_through_its_escape(admin_client, category):
+    page = _page(admin_client, f'/collection/{category}')
+    assert page.count('function escHtml(') == 1
+    assert ESC_HTML in page
+    scripts = _scripts(page)
+    calls = _toast_calls(scripts)
+    assert len(calls) == 10
+    assert [c for c in calls if SERVER_VALUE.search(_outside_escapes(c))] == []
+    assert COLLECTION_TOAST_OPENING_BARE.findall(scripts) == []
