@@ -5,7 +5,13 @@ from models.db import get_db
 from models.item import CATEGORIES, CATEGORY_LABELS, COLLECTION_CATEGORIES, Item
 from models.progress import Progress
 from services.collection_service import ToggleError, toggle_progress
-from services.request_ids import RequestIdError, json_object, require_item
+from services.request_ids import (
+    RequestIdError,
+    json_object,
+    json_text,
+    page_number,
+    require_item,
+)
 from services.resurgence_sync import resurgence_status
 
 collection_bp = Blueprint('collection', __name__, url_prefix='/collection')
@@ -52,10 +58,7 @@ def category(cat):
     if per_page not in _VALID_PER_PAGE:
         per_page = _DEFAULT_PER_PAGE_CARDS
 
-    try:
-        page = max(1, int(request.args.get('page', 1)))
-    except (TypeError, ValueError):
-        page = 1
+    page = page_number(request.args.get('page', 1), per_page)
 
     resurgence = resurgence_status()
     rows, total_items = Progress.get_paged_for_user(
@@ -121,10 +124,9 @@ def save_note():
     try:
         data = json_object(request.get_json(force=True, silent=True))
         item = require_item(data.get('item_id'), strings=True)
+        note = json_text(data.get('note', ''), 'note', nullable=True)
     except RequestIdError as err:
         return jsonify({'ok': False, 'error': err.message}), err.status
-    note = data.get('note', '')
-
     Progress.upsert(current_user.id, item.id, note=note)
     return jsonify({'ok': True})
 

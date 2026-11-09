@@ -27,7 +27,15 @@ from services.farming_service import (
     set_goal_progress,
     update_farming_goal,
 )
-from services.request_ids import RequestIdError, int64, item_ids_in, json_object, require_item
+from services.request_ids import (
+    RequestIdError,
+    int64,
+    item_ids_in,
+    json_list,
+    json_object,
+    json_text,
+    require_item,
+)
 
 farming_bp = Blueprint('farming', __name__, url_prefix='/farming')
 
@@ -127,14 +135,14 @@ def goals_move(goal_id):
 def goals_progress(goal_id):
     data = request.get_json(force=True)
     try:
-        row_type       = str(data['row_type'])
-        row_key        = str(data['row_key'])
+        row_type       = json_text(data['row_type'], 'row_type')
+        row_key        = json_text(data['row_key'], 'row_key')
         acquired       = bool(data.get('acquired', False))
         quantity_owned = max(0, int64(data.get('quantity_owned', 0)))
         comp_state     = data.get('comp_state')  # None | 'pending' | 'blueprint' | 'crafted'
         if comp_state not in (None, 'pending', 'blueprint', 'crafted'):
             comp_state = None
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, RequestIdError):
         return jsonify({'ok': False, 'error': 'Invalid payload'}), 400
     if row_type not in ('component', 'ingredient'):
         return jsonify({'ok': False, 'error': 'row_type must be component or ingredient'}), 400
@@ -172,8 +180,11 @@ def nodes():
 @farming_bp.route('/advisor/set', methods=['POST'])
 @login_required
 def advisor_set():
-    data = request.get_json(force=True)
-    node = data.get('node_location', '').strip()
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        node = json_text(data.get('node_location', ''), 'node_location').strip()
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     if node:
         session[_SESSION_NODE_KEY] = node
     else:
@@ -214,8 +225,11 @@ def compute():
 @farming_bp.route('/pin', methods=['POST'])
 @login_required
 def pin():
-    data = request.get_json(force=True)
-    route = data.get('route', [])
+    try:
+        data = json_object(request.get_json(force=True, silent=True))
+        route = json_list(data.get('route', []), 'route')
+    except RequestIdError as err:
+        return jsonify({'ok': False, 'error': err.message}), err.status
     pin_route(current_user.id, route)
     return jsonify({'ok': True})
 
@@ -248,9 +262,9 @@ def checklist():
     except RequestIdError as err:
         return jsonify({'ok': False, 'error': err.message}), err.status
     try:
-        component_name = str(data['component_name'])
+        component_name = json_text(data['component_name'], 'component_name')
         acquired = bool(data.get('acquired', False))
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, RequestIdError):
         return jsonify({'ok': False, 'error': 'Invalid payload'}), 400
     set_checklist(current_user.id, item_id, component_name, acquired)
     return jsonify({'ok': True})

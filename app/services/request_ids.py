@@ -1,4 +1,4 @@
-"""The one check for an id or integer a request passes to SQL.
+"""The one check for an id, integer or other value a request passes to SQL.
 
 SQLite's INTEGER and MSSQL's BIGINT hold a signed 64-bit integer; the drivers refuse a
 larger Python int with an error (a 500), so every request value is checked here first.
@@ -13,9 +13,15 @@ Anything else (null, a list, an object, "", "abc", "-1", " 1", a float) is malfo
 An integer that is well formed but names no item (0, a negative, a value outside the
 64-bit range) is unknown: 404. The check runs before any SQL, so a refused request
 writes nothing.
+
+The other values a request body passes to SQL or a stored row are checked for their JSON
+type the same way (`json_text`, `json_list`): the sqlite3 driver refuses a list or an
+object as a parameter (a 500), and `str()` of one would store its text. A page
+number is bounded so that its row offset stays inside the 64-bit range (`page_number`).
 """
 import re
 
+from flask.json.provider import DefaultJSONProvider
 from werkzeug.routing import BaseConverter, ValidationError
 
 from models.item import Item
@@ -85,6 +91,70 @@ def json_object(data) -> dict:
     if not isinstance(data, dict):
         raise RequestIdError(400, 'invalid request')
     return data
+
+
+class RequestJSONProvider(DefaultJSONProvider):
+    """The app's JSON provider: a body nested too deep to parse is malformed JSON.
+
+    Python's parser raises `RecursionError` for a list or object nested past its recursion
+    limit; `request.get_json` catches only `ValueError`, so such a body would give 500.
+    Raised as `ValueError` here, it reads as any other malformed body: `None` with
+    `silent=True`, 400 without.
+    """
+
+    def loads(self, s, **kwargs):
+        try:
+            return super().loads(s, **kwargs)
+        except RecursionError as err:
+            raise ValueError('JSON nested too deeply') from err
+
+
+def json_text(value, name: str, *, nullable: bool = False):
+    """A JSON string value of a request body; `RequestIdError(400)` for any other type.
+
+    A number, a bool, a list or an object is refused, never stored as its text; `null` is
+    refused too unless `nullable`, when it is returned as None. A string with no UTF-8 form
+    (a lone surrogate, JSON's `"\\ud800"`) is refused as well: the database drivers cannot
+    bind it, and a page that later read it back from the session would fail.
+    """
+    if nullable and value is None:
+        return value
+    if isinstance(value, str):
+        try:
+            value.encode('utf-8')
+        except UnicodeEncodeError:
+            raise RequestIdError(400, f'invalid {name}') from None
+        return value
+    raise RequestIdError(400, f'invalid {name}')
+
+
+def json_list(value, name: str) -> list:
+    """A JSON array value of a request body; `RequestIdError(400)` for any other type."""
+    if not isinstance(value, list):
+        raise RequestIdError(400, f'invalid {name}')
+    return value
+
+
+# A query string's integer too long for int() (more digits than Python converts) is still
+# an integer: a huge page, not a non-integer one.
+_LONG_PAGE = re.compile(r'\s*\+?[0-9]+\s*')
+
+
+def page_number(value, per_page: int) -> int:
+    """The 1-based page a `?page=` value asks for, bounded so its row offset fits SQL.
+
+    A value `int()` refuses is page 1 and a value below 1 is page 1. A page whose offset
+    `(page - 1) * per_page` would leave the signed 64-bit range is lowered to the last page
+    whose offset fits: like any page past the last, it holds no rows.
+    """
+    last = INT64_MAX // per_page + 1
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        if isinstance(value, str) and _LONG_PAGE.fullmatch(value):
+            return last
+        return 1
+    return min(max(1, page), last)
 
 
 def item_ids_in(values) -> list:

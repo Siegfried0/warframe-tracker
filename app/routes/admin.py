@@ -4,6 +4,7 @@ from flask_login import current_user, login_required
 from models.db import get_db
 from models.user import User
 from services.auth_service import admin_required
+from services.request_ids import RequestIdError, json_object, json_text
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -92,8 +93,11 @@ def reset_password(uid):
         return jsonify(error='User not found.'), 404
     if user.auth_type != 'local':
         return jsonify(error='Password reset is only available for local-auth accounts.'), 403
-    data = request.get_json(silent=True) or {}
-    password = data.get('password', '')
+    try:
+        data = json_object(request.get_json(silent=True))
+        password = json_text(data.get('password', ''), 'password')
+    except RequestIdError as err:
+        return jsonify(error=err.message), err.status
     if not password:
         return jsonify(error='Password is required.'), 400
     if len(password) < 8:
