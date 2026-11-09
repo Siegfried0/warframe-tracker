@@ -8,7 +8,7 @@ from datetime import datetime
 
 import requests
 
-from models.db import get_db
+from models.db import INTEGRITY_ERRORS, get_db
 
 log = logging.getLogger(__name__)
 
@@ -127,6 +127,47 @@ def _fetch_label(fetched_at) -> str | None:
         return datetime.fromisoformat(str(fetched_at)).strftime('%Y-%m-%d %H:%M') + ' UTC'
     except ValueError:
         return str(fetched_at)
+
+
+def _is_watched(db, user_id: int, item_id: int) -> bool:
+    return db.execute(
+        'SELECT 1 FROM user_market_watchlist WHERE user_id = ? AND item_id = ?',
+        (user_id, item_id),
+    ).fetchone() is not None
+
+
+def watch_item(user_id: int, item_id: int) -> None:
+    """Put an existing item on the user's market watchlist; already watched is no change.
+
+    Plain SQL that runs on both backends (`added_at` comes from the column's default). A
+    second add of the same item leaves the one row: it is seen by the read before the
+    insert, or, when another request inserted the row in between, the insert breaks the
+    UNIQUE (user_id, item_id) constraint and the row that won counts as this add. Any other
+    constraint failure (the row is still absent afterwards) is raised.
+    """
+    db = get_db()
+    if _is_watched(db, user_id, item_id):
+        return
+    try:
+        db.execute(
+            'INSERT INTO user_market_watchlist (user_id, item_id) VALUES (?, ?)',
+            (user_id, item_id),
+        )
+        db.commit()
+    except INTEGRITY_ERRORS:
+        db.rollback()
+        if not _is_watched(db, user_id, item_id):
+            raise
+
+
+def unwatch_item(user_id: int, item_id: int) -> None:
+    """Remove an item from the user's market watchlist; not watched is no change."""
+    db = get_db()
+    db.execute(
+        'DELETE FROM user_market_watchlist WHERE user_id = ? AND item_id = ?',
+        (user_id, item_id),
+    )
+    db.commit()
 
 
 def watchlist_prices(user_id: int, cache_hours: int, limit: int | None = None) -> list[dict]:

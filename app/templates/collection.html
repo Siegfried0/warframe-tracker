@@ -2,6 +2,17 @@
 {% block title %}{{ category_label }} — Collection{% endblock %}
 {% block content %}
 
+{# The market-watch toggle of a tradable item (both views); the bookmark icon and its title
+   set it apart from the Prime Resurgence watch's bell. #}
+{% macro market_watch_toggle(row, icon_class) %}
+<a href="#" class="wf-market-watch {{ 'green-text' if row.market_watched else 'grey-text' }}"
+   data-item="{{ row.id }}" data-watched="{{ 1 if row.market_watched else 0 }}"
+   role="button" aria-pressed="{{ 'true' if row.market_watched else 'false' }}"
+   title="{{ 'On your market watchlist (click to remove)' if row.market_watched else 'Add to market watchlist' }}">
+  <i class="material-icons {{ icon_class }}">{{ 'bookmark' if row.market_watched else 'bookmark_border' }}</i>
+</a>
+{%- endmacro %}
+
 <h4 class="white-text"><i class="material-icons left">list</i>Collection</h4>
 
 <!-- Category tabs -->
@@ -379,6 +390,7 @@
             <i class="material-icons small">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
           </a>
           {% endif %}
+          {% if row.tradable %}{{ market_watch_toggle(row, 'small') }}{% endif %}
           {% if row.wiki_url %}
           <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
             <i class="material-icons small">open_in_new</i>
@@ -443,6 +455,7 @@
               {% elif current_cat != 'resource' %}
               <th class="center-align">Plan</th>
               {% endif %}
+              <th class="center-align">Market</th>
               <th>Note</th>
               <th>Wiki</th>
             </tr>
@@ -559,6 +572,9 @@
                 </a>
               </td>
               {% endif %}
+              <td class="center-align">
+                {% if row.tradable %}{{ market_watch_toggle(row, '') }}{% else %}<span class="grey-text">—</span>{% endif %}
+              </td>
               <td>
                 <span class="wf-note-display grey-text" data-item="{{ row.id }}">{{ row.note or '' }}</span>
                 <a href="#" class="wf-note-edit grey-text" data-item="{{ row.id }}" title="Edit note">
@@ -902,6 +918,43 @@ $(function() {
         }
       },
       error: function() { M.toast({html: 'Request failed.'}); }
+    });
+  });
+
+  // Market watch — add to / remove from the market watchlist (one handler, both views).
+  // The shown state changes only after the server says ok; a failure keeps it and says so.
+  var marketWatchBusy = {};
+  function showMarketWatch(itemId, watched) {
+    $('.wf-market-watch[data-item="' + itemId + '"]').each(function() {
+      $(this).attr('data-watched', watched ? '1' : '0')
+             .attr('aria-pressed', watched ? 'true' : 'false')
+             .attr('title', watched ? 'On your market watchlist (click to remove)' : 'Add to market watchlist')
+             .toggleClass('green-text', watched).toggleClass('grey-text', !watched)
+             .find('i').text(watched ? 'bookmark' : 'bookmark_border');
+    });
+  }
+  $(document).on('click', '.wf-market-watch', function(e) {
+    e.preventDefault();
+    var $a = $(this), itemId = $a.data('item');
+    if (marketWatchBusy[itemId]) return;
+    var watched = $a.attr('data-watched') === '1';
+    marketWatchBusy[itemId] = true;
+    $.ajax({
+      url: watched ? '{{ url_for("market.unwatch") }}' : '{{ url_for("market.watch") }}',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify({item_id: itemId}),
+      success: function(r) {
+        if (!r || !r.ok) {
+          M.toast({html: 'The market watchlist was not changed.'});
+          return;
+        }
+        showMarketWatch(itemId, !watched);
+        M.toast({html: watched ? 'Removed from the market watchlist.'
+                               : 'Added to the market watchlist. <a href="{{ url_for("market.index") }}" class="white-text">View</a>'});
+      },
+      error: function() { M.toast({html: 'Request failed: the market watchlist was not changed.'}); },
+      complete: function() { delete marketWatchBusy[itemId]; }
     });
   });
 

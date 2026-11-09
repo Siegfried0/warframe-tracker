@@ -151,7 +151,8 @@ class Progress:
 
         `resurgence_current` says whether the stored Prime Resurgence stock counts
         (services/resurgence_sync.resurgence_status); when it does not, the "available"
-        filter matches nothing and every row's `resurgence_available` reads 0.
+        filter matches nothing and every row's `resurgence_available` reads 0. Each row's
+        `market_watched` is 1 when the item is on this user's market watchlist, else 0.
         """
         if filters is None:
             filters = {}
@@ -167,13 +168,17 @@ class Progress:
                    p.owned_rank,
                    p.target_rank,
                    p.note,
-                   p.updated_at AS progress_updated
+                   p.updated_at AS progress_updated,
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM user_market_watchlist w
+                       WHERE w.user_id = ? AND w.item_id = i.id
+                   ) THEN 1 ELSE 0 END AS market_watched
             FROM items i
             LEFT JOIN user_progress p ON p.item_id = i.id AND p.user_id = ?
             WHERE (i.grants_mastery = 1 OR i.category IN ('mod', 'arcane'))
               AND i.category = ?
         '''
-        params: list = [user_id, category]
+        params: list = [user_id, user_id, category]
 
         if query:
             sql += ' AND LOWER(i.name) LIKE ?'

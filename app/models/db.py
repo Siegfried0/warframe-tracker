@@ -9,6 +9,10 @@ except ImportError:
 
 CURRENT_SCHEMA_VERSION = 8
 
+# What each backend raises for a violated constraint (UNIQUE, FOREIGN KEY, NOT NULL).
+INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
+    (_pyodbc.IntegrityError,) if _pyodbc is not None else ())
+
 
 # ── MSSQL compatibility layer ────────────────────────────────────────────────
 
