@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}{{ category_label }} — Collection{% endblock %}
 {% block content %}
 
@@ -9,11 +10,22 @@
    data-item="{{ row.id }}" data-watched="{{ 1 if row.market_watched else 0 }}"
    role="button" aria-pressed="{{ 'true' if row.market_watched else 'false' }}"
    title="{{ 'On your market watchlist (click to remove)' if row.market_watched else 'Add to market watchlist' }}">
-  <i class="material-icons {{ icon_class }}">{{ 'bookmark' if row.market_watched else 'bookmark_border' }}</i>
+  {{ icon('bookmark' if row.market_watched else 'bookmark_border', icon_class,
+          label='On your market watchlist (click to remove)' if row.market_watched else 'Add to market watchlist') }}
 </a>
 {%- endmacro %}
 
-<h4 class="white-text"><i class="material-icons left">list</i>Collection</h4>
+{#- The accessible names of the icon-only toggles that read their state from a word that
+    depends on the category: each names what the item is now and what a click does. #}
+{% macro mastered_label(row) -%}
+{%- set word = 'maxed' if current_cat == 'mod' else 'mastered' -%}
+{{ word | capitalize ~ ' (click to unmark)' if row.mastered else 'Mark as ' ~ word }}
+{%- endmacro %}
+{% macro resurgence_label(row) -%}
+{{ 'Watched for Prime Resurgence (click to stop)' if row.resurgence_watch else 'Watch for Prime Resurgence' }}
+{%- endmacro %}
+
+<h4 class="white-text">{{ icon('list', 'left') }}Collection</h4>
 
 <!-- Category tabs -->
 <div class="row" style="margin-bottom:.5rem">
@@ -44,7 +56,7 @@
         <label for="q" class="white-text">Search {{ category_label }}</label>
       </div>
       <button class="btn blue-grey lighten-1" type="submit">
-        <i class="material-icons">search</i>
+        {{ icon('search', label='Search') }}
       </button>
       {% if query %}
       <a href="{{ url_for('collection.category', cat=current_cat) }}" class="btn-flat white-text">Clear</a>
@@ -53,10 +65,10 @@
   </div>
   <div class="col s12 m6" style="display:flex;align-items:flex-end;justify-content:flex-end;padding-bottom:.75rem;gap:.3rem">
     <button id="view-card" class="btn-small waves-effect" title="Card Grid">
-      <i class="material-icons">grid_view</i>
+      {{ icon('grid_view', label='Card grid') }}
     </button>
     <button id="view-table" class="btn-small waves-effect" title="Table View">
-      <i class="material-icons">table_rows</i>
+      {{ icon('table_rows', label='Table view') }}
     </button>
   </div>
 </div>
@@ -221,7 +233,7 @@
           </div>
           {% if resurgence_notice %}
           <span class="grey-text wf-resurgence-notice" style="font-size:.72rem;flex-basis:100%">
-            <i class="material-icons tiny">info_outline</i> {{ resurgence_notice }}
+            {{ icon('info_outline', 'tiny') }} {{ resurgence_notice }}
           </span>
           {% endif %}
         </div>
@@ -248,7 +260,7 @@
           <a href="{{ url_for('collection.category', cat=current_cat, per_page=per_page) }}"
           {% endif %}
              id="filter-clear" class="wf-filter-btn" {% if not ns_ha.has_active %}style="display:none"{% endif %}>
-            <i class="material-icons" style="font-size:.85rem;vertical-align:middle">clear</i> Clear
+            {{ icon('clear', 'fs-85 middle') }} Clear
           </a>
         </div>
 
@@ -264,12 +276,12 @@
     <div class="wf-pagination">
       <a href="{{ prev_url or '#' }}" id="pag-prev-top"
          class="btn-small waves-effect blue-grey {% if not has_prev %}disabled{% endif %}">
-        <i class="material-icons">chevron_left</i>
+        {{ icon('chevron_left', label='Previous page') }}
       </a>
       <span class="white-text" style="padding:0 .75rem;line-height:2rem">Page {{ page }} / {{ total_pages }}</span>
       <a href="{{ next_url or '#' }}" id="pag-next-top"
          class="btn-small waves-effect blue-grey {% if not has_next %}disabled{% endif %}">
-        <i class="material-icons">chevron_right</i>
+        {{ icon('chevron_right', label='Next page') }}
       </a>
     </div>
   </div>
@@ -311,9 +323,8 @@
        {% endif %}>
     <div class="card blue-grey darken-2 coll-card {% if current_cat not in ('mod','arcane') and row.resurgence_available and row.resurgence_watch %}resurgence-card{% endif %}">
       <div class="coll-card-portrait">
-        <i class="material-icons grey-text coll-portrait-placeholder">
-          {% if current_cat == 'mod' %}auto_fix_high{% elif current_cat == 'arcane' %}auto_awesome{% else %}shield{% endif %}
-        </i>
+        {{ icon('auto_fix_high' if current_cat == 'mod' else ('auto_awesome' if current_cat == 'arcane' else 'shield'),
+                'grey-text coll-portrait-placeholder') }}
         {% if row.image_url %}
         <img src="{{ row.image_url }}" alt="{{ row.name }}" class="coll-portrait-img"
              onerror="this.style.display='none'">
@@ -345,14 +356,14 @@
                       data-delta="-1" data-max="{{ arc_max_rank }}"
                       style="padding:0;width:1.2rem;height:1.2rem;line-height:1.2rem;min-width:0"
                       title="Decrease rank">
-                <i class="material-icons" style="font-size:.85rem">remove</i>
+                {{ icon('remove', 'fs-85', label='Decrease rank') }}
               </button>
               <span class="arc-owned-rank grey-text" style="font-size:.75rem">{{ arc_owned_rank }}/{{ arc_max_rank }}</span>
               <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
                       data-delta="1" data-max="{{ arc_max_rank }}"
                       style="padding:0;width:1.2rem;height:1.2rem;line-height:1.2rem;min-width:0"
                       title="Increase rank">
-                <i class="material-icons" style="font-size:.85rem">add</i>
+                {{ icon('add', 'fs-85', label='Increase rank') }}
               </button>
               <span class="grey-text" style="font-size:.7rem;margin-left:.2rem">target:</span>
               <input type="number" class="arc-target-input white-text" data-item="{{ row.id }}"
@@ -368,47 +379,49 @@
           {% if current_cat not in ('arcane',) %}
           <a href="#" class="wf-toggle {% if row.in_possession %}teal-text{% else %}grey-text{% endif %}"
              data-item="{{ row.id }}" data-field="in_possession" title="Owned">
-            <i class="material-icons small">{{ 'check_box' if row.in_possession else 'check_box_outline_blank' }}</i>
+            {{ icon('check_box' if row.in_possession else 'check_box_outline_blank', 'small',
+                    label='Owned (click to unmark)' if row.in_possession else 'Mark as owned') }}
           </a>
           {% endif %}
           {% if current_cat not in ('arcane',) %}
           <a href="#" class="wf-toggle {% if row.mastered %}amber-text{% else %}grey-text{% endif %}"
              data-item="{{ row.id }}" data-field="mastered"
              title="{{ 'Maxed' if current_cat == 'mod' else 'Mastered' }}">
-            <i class="material-icons small">{{ 'star' if row.mastered else 'star_border' }}</i>
+            {{ icon('star' if row.mastered else 'star_border', 'small', label=mastered_label(row)) }}
           </a>
           {% endif %}
           {% if current_cat == 'warframe' and row.source != 'prime' %}
           <a href="#" class="wf-toggle {% if row.subsumed %}purple-text{% else %}grey-text{% endif %}"
              data-item="{{ row.id }}" data-field="subsumed" title="Subsumed">
-            <i class="material-icons small">spa</i>
+            {{ icon('spa', 'small', label='Subsumed (click to unmark)' if row.subsumed else 'Mark as subsumed') }}
           </a>
           {% endif %}
           {% if current_cat not in ('mod', 'arcane') and row.source == 'prime' %}
           <a href="#" class="wf-toggle {% if row.resurgence_watch %}red-text{% else %}grey-text{% endif %}"
              data-item="{{ row.id }}" data-field="resurgence_watch" title="Watch for Prime Resurgence">
-            <i class="material-icons small">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
+            {{ icon('notifications_active' if row.resurgence_watch else 'notifications_none', 'small',
+                    label=resurgence_label(row)) }}
           </a>
           {% endif %}
           {% if row.on_market %}{{ market_watch_toggle(row, 'small') }}{% endif %}
           {% if row.wiki_url %}
           <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
-            <i class="material-icons small">open_in_new</i>
+            {{ icon('open_in_new', 'small', label='Wiki page') }}
           </a>
           {% endif %}
           <a href="#" class="wf-note-edit grey-text" data-item="{{ row.id }}" title="Note">
-            <i class="material-icons small">{% if row.note %}notes{% else %}edit_note{% endif %}</i>
+            {{ icon('notes' if row.note else 'edit_note', 'small', label='Edit note' if row.note else 'Add a note') }}
           </a>
           {% if current_cat in ('mod', 'arcane') %}
           <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Farm it">
-            <i class="material-icons small">agriculture</i>
+            {{ icon('agriculture', 'small', label='Farm it') }}
           </a>
           {% elif current_cat != 'resource' %}
           <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Drop sources">
-            <i class="material-icons small">agriculture</i>
+            {{ icon('agriculture', 'small', label='Drop sources') }}
           </a>
           <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
-            <i class="material-icons small">add_task</i>
+            {{ icon('add_task', 'small', label='Add to Farming Planner') }}
           </a>
           {% endif %}
         </div>
@@ -504,13 +517,13 @@
                   <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
                           data-delta="-1" data-max="{{ arc_max_rank }}"
                           style="padding:0;min-width:1.4rem;height:1.4rem;line-height:1.4rem">
-                    <i class="material-icons" style="font-size:.85rem">remove</i>
+                    {{ icon('remove', 'fs-85', label='Decrease rank') }}
                   </button>
                   <span class="arc-owned-rank grey-text">{{ arc_owned_rank }}/{{ arc_max_rank }}</span>
                   <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
                           data-delta="1" data-max="{{ arc_max_rank }}"
                           style="padding:0;min-width:1.4rem;height:1.4rem;line-height:1.4rem">
-                    <i class="material-icons" style="font-size:.85rem">add</i>
+                    {{ icon('add', 'fs-85', label='Increase rank') }}
                   </button>
                 </div>
               </td>
@@ -527,13 +540,14 @@
               <td class="center-align">
                 <a href="#" class="wf-toggle teal-text" data-item="{{ row.id }}" data-field="in_possession"
                    title="Toggle Owned">
-                  <i class="material-icons">{{ 'check_box' if row.in_possession else 'check_box_outline_blank' }}</i>
+                  {{ icon('check_box' if row.in_possession else 'check_box_outline_blank',
+                          label='Owned (click to unmark)' if row.in_possession else 'Mark as owned') }}
                 </a>
               </td>
               <td class="center-align">
                 <a href="#" class="wf-toggle amber-text" data-item="{{ row.id }}" data-field="mastered"
                    title="{{ 'Toggle Maxed' if current_cat == 'mod' else 'Toggle Mastered' }}">
-                  <i class="material-icons">{{ 'star' if row.mastered else 'star_border' }}</i>
+                  {{ icon('star' if row.mastered else 'star_border', label=mastered_label(row)) }}
                 </a>
               </td>
               {% endif %}
@@ -542,7 +556,7 @@
                 {% if row.source != 'prime' %}
                 <a href="#" class="wf-toggle purple-text" data-item="{{ row.id }}" data-field="subsumed"
                    title="Toggle Subsumed">
-                  <i class="material-icons">spa</i>
+                  {{ icon('spa', label='Subsumed (click to unmark)' if row.subsumed else 'Mark as subsumed') }}
                 </a>
                 {% else %}<span class="grey-text">—</span>{% endif %}
               </td>
@@ -552,29 +566,30 @@
                 {% if row.source == 'prime' %}
                 <a href="#" class="wf-toggle red-text" data-item="{{ row.id }}" data-field="resurgence_watch"
                    title="Watch for Prime Resurgence">
-                  <i class="material-icons">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
+                  {{ icon('notifications_active' if row.resurgence_watch else 'notifications_none',
+                          label=resurgence_label(row)) }}
                 </a>
                 {% else %}<span class="grey-text">—</span>{% endif %}
               </td>
               <td class="center-align">
                 {% if row.vaulted %}
-                <span class="orange-text" title="Currently vaulted"><i class="material-icons small">lock</i></span>
+                <span class="orange-text" title="Currently vaulted">{{ icon('lock', 'small', label='Currently vaulted') }}</span>
                 {% else %}<span class="grey-text">—</span>{% endif %}
               </td>
               {% endif %}
               {% if current_cat in ('mod', 'arcane') %}
               <td class="center-align">
                 <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Farm it">
-                  <i class="material-icons small">agriculture</i>
+                  {{ icon('agriculture', 'small', label='Farm it') }}
                 </a>
               </td>
               {% elif current_cat != 'resource' %}
               <td class="center-align" style="white-space:nowrap">
                 <a href="#" class="wf-farm-it grey-text" data-item="{{ row.id }}" data-name="{{ row.name }}" title="Drop sources">
-                  <i class="material-icons small">agriculture</i>
+                  {{ icon('agriculture', 'small', label='Drop sources') }}
                 </a>
                 <a href="#" class="wf-plan-it grey-text" data-item="{{ row.id }}" title="Add to Farming Planner">
-                  <i class="material-icons small">add_task</i>
+                  {{ icon('add_task', 'small', label='Add to Farming Planner') }}
                 </a>
               </td>
               {% endif %}
@@ -584,13 +599,13 @@
               <td>
                 <span class="wf-note-display grey-text" data-item="{{ row.id }}">{{ row.note or '' }}</span>
                 <a href="#" class="wf-note-edit grey-text" data-item="{{ row.id }}" title="Edit note">
-                  <i class="material-icons tiny">edit</i>
+                  {{ icon('edit', 'tiny', label='Edit note' if row.note else 'Add a note') }}
                 </a>
               </td>
               <td>
                 {% if row.wiki_url %}
                 <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
-                  <i class="material-icons small">open_in_new</i>
+                  {{ icon('open_in_new', 'small', label='Wiki page') }}
                 </a>
                 {% else %}—{% endif %}
               </td>
@@ -612,12 +627,12 @@
     <div class="wf-pagination">
       <a href="{{ prev_url or '#' }}" id="pag-prev-bot"
          class="btn-small waves-effect blue-grey {% if not has_prev %}disabled{% endif %}">
-        <i class="material-icons">chevron_left</i>
+        {{ icon('chevron_left', label='Previous page') }}
       </a>
       <span class="white-text" style="padding:0 .75rem;line-height:2rem">Page {{ page }} / {{ total_pages }}</span>
       <a href="{{ next_url or '#' }}" id="pag-next-bot"
          class="btn-small waves-effect blue-grey {% if not has_next %}disabled{% endif %}">
-        <i class="material-icons">chevron_right</i>
+        {{ icon('chevron_right', label='Next page') }}
       </a>
     </div>
   </div>
@@ -920,7 +935,8 @@ $(function() {
           M.toast({html: r.goal.item_name + ' is already in your farming goals.'});
         } else {
           M.toast({html: r.goal.item_name + ' added to Farming Planner. <a href="{{ url_for("farming.index") }}" class="white-text">View</a>'});
-          $a.find('i').text('check').css('color', '#26a69a');
+          wfSetIcon($a[0], 'check');
+          $a.find('svg.wf-icon').css('color', '#26a69a').attr('aria-label', 'Added to Farming Planner');
         }
       },
       error: function() { M.toast({html: 'Request failed.'}); }
@@ -936,7 +952,9 @@ $(function() {
              .attr('aria-pressed', watched ? 'true' : 'false')
              .attr('title', watched ? 'On your market watchlist (click to remove)' : 'Add to market watchlist')
              .toggleClass('green-text', watched).toggleClass('grey-text', !watched)
-             .find('i').text(watched ? 'bookmark' : 'bookmark_border');
+             .find('svg.wf-icon').attr('aria-label', watched ? 'On your market watchlist (click to remove)'
+                                                             : 'Add to market watchlist');
+      wfSetIcon(this, watched ? 'bookmark' : 'bookmark_border');
     });
   }
   $(document).on('click', '.wf-market-watch', function(e) {

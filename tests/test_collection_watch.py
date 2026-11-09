@@ -41,7 +41,7 @@ WATCHED_TITLE = 'On your market watchlist (click to remove)'
 UNWATCHED_TITLE = 'Add to market watchlist'
 
 TOGGLE = re.compile(r'<a href="#" class="wf-market-watch [^"]*"[^>]*>\s*'
-                    r'<i class="material-icons[^"]*">\w+</i>', re.S)
+                    r'<svg class="wf-icon[^"]*"[^>]*><use href="[^"#]*#i-\w+"></use></svg>', re.S)
 
 
 def attrs(toggle):
@@ -119,13 +119,15 @@ def test_exactly_the_tradable_items_show_the_toggle_with_the_callers_state(
             continue
         assert len(toggles) == 1, (category, view, name)
         a = attrs(toggles[0])
-        icon = re.search(r'>(\w+)</i>', toggles[0]).group(1)
+        icon = re.search(r'#i-(\w+)"', toggles[0]).group(1)
+        label = re.search(r'<svg[^>]*aria-label="([^"]*)"', toggles[0]).group(1)
         assert a['data-item'] == str(iid)
         assert a['data-watched'] == ('1' if mine else '0'), (category, view, name)
         assert a['aria-pressed'] == ('true' if mine else 'false')
         assert a['role'] == 'button'
         assert a['title'] == (WATCHED_TITLE if mine else UNWATCHED_TITLE)
         assert icon == ('bookmark' if mine else 'bookmark_border')
+        assert label == a['title']
         assert ('green-text' in a['class']) is mine
 
 

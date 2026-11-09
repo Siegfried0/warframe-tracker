@@ -97,7 +97,6 @@ nav ul .logout-form button:hover { background-color: rgba(0, 0, 0, 0.1); }
   padding: 0 32px;
 }
 .sidenav li > .logout-form button:hover { background-color: rgba(0, 0, 0, 0.05); }
-.sidenav li > .logout-form button > i.material-icons,
 .sidenav li > .logout-form button > .wf-icon {
   float: left;
   height: 48px;
@@ -107,10 +106,6 @@ nav ul .logout-form button:hover { background-color: rgba(0, 0, 0, 0.1); }
   color: rgba(0, 0, 0, 0.54);
 }
 .logout-form button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
-nav .brand-logo i {
-  vertical-align: middle;
-  margin-right: .3rem;
-}
 
 /* ── Icons: the app's own SVG sprite, drawn by the icon() macro ─────────────
    An icon is 1em square at 24px, sitting on the text's baseline as the icon font's glyphs
@@ -160,6 +155,16 @@ nav .brand-logo .wf-icon { float: left; margin-right: 15px; }
 .btn-small .wf-icon                     { font-size: 1.2rem; vertical-align: middle; }
 .btn .wf-icon.left, .btn .wf-icon.right { width: 1.3rem; height: 36px; }
 .btn-flat .wf-icon.left, .btn-flat .wf-icon.right { width: 1.3rem; height: 36px; }
+/* The sizes the collection and farming pages give single icons, named for their font-size in
+   hundredths of a rem (fs-85 = .85rem), and the middle alignment some sit at. They come after
+   the button rules so that an icon in a button keeps the size its page asks for. */
+.wf-icon.fs-62  { font-size: .62rem; }
+.wf-icon.fs-75  { font-size: .75rem; }
+.wf-icon.fs-85  { font-size: .85rem; }
+.wf-icon.fs-90  { font-size: .9rem; }
+.wf-icon.fs-130 { font-size: 1.3rem; }
+.wf-icon.fs-250 { font-size: 2.5rem; }
+.wf-icon.middle { vertical-align: middle; }
 
 /* Card */
 .card {
@@ -358,7 +363,6 @@ tr.resurgence-row {
   color: #fff;
 }
 
-.wf-goal-side-tab .material-icons,
 .wf-goal-side-tab .wf-icon {
   font-size: .85rem;
   user-select: none;

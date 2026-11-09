@@ -3,11 +3,14 @@
 - The sprite (app/static/icons/icons.svg) holds one <symbol id="i-NAME"> per icon: a 24 x 24
   viewBox, simple shapes only, every colour `none` or `currentColor`, nothing it loads.
 - Every name a template passes to the icon() macro, and every name a page script passes to
-  wfIcon() or wfSetIcon(), has its symbol; so does every name the icon font still draws on
-  the pages not yet moved, and every name those pages choose in a page script.
-- The moved pages render with references into the sprite and no `material-icons`; every
-  icon on them is hidden from assistive technology or carries a name, and every control
-  whose only content is an icon has an accessible name.
+  wfIcon() or wfSetIcon(), has its symbol.
+- No template, the project stylesheet or the app's script uses the icon font
+  (`material-icons`) or loads a font from another server.
+- Every page renders with references into the sprite; every icon on it is hidden from
+  assistive technology or carries a name, and every control whose only content is an icon
+  has an accessible name. The collection's toggles name what the item is now and what a
+  click does, so their names change with their state as their icons do; a page script
+  that swaps an icon swaps its name with it.
 - Flask serves the sprite as image/svg+xml, whatever the host's MIME table says.
 
 Offline: nothing here reaches the network (tests/conftest.py).
@@ -23,6 +26,7 @@ from jinja2 import nodes
 from models.db import get_db
 from models.item import Item
 from models.user import User
+from services.farming_service import add_farming_goal
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATES = ROOT / 'app' / 'templates'
@@ -30,9 +34,11 @@ SPRITE = ROOT / 'app' / 'static' / 'icons' / 'icons.svg'
 APP_JS = ROOT / 'app' / 'static' / 'js' / 'app.js'
 SVG_NS = '{http://www.w3.org/2000/svg}'
 
-# The pages that draw every icon through the macro (the rest still use the icon font).
+# The pages that draw icons, every one through the macro.
 MOVED = ['base.html', 'auth/login.html', 'auth/register.html', 'auth/setup.html', 'admin.html',
-         'settings.html', 'sync.html', 'market.html', 'dashboard.html']
+         'settings.html', 'sync.html', 'market.html', 'dashboard.html', 'collection.html',
+         'farming.html']
+APP_CSS = ROOT / 'app' / 'static' / 'css' / 'app.css'
 
 # Every icon name a template or page script used when the sprite was drawn, the names chosen
 # in Jinja expressions and page scripts included: each must keep its symbol.
@@ -123,20 +129,6 @@ def script_names(source):
     return found
 
 
-_FONT_ICON = re.compile(r'<i class="material-icons[^"]*"[^>]*>(.*?)</i>', re.S)
-
-
-def font_names(source):
-    """Every name the icon font draws in a template: the ligature text, or the string
-    literals of a Jinja expression or tag choosing it."""
-    found = []
-    for inner in _FONT_ICON.findall(source):
-        literals = re.findall(r"'([a-z0-9_]+)'", inner)
-        bare = re.sub(r'\{\{.*?\}\}|\{%.*?%\}', ' ', inner, flags=re.S).split()
-        found += literals + bare
-    return found
-
-
 def template_sources():
     return {p.relative_to(TEMPLATES).as_posix(): p.read_text(encoding='utf-8')
             for p in sorted(TEMPLATES.rglob('*.html'))}
@@ -194,15 +186,6 @@ def test_the_script_name_extractor_finds_every_spelling(source, names):
 def test_the_script_name_extractor_refuses_a_name_it_cannot_see(source):
     with pytest.raises(AssertionError, match='not a literal'):
         script_names(source)
-
-
-def test_the_font_name_extractor_reads_ligatures_and_jinja_choices():
-    source = ('<i class="material-icons tiny">info_outline</i>'
-              '<i class="material-icons">{{ \'check_box\' if a else \'check_box_outline_blank\' }}</i>'
-              '<i class="material-icons grey-text x">\n  {% if c == \'mod\' %}auto_fix_high'
-              '{% else %}shield{% endif %}\n</i>')
-    assert font_names(source) == ['info_outline', 'check_box', 'check_box_outline_blank',
-                                  'mod', 'auto_fix_high', 'shield']
 
 
 # ── The sprite ──────────────────────────────────────────────────────────────────
@@ -274,16 +257,17 @@ def test_every_name_a_page_script_draws_has_its_symbol():
         used += [(path, n) for n in script_names(source)]
     used += [('app.js', n) for n in script_names(APP_JS.read_text(encoding='utf-8'))]
     assert ('sync.html', 'folder') in used and ('dashboard.html', 'star_border') in used
+    assert ('farming.html', 'gps_fixed') in used and ('collection.html', 'bookmark') in used
     assert [u for u in used if 'i-' + u[1] not in symbols] == []
 
 
-def test_every_name_the_icon_font_still_draws_has_its_symbol():
-    """The pages not yet moved keep the font until they are; their names are drawn already."""
-    _, symbols = sprite_symbols()
-    used = []
-    for path, source in template_sources().items():
-        used += [(path, n) for n in font_names(source) if n not in ('mod', 'arcane')]
-    assert [u for u in used if 'i-' + u[1] not in symbols] == []
+def test_no_template_stylesheet_or_app_script_uses_the_icon_font():
+    sources = dict(template_sources())
+    sources['app.css'] = APP_CSS.read_text(encoding='utf-8')
+    sources['app.js'] = APP_JS.read_text(encoding='utf-8')
+    assert len(sources) >= 15
+    assert [path for path, text in sources.items() if 'material-icons' in text] == []
+    assert [path for path, text in sources.items() if 'fonts.googleapis' in text] == []
 
 
 @pytest.mark.parametrize('path', MOVED)
@@ -311,12 +295,18 @@ def test_the_macro_writes_the_sprite_reference_and_hides_a_decoration(app):
 
 @pytest.fixture
 def seeded(app, admin_client):
-    """A second user (the admin's row controls), a watched item with a listing (the market
-    links), and an owned, unmastered item (the dashboard's mastery star)."""
+    """A second user (the admin's row controls), a watched item with a listing and a wiki page
+    (the market and wiki links), an owned, unmastered item (the dashboard's mastery star),
+    a farming goal (the planner's card), and a Prime warframe, a mod and an arcane (the
+    collection's other toggles and the arcane rank buttons)."""
     with app.app_context():
         admin = User.get_by_username('admin').id
         User.create('alice', password='pw-alice-1')
-        Item.upsert('Braton Prime', 'primary', source='standard')
+        Item.upsert('Braton Prime', 'primary', source='standard',
+                    wiki_url='https://wiki.example.com/Braton_Prime')
+        Item.upsert('Ash Prime', 'warframe', source='prime', vaulted=True)
+        Item.upsert('Serration', 'mod')
+        Item.upsert('Arcane Energize', 'arcane')
         db = get_db()
         db.execute("UPDATE items SET market_url_name = 'braton_prime_set' "
                    "WHERE name = 'Braton Prime'")
@@ -326,10 +316,13 @@ def seeded(app, admin_client):
         db.execute('INSERT INTO user_progress (user_id, item_id, in_possession, mastered) '
                    'VALUES (?, ?, 1, 0)', (admin, item))
         db.commit()
+        add_farming_goal(admin, item)
     return admin_client
 
 
-AUTHED_PAGES = ['/dashboard', '/market/', '/settings/', '/admin/', '/sync/']
+AUTHED_PAGES = ['/dashboard', '/market/', '/settings/', '/admin/', '/sync/',
+                '/collection/primary', '/collection/warframe', '/collection/mod',
+                '/collection/arcane', '/farming/']
 
 _CONTROL = re.compile(r'<(a|button)\b([^>]*)>(.*?)</\1>', re.S)
 _SVG = re.compile(r'<svg\b([^>]*)>', re.S)
@@ -373,11 +366,88 @@ def test_a_moved_page_renders_its_icons_from_the_sprite(seeded, url):
     ('/admin/', ['Deactivate', 'Reset password', 'Delete user', 'Menu']),
     ('/market/', ['Open on warframe.market', 'Remove from watchlist']),
     ('/dashboard', ['Mark as Mastered', 'Open on warframe.market']),
+    ('/collection/primary', ['Search', 'Card grid', 'Table view', 'Wiki page', 'Drop sources',
+                             'Add to Farming Planner', 'Add a note',
+                             'On your market watchlist (click to remove)']),
+    ('/collection/warframe', ['Currently vaulted', 'Watch for Prime Resurgence']),
+    ('/collection/mod', ['Farm it', 'Mark as maxed']),
+    ('/collection/arcane', ['Decrease rank', 'Increase rank']),
+    ('/farming/', ['Tree view', 'Visual plan', 'Pin to dashboard', 'Remove goal',
+                   'Show crafting plan', 'Collapse', 'Loading']),
 ])
 def test_icon_only_controls_name_themselves(seeded, url, icon_only):
     html = seeded.get(url).get_data(as_text=True)
     for label in icon_only:
         assert f'role="img" aria-label="{label}"' in html, label
+
+
+# Axis "interface": a collection toggle's name says what the item is now and what a click
+# does, so it changes with the state, as the icon does, in both views (grid and list).
+# (category, source, state column, its value, the name, the name of the other state)
+TOGGLE_NAMES = [
+    ('warframe', 'standard', 'in_possession', 1, 'Owned (click to unmark)', 'Mark as owned'),
+    ('warframe', 'standard', 'in_possession', 0, 'Mark as owned', 'Owned (click to unmark)'),
+    ('warframe', 'standard', 'mastered', 1, 'Mastered (click to unmark)', 'Mark as mastered'),
+    ('warframe', 'standard', 'mastered', 0, 'Mark as mastered', 'Mastered (click to unmark)'),
+    ('mod', None, 'mastered', 1, 'Maxed (click to unmark)', 'Mark as maxed'),
+    ('mod', None, 'mastered', 0, 'Mark as maxed', 'Maxed (click to unmark)'),
+    ('warframe', 'standard', 'subsumed', 1, 'Subsumed (click to unmark)', 'Mark as subsumed'),
+    ('warframe', 'standard', 'subsumed', 0, 'Mark as subsumed', 'Subsumed (click to unmark)'),
+    ('warframe', 'prime', 'resurgence_watch', 1, 'Watched for Prime Resurgence (click to stop)',
+     'Watch for Prime Resurgence'),
+    ('warframe', 'prime', 'resurgence_watch', 0, 'Watch for Prime Resurgence',
+     'Watched for Prime Resurgence (click to stop)'),
+    ('primary', 'standard', 'note', 'farm the barrel first', 'Edit note', 'Add a note'),
+    ('primary', 'standard', 'note', None, 'Add a note', 'Edit note'),
+    ('primary', 'standard', 'market', 1, 'On your market watchlist (click to remove)',
+     'Add to market watchlist'),
+    ('primary', 'standard', 'market', 0, 'Add to market watchlist',
+     'On your market watchlist (click to remove)'),
+]
+
+
+@pytest.mark.parametrize('category,source,column,value,name,other', TOGGLE_NAMES,
+                         ids=[f'{c[2]}={c[3]!r}-{c[0]}' for c in TOGGLE_NAMES])
+def test_a_collection_toggle_is_named_for_its_state_in_both_views(
+        app, admin_client, category, source, column, value, name, other):
+    with app.app_context():
+        admin = User.get_by_username('admin').id
+        Item.upsert('Test Item', category, source=source)
+        db = get_db()
+        db.execute("UPDATE items SET market_url_name = 'test_item' WHERE name = 'Test Item'")
+        item = db.execute("SELECT id FROM items WHERE name = 'Test Item'").fetchone()[0]
+        if column == 'market':
+            if value:
+                db.execute('INSERT INTO user_market_watchlist (user_id, item_id) VALUES (?, ?)',
+                           (admin, item))
+        else:
+            db.execute(f'INSERT INTO user_progress (user_id, item_id, {column}) VALUES (?, ?, ?)',
+                       (admin, item, value))
+        db.commit()
+    html = admin_client.get(f'/collection/{category}').get_data(as_text=True)
+    assert html.count(f'role="img" aria-label="{name}"') == 2
+    assert f'aria-label="{other}"' not in html
+
+
+def test_the_collection_swaps_an_icon_and_its_name_through_the_helper(seeded):
+    html = seeded.get('/collection/primary').get_data(as_text=True)
+    assert "wfSetIcon(this, watched ? 'bookmark' : 'bookmark_border')" in html
+    assert ".find('svg.wf-icon').attr('aria-label', watched ?" in html
+    assert "wfSetIcon($a[0], 'check')" in html
+    assert "attr('aria-label', 'Added to Farming Planner')" in html
+    assert ".find('i')" not in html
+
+
+def test_the_planner_pin_names_its_state_and_its_script_follows(seeded, app):
+    html = seeded.get('/farming/').get_data(as_text=True)
+    assert html.count('role="img" aria-label="Pin to dashboard"') == 2
+    assert ".find('svg.wf-icon').attr('aria-label', pinned ?" in html
+    with app.app_context():
+        get_db().execute('UPDATE farming_goals SET pinned = 1')
+        get_db().commit()
+    html = seeded.get('/farming/').get_data(as_text=True)
+    assert html.count('role="img" aria-label="Pinned to dashboard (click to unpin)"') == 2
+    assert 'aria-label="Pin to dashboard"' not in html
 
 
 @pytest.mark.parametrize('url', ['/auth/login', '/auth/register'])

@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Farming Planner — Warframe Tracker{% endblock %}
 {% block content %}
 
-<h4 class="white-text"><i class="material-icons left">agriculture</i>Farming Planner</h4>
+<h4 class="white-text">{{ icon('agriculture', 'left') }}Farming Planner</h4>
 
 <!-- ── Add Goal ──────────────────────────────────────────────────────────── -->
 <div class="row" style="margin-bottom:.75rem">
@@ -10,7 +11,7 @@
     <div class="card blue-grey darken-2" style="margin:0;padding:.75rem 1rem">
       <div style="display:flex;gap:.5rem;align-items:center;position:relative">
         <div class="input-field" style="flex:1;margin:0">
-          <i class="material-icons prefix grey-text">search</i>
+          {{ icon('search', 'prefix grey-text') }}
           <input id="goal-search" type="text" class="white-text" autocomplete="off"
                  placeholder="Add a goal item (Warframe, weapon, companion…)">
         </div>
@@ -22,7 +23,7 @@
   {% if goals|length >= 2 %}
   <div class="col s12 m6" style="display:flex;align-items:center;gap:.5rem;padding-top:.5rem">
     <button id="agg-btn" class="btn blue-grey lighten-1 waves-effect" style="white-space:nowrap">
-      <i class="material-icons left">view_list</i>All Goals View
+      {{ icon('view_list', 'left') }}All Goals View
     </button>
   </div>
   {% endif %}
@@ -31,18 +32,18 @@
 <!-- ── Goal Cards ────────────────────────────────────────────────────────── -->
 {#- Move up / move down: a goal moves within its pin group (pinned goals stay first), so the
     first card of a group cannot move up and the last cannot move down. -#}
-{% macro move_buttons(goal, first_in_group, last_in_group, style='', icon_style='') -%}
+{% macro move_buttons(goal, first_in_group, last_in_group, style='', icon_classes='') -%}
             <button type="button" class="btn-small blue-grey waves-effect goal-move-btn"
                     data-goal="{{ goal.goal_id }}" data-direction="up"
                     title="Move goal up" aria-label="Move {{ goal.item_name }} up"
                     {% if style %}style="{{ style }}"{% endif %}{% if first_in_group %} disabled{% endif %}>
-              <i class="material-icons" aria-hidden="true"{% if icon_style %} style="{{ icon_style }}"{% endif %}>arrow_upward</i>
+              {{ icon('arrow_upward', icon_classes) }}
             </button>
             <button type="button" class="btn-small blue-grey waves-effect goal-move-btn"
                     data-goal="{{ goal.goal_id }}" data-direction="down"
                     title="Move goal down" aria-label="Move {{ goal.item_name }} down"
                     {% if style %}style="{{ style }}"{% endif %}{% if last_in_group %} disabled{% endif %}>
-              <i class="material-icons" aria-hidden="true"{% if icon_style %} style="{{ icon_style }}"{% endif %}>arrow_downward</i>
+              {{ icon('arrow_downward', icon_classes) }}
             </button>
 {%- endmacro %}
 {% if goals %}
@@ -57,7 +58,7 @@
       <div class="wf-goal-compact">
         <div class="wf-goal-compact-main">
           <div class="wf-goal-compact-portrait">
-            <i class="material-icons grey-text" style="font-size:2.5rem">shield</i>
+            {{ icon('shield', 'grey-text fs-250') }}
             {% if goal.image_url %}
             <img src="{{ goal.image_url }}" alt="{{ goal.item_name }}"
                  class="wf-goal-compact-portrait-img" onerror="this.style.display='none'">
@@ -79,27 +80,27 @@
           <div class="card-action" style="padding:.4rem .5rem;display:flex;gap:.35rem;align-items:center">
             <button class="btn-small waves-effect goal-mode-btn {% if goal.display_mode == 'tree' %}teal{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" title="Tree View">
-              <i class="material-icons">account_tree</i>
+              {{ icon('account_tree', label='Tree view') }}
             </button>
             <button class="btn-small waves-effect goal-list-btn {% if goal.display_mode == 'list' %}teal{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" title="Visual Plan">
-              <i class="material-icons">grid_view</i>
+              {{ icon('grid_view', label='Visual plan') }}
             </button>
             <button class="btn-small waves-effect goal-pin-btn {% if goal.pinned %}amber darken-2{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" data-pinned="{{ goal.pinned }}" title="Pin to dashboard">
-              <i class="material-icons">push_pin</i>
+              {{ icon('push_pin', label='Pinned to dashboard (click to unpin)' if goal.pinned else 'Pin to dashboard') }}
             </button>
             {{ move_buttons(goal, first_in_group, last_in_group) }}
             <button class="btn-small red darken-3 waves-effect goal-remove-btn"
                     data-goal="{{ goal.goal_id }}" title="Remove goal">
-              <i class="material-icons">delete</i>
+              {{ icon('delete', label='Remove goal') }}
             </button>
           </div>
         </div>
         <button class="wf-goal-side-tab goal-expand-btn"
                 data-goal="{{ goal.goal_id }}" data-mode="{{ goal.display_mode }}"
                 title="Show crafting plan">
-          <i class="material-icons">chevron_right</i>
+          {{ icon('chevron_right', label='Show crafting plan') }}
         </button>
       </div>
 
@@ -109,7 +110,7 @@
         <!-- Left: portrait + info + buttons (always visible when expanded) -->
         <div class="wf-goal-exp-left">
           <div class="wf-goal-exp-portrait">
-            <i class="material-icons grey-text" style="font-size:2.5rem">shield</i>
+            {{ icon('shield', 'grey-text fs-250') }}
             {% if goal.image_url %}
             <img src="{{ goal.image_url }}" alt="{{ goal.item_name }}"
                  class="wf-goal-exp-portrait-img" onerror="this.style.display='none'">
@@ -133,21 +134,21 @@
           <div style="display:flex;flex-wrap:wrap;gap:.25rem;margin-top:.5rem">
             <button class="btn-small waves-effect goal-mode-btn {% if goal.display_mode == 'tree' %}teal{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" title="Tree View" style="padding:0 .5rem">
-              <i class="material-icons" style="font-size:.9rem">account_tree</i>
+              {{ icon('account_tree', 'fs-90', label='Tree view') }}
             </button>
             <button class="btn-small waves-effect goal-list-btn {% if goal.display_mode == 'list' %}teal{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" title="Visual Plan" style="padding:0 .5rem">
-              <i class="material-icons" style="font-size:.9rem">grid_view</i>
+              {{ icon('grid_view', 'fs-90', label='Visual plan') }}
             </button>
             <button class="btn-small waves-effect goal-pin-btn {% if goal.pinned %}amber darken-2{% else %}blue-grey{% endif %}"
                     data-goal="{{ goal.goal_id }}" data-pinned="{{ goal.pinned }}" title="Pin to dashboard"
                     style="padding:0 .5rem">
-              <i class="material-icons" style="font-size:.9rem">push_pin</i>
+              {{ icon('push_pin', 'fs-90', label='Pinned to dashboard (click to unpin)' if goal.pinned else 'Pin to dashboard') }}
             </button>
-            {{ move_buttons(goal, first_in_group, last_in_group, 'padding:0 .5rem', 'font-size:.9rem') }}
+            {{ move_buttons(goal, first_in_group, last_in_group, 'padding:0 .5rem', 'fs-90') }}
             <button class="btn-small red darken-3 waves-effect goal-remove-btn"
                     data-goal="{{ goal.goal_id }}" title="Remove goal" style="padding:0 .5rem">
-              <i class="material-icons" style="font-size:.9rem">delete</i>
+              {{ icon('delete', 'fs-90', label='Remove goal') }}
             </button>
           </div>
         </div>
@@ -155,13 +156,13 @@
         <button class="wf-goal-side-tab goal-expand-btn"
                 data-goal="{{ goal.goal_id }}" data-mode="{{ goal.display_mode }}"
                 title="Collapse">
-          <i class="material-icons">chevron_left</i>
+          {{ icon('chevron_left', label='Collapse') }}
         </button>
 
         <!-- Right: dynamically loaded plan content -->
         <div class="wf-goal-plan-panel" id="plan-panel-{{ goal.goal_id }}">
           <p class="grey-text center-align" style="padding:2rem">
-            <i class="material-icons">hourglass_empty</i>
+            {{ icon('hourglass_empty', label='Loading') }}
           </p>
         </div>
 
@@ -184,7 +185,7 @@
 <!-- ── Aggregate View ────────────────────────────────────────────────────── -->
 <div id="agg-section" class="card blue-grey darken-2" style="display:none;margin-bottom:1.5rem">
   <div class="card-content white-text">
-    <span class="card-title"><i class="material-icons left">view_list</i>All Goals — Aggregate Shopping List</span>
+    <span class="card-title">{{ icon('view_list', 'left') }}All Goals — Aggregate Shopping List</span>
     <div id="agg-body"><span class="grey-text">Loading…</span></div>
   </div>
   <div class="card-action">
@@ -195,14 +196,14 @@
 <!-- ── Live Session Advisor ──────────────────────────────────────────────── -->
 <div class="card blue-grey darken-2" id="advisor-card" style="margin-top:1.5rem">
   <div class="card-content white-text">
-    <span class="card-title"><i class="material-icons left">gps_fixed</i>Live Session Advisor</span>
+    <span class="card-title">{{ icon('gps_fixed', 'left') }}Live Session Advisor</span>
     <p class="grey-text" style="font-size:.85rem">
       Set your current farming node to see which of your needed items drop there
       and how efficient they are compared to the optimal source.
     </p>
     <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;position:relative">
       <div class="input-field" style="flex:1;min-width:220px;margin-bottom:0">
-        <i class="material-icons prefix grey-text">map</i>
+        {{ icon('map', 'prefix grey-text') }}
         <input id="node-input" type="text" class="white-text" autocomplete="off"
                placeholder="Search mission node…"
                value="{{ active_node or '' }}">
@@ -211,7 +212,7 @@
       </div>
       <button id="node-clear-btn" class="btn red darken-3 waves-effect"
               {% if not active_node %}style="display:none"{% endif %}>
-        <i class="material-icons left">clear</i>Clear Node
+        {{ icon('clear', 'left') }}Clear Node
       </button>
     </div>
     <div id="advisor-panel" style="margin-top:1rem"></div>
@@ -246,7 +247,7 @@ function relicBadge(relic) {
   if (!relic) return '';
   var pct = relic.drop_chance ? relic.drop_chance.toFixed(2) + '%' : '?%';
   var html = '<span class="grey-text" style="font-size:.78rem;overflow-wrap:anywhere">' +
-             '<i class="material-icons tiny" style="vertical-align:middle">diamond</i> ' +
+             wfIcon('diamond', 'tiny middle') + ' ' +
              escText(relic.relic) + ' <span class="teal-text">(' + pct + ' Intact)</span>';
   if (!relic.locations || !relic.locations.length) {
     html += ' — <span class="orange-text">vaulted: drops from no mission now</span>';
@@ -277,17 +278,17 @@ function escText(s) {
 function vaultedPlanNote(plan) {
   if (!plan.vaulted) return '';
   var html = '<div class="orange-text wf-vaulted-note" style="font-size:.78rem;margin-bottom:.5rem">' +
-             '<i class="material-icons tiny">lock</i> ' + escText(plan.vaulted_note) + '</div>';
+             wfIcon('lock', 'tiny') + ' ' + escText(plan.vaulted_note) + '</div>';
   if (plan.resurgence_notice) {
     html += '<div class="grey-text wf-resurgence-notice" style="font-size:.72rem;margin-bottom:.5rem">' +
-            '<i class="material-icons tiny">info_outline</i> ' + escText(plan.resurgence_notice) + '</div>';
+            wfIcon('info_outline', 'tiny') + ' ' + escText(plan.resurgence_notice) + '</div>';
   }
   return html;
 }
 
 function vaultedLock(note, inResurgence) {
   var html = ' <span class="orange-text" style="font-size:.78rem" title="' + escText(note || 'Vaulted') + '">' +
-             '<i class="material-icons tiny">lock</i></span>';
+             wfIcon('lock', 'tiny', note || 'Vaulted') + '</span>';
   if (inResurgence) {
     html += ' <span class="amber-text wf-in-resurgence" style="font-size:.72rem">In Prime Resurgence now</span>';
   }
@@ -301,7 +302,7 @@ function renderAdvisorBody(data) {
   var html = '<h6 class="white-text">Farming: <span class="teal-text">' + escText(data.node) + '</span></h6>';
   if (data.guaranteed_free) {
     html += '<div class="card-panel teal darken-3 white-text" style="padding:.5rem .75rem;margin:.5rem 0">' +
-            '<i class="material-icons tiny">check_circle</i>' +
+            wfIcon('check_circle', 'tiny') +
             ' <strong>Guaranteed-drop node</strong> — all secondary opportunities below are essentially free.' +
             '</div>';
   }
@@ -361,7 +362,7 @@ function renderTreeView(plan, goalId) {
   if (plan.market_price) {
     html += '<div class="grey-text" style="font-size:.82rem;margin-bottom:.5rem">' +
             'Market price: <span class="orange-text">' + plan.market_price + 'p</span>' +
-            (plan.market_url ? ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text"><i class="material-icons tiny">open_in_new</i></a>' : '') +
+            (plan.market_url ? ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text">' + wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>' : '') +
             '</div>';
   }
   plan.components.forEach(function(comp) {
@@ -469,7 +470,7 @@ function renderVisualPlanBody(plan, goalId) {
             'Market: <span class="orange-text">' + plan.market_price + 'p</span>';
     if (plan.market_url) {
       html += ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text">' +
-              '<i class="material-icons tiny">open_in_new</i></a>';
+              wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>';
     }
     html += '</div>';
   }
@@ -536,8 +537,8 @@ function renderVisualPlanBody(plan, goalId) {
 
       // The circle itself
       html += '<div class="' + circleClass + '"' +
-              ' style="border-color:' + col.hex + ';background:rgba(' + col.rgb + ',.12)">';
-      html += '<i class="material-icons" style="font-size:1.3rem;color:' + col.hex + '">description</i>';
+              ' style="border-color:' + col.hex + ';color:' + col.hex + ';background:rgba(' + col.rgb + ',.12)">';
+      html += wfIcon('description', 'fs-130');
       if (comp.image_url) {
         html += '<img src="' + escText(comp.image_url) + '" class="wf-comp-img" onerror="this.style.display=\'none\'">';
       }
@@ -546,12 +547,12 @@ function renderVisualPlanBody(plan, goalId) {
       // Corner badge: blueprint (bottom-left)
       html += '<div class="wf-comp-corner-btn wf-corner-bp' + (state === 'blueprint' ? ' wf-corner-active' : '') + '"' +
               ' data-action="blueprint" title="Blueprint owned">' +
-              '<i class="material-icons" style="font-size:.62rem">description</i></div>';
+              wfIcon('description', 'fs-62') + '</div>';
 
       // Corner badge: crafted (bottom-right)
       html += '<div class="wf-comp-corner-btn wf-corner-craft' + (state === 'crafted' ? ' wf-corner-active' : '') + '"' +
               ' data-action="crafted" title="Crafted">' +
-              '<i class="material-icons" style="font-size:.62rem">check</i></div>';
+              wfIcon('check', 'fs-62') + '</div>';
 
       html += '</div>'; // /.wf-comp-wrap
       html += '<div class="wf-comp-name grey-text">' + escText(comp.component_name) +
@@ -608,12 +609,12 @@ function renderVisualPlanBody(plan, goalId) {
       html += '<div class="wf-res-name" title="' + escText(res.ingredient_name) + '">' + escText(res.ingredient_name) + '</div>';
 
       html += '<div class="wf-res-circle' + (satisfied && !grayed ? ' wf-res-satisfied' : '') + '">';
-      html += '<i class="material-icons grey-text" style="font-size:1rem">layers</i>';
+      html += wfIcon('layers', 'tiny grey-text');
       if (res.image_url) {
         html += '<img src="' + escText(res.image_url) + '" class="wf-res-img" onerror="this.style.display=\'none\'">';
       }
       if (satisfied && !grayed) {
-        html += '<div class="wf-res-done-badge"><i class="material-icons teal-text" style="font-size:.75rem">check</i></div>';
+        html += '<div class="wf-res-done-badge">' + wfIcon('check', 'fs-75 teal-text') + '</div>';
       }
       html += '</div>';
 
@@ -633,7 +634,7 @@ function renderVisualPlanBody(plan, goalId) {
         var locSafe = escText(bestDrop.location);
         html += '<button class="wf-advisor-loc-btn waves-effect" data-location="' + locSafe + '"' +
                 ' title="Send to advisor: ' + locSafe + '">' +
-                '<i class="material-icons" style="font-size:.75rem">gps_fixed</i></button>';
+                wfIcon('gps_fixed', 'fs-75', 'Send to advisor') + '</button>';
       }
       html += '</div>'; // /.wf-res-item
     });
@@ -685,7 +686,7 @@ $('#goal-search').on('input', function() {
       r.items.forEach(function(item) {
         var thumb = '<div style="width:32px;height:32px;background:rgba(255,255,255,.05);border-radius:3px;' +
                     'position:relative;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">' +
-                    '<i class="material-icons grey-text" style="font-size:.9rem">shield</i>';
+                    wfIcon('shield', 'fs-90 grey-text');
         if (item.image_url) {
           thumb += '<img src="' + escText(item.image_url) + '" style="width:32px;height:32px;object-fit:contain;' +
                    'position:absolute;top:0;left:0;background:#2e3f47" onerror="this.style.display=\'none\'">';
@@ -823,7 +824,7 @@ function expandGoal(goalId, mode) {
 
   $('#plan-panel-' + goalId).html(
     '<p class="grey-text center-align" style="padding:2rem">' +
-    '<i class="material-icons">hourglass_empty</i></p>'
+    wfIcon('hourglass_empty', '', 'Loading') + '</p>'
   );
 
   loadGoalPlan(goalId, mode);
@@ -935,7 +936,9 @@ $(document).on('click', '.goal-pin-btn', function() {
     method: 'POST', contentType: 'application/json',
     data: JSON.stringify({pinned: pinned}),
     success: function() {
-      $('[data-goal="' + goalId + '"].goal-pin-btn').data('pinned', pinned);
+      $('[data-goal="' + goalId + '"].goal-pin-btn').data('pinned', pinned)
+        .find('svg.wf-icon').attr('aria-label', pinned ? 'Pinned to dashboard (click to unpin)'
+                                                       : 'Pin to dashboard');
       if (pinned) {
         $('[data-goal="' + goalId + '"].goal-pin-btn').addClass('amber darken-2').removeClass('blue-grey');
         M.toast({html: 'Goal pinned to dashboard.'});
