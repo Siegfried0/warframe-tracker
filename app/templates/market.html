@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Market Watch — Warframe Tracker{% endblock %}
 {% block content %}
 
-<h4 class="white-text"><i class="material-icons left">store</i>Market Watch</h4>
+<h4 class="white-text">{{ icon('store', 'left') }}Market Watch</h4>
 
 <div class="row">
   <div class="col s12">
@@ -35,13 +36,13 @@
               <td>
                 {% if item.market_url %}
                 <a href="{{ item.market_url }}" target="_blank" class="grey-text" title="warframe.market">
-                  <i class="material-icons small">open_in_new</i>
+                  {{ icon('open_in_new', 'small', label='Open on warframe.market') }}
                 </a>
                 {% else %}—{% endif %}
               </td>
               <td>
                 <a href="#" class="unwatch-btn red-text" data-item="{{ item.id }}" title="Remove from watchlist">
-                  <i class="material-icons small">remove_circle_outline</i>
+                  {{ icon('remove_circle_outline', 'small', label='Remove from watchlist') }}
                 </a>
               </td>
             </tr>

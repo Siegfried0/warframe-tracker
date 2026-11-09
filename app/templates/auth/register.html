@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Register — Warframe Tracker{% endblock %}
 {% block content %}
 <div class="row" style="margin-top:5rem">
   <div class="col s12 m6 offset-m3">
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
-        <span class="card-title"><i class="material-icons left">person_add</i>Create Account</span>
+        <span class="card-title">{{ icon('person_add', 'left') }}Create Account</span>
         <form method="post">
           {{ csrf_field() }}
           <div class="input-field">

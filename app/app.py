@@ -1,3 +1,4 @@
+import mimetypes
 import os
 import secrets
 from datetime import timedelta
@@ -18,6 +19,9 @@ login_manager = LoginManager()
 
 def create_app(config_overrides: dict = None):
     flask_app = Flask(__name__, template_folder='templates', static_folder='static')
+    # The icon sprite is SVG: served as image/svg+xml whatever the host's MIME table says
+    # (Windows reads it from the registry, where .svg can be missing or mapped elsewhere).
+    mimetypes.add_type('image/svg+xml', '.svg')
     flask_app.config.from_object(Config)
     if config_overrides:
         flask_app.config.update(config_overrides)

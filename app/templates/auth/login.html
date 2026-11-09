@@ -1,11 +1,12 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Login — Warframe Tracker{% endblock %}
 {% block content %}
 <div class="row" style="margin-top:5rem">
   <div class="col s12 m6 offset-m3">
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
-        <span class="card-title"><i class="material-icons left">login</i>Login</span>
+        <span class="card-title">{{ icon('login', 'left') }}Login</span>
         <form method="post">
           {{ csrf_field() }}
           <div class="input-field">
@@ -29,7 +30,7 @@
         <div class="oidc-sign-in" style="margin-top:1.5rem">
           <a href="{{ url_for('auth.oidc_login', next=next) if next else url_for('auth.oidc_login') }}"
              class="btn blue-grey lighten-1 waves-effect waves-light">
-            <i class="material-icons left">vpn_key</i>Sign in with OpenID Connect
+            {{ icon('vpn_key', 'left') }}Sign in with OpenID Connect
           </a>
         </div>
         {% endif %}

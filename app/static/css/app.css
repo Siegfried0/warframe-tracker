@@ -97,7 +97,8 @@ nav ul .logout-form button:hover { background-color: rgba(0, 0, 0, 0.1); }
   padding: 0 32px;
 }
 .sidenav li > .logout-form button:hover { background-color: rgba(0, 0, 0, 0.05); }
-.sidenav li > .logout-form button > i.material-icons {
+.sidenav li > .logout-form button > i.material-icons,
+.sidenav li > .logout-form button > .wf-icon {
   float: left;
   height: 48px;
   line-height: 48px;
@@ -110,6 +111,55 @@ nav .brand-logo i {
   vertical-align: middle;
   margin-right: .3rem;
 }
+
+/* ── Icons: the app's own SVG sprite, drawn by the icon() macro ─────────────
+   An icon is 1em square at 24px, sitting on the text's baseline as the icon font's glyphs
+   did. Its size follows font-size, so the size classes and the contexts below mirror the
+   Materialize rules for icons one for one. Where a context gives the icon a taller box
+   (the nav bar, the side nav, card titles, buttons), the box keeps its width and the
+   drawing is centred in it. */
+.wf-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  font-size: 24px;
+  vertical-align: baseline;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.wf-icon.tiny   { font-size: 1rem; }
+.wf-icon.small  { font-size: 2rem; }
+.wf-icon.medium { font-size: 4rem; }
+.wf-icon.large  { font-size: 6rem; }
+.wf-icon.left   { float: left;  margin-right: 15px; }
+.wf-icon.right  { float: right; margin-left: 15px; }
+.input-field .wf-icon.prefix {
+  position: absolute;
+  width: 3rem;
+  font-size: 2rem;
+  top: .5rem;
+  transition: color .2s;
+}
+.input-field .wf-icon.prefix.active { color: #26a69a; }
+
+nav .wf-icon { display: block; font-size: 24px; height: 56px; }
+nav .brand-logo .wf-icon { float: left; margin-right: 15px; }
+@media only screen and (min-width: 601px) {
+  nav .wf-icon { height: 64px; }
+}
+.sidenav li > a > .wf-icon {
+  float: left;
+  width: 24px;
+  height: 48px;
+  margin: 0 32px 0 0;
+  color: rgba(0, 0, 0, 0.54);
+}
+.card .card-content .card-title .wf-icon { height: 32px; }
+.btn .wf-icon, .btn-flat .wf-icon       { font-size: 1.3rem; vertical-align: middle; }
+.btn-large .wf-icon                     { font-size: 1.6rem; vertical-align: middle; }
+.btn-small .wf-icon                     { font-size: 1.2rem; vertical-align: middle; }
+.btn .wf-icon.left, .btn .wf-icon.right { width: 1.3rem; height: 36px; }
+.btn-flat .wf-icon.left, .btn-flat .wf-icon.right { width: 1.3rem; height: 36px; }
 
 /* Card */
 .card {
@@ -308,7 +358,8 @@ tr.resurgence-row {
   color: #fff;
 }
 
-.wf-goal-side-tab .material-icons {
+.wf-goal-side-tab .material-icons,
+.wf-goal-side-tab .wf-icon {
   font-size: .85rem;
   user-select: none;
 }

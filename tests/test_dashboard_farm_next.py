@@ -139,8 +139,8 @@ def test_loading_the_dashboard_requests_no_market_price_and_writes_no_cache_row(
 
 # (case id, cached price, buy threshold or None, market cell)
 THRESHOLD_CASES = [
-    ('below threshold', 40, '50', 'Buy 40p thumb_up'),
-    ('at threshold', 50, '50', 'Buy 50p thumb_up'),
+    ('below threshold', 40, '50', 'Buy 40p'),
+    ('at threshold', 50, '50', 'Buy 50p'),
     ('above threshold', 60, '50', '60p'),
     ('no threshold', 40, None, '40p'),
     ('no price', None, '50', '—'),
@@ -171,7 +171,7 @@ def test_the_farming_time_check_uses_the_cached_price(app, admin_client, admin_i
         get_db().commit()
         set_setting(admin_id, 'plat_per_hour', '20')
     card = farm_card(admin_client)
-    assert market_cell(card, 'Braton Prime') == 'Buy 150p thumb_up'
+    assert market_cell(card, 'Braton Prime') == 'Buy 150p'
     assert '~10.0h farming × 20p/h &gt; market 150p' in card
     assert requests_made == []
 

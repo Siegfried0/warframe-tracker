@@ -7,6 +7,39 @@ window.csrfToken = function () {
   return meta ? meta.getAttribute('content') : '';
 };
 
+// Icons: the app's own SVG sprite (its URL in <meta name="icon-sprite">), one symbol i-<name>
+// per icon. Page scripts draw an icon with wfIcon and swap one with wfSetIcon; they never
+// write icon markup or text by hand. A name is a lower-case word with digits and underscores.
+var WF_ICON_NAME = /^[a-z0-9_]+$/;
+
+window.wfIconHref = function (name) {
+  if (!WF_ICON_NAME.test(name)) throw new Error('bad icon name');
+  var meta = document.querySelector('meta[name="icon-sprite"]');
+  return (meta ? meta.getAttribute('content') : '') + '#i-' + name;
+};
+
+// The markup of one icon, as the template macro writes it. `classes` are extra class names
+// (tiny, small, left, ...); `label`, when given, is the icon's accessible name.
+window.wfIcon = function (name, classes, label) {
+  var esc = function (s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  };
+  var cls = 'wf-icon' + (classes ? ' ' + esc(classes) : '');
+  var a11y = label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"';
+  return '<svg class="' + cls + '" width="24" height="24" focusable="false"' + a11y + '>' +
+         '<use href="' + esc(window.wfIconHref(name)) + '"></use></svg>';
+};
+
+// Swap the icon an element draws (the <svg> itself, or the first one inside it) to `name`.
+// Only the reference changes: the icon keeps its classes and its accessible name.
+window.wfSetIcon = function (el, name) {
+  var svg = el && (el.matches && el.matches('svg.wf-icon') ? el : el.querySelector('svg.wf-icon'));
+  if (!svg) return;
+  var use = svg.querySelector('use');
+  if (use) use.setAttribute('href', window.wfIconHref(name));
+};
+
 // Every unsafe jQuery request sends the token in the X-CSRF-Token header (registered before
 // any page script runs; a fetch() call adds the header itself with window.csrfToken()).
 $.ajaxPrefilter(function (options, originalOptions, jqXHR) {

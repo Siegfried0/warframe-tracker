@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Wiki Sync — Warframe Tracker{% endblock %}
 {% block content %}
 
-<h4 class="white-text"><i class="material-icons left">sync</i>Wiki Sync</h4>
+<h4 class="white-text">{{ icon('sync', 'left') }}Wiki Sync</h4>
 
 <div class="row">
   <div class="col s12 m8">
@@ -21,7 +22,7 @@
           2–4 minutes depending on network latency. The page will update when it completes.
         </p>
         <button id="sync-btn" class="btn teal waves-effect">
-          <i class="material-icons left">sync</i>Run Sync Now
+          {{ icon('sync', 'left') }}Run Sync Now
         </button>
         <div id="sync-status" style="margin-top:1.5rem;display:none">
           <div class="progress blue-grey darken-3" id="sync-progress">
@@ -70,7 +71,7 @@
   <div class="col s12">
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
-        <span class="card-title"><i class="material-icons left">image</i>Image Coverage</span>
+        <span class="card-title">{{ icon('image', 'left') }}Image Coverage</span>
         <p class="grey-text" style="font-size:.85rem;margin-bottom:1rem">
           Shows how many items have a locally-cached image. Re-run sync to fetch any that are missing.
         </p>
@@ -179,13 +180,13 @@ function loadCoverage() {
 
     // Footer: disk stats + broken/orphan counts
     html += '<div class="grey-text" style="font-size:.82rem;display:flex;gap:1.5rem;flex-wrap:wrap">';
-    html += '<span><i class="material-icons tiny">folder</i> ' + r.disk_count + ' files on disk</span>';
+    html += '<span>' + wfIcon('folder', 'tiny') + ' ' + r.disk_count + ' files on disk</span>';
     if (r.broken > 0) {
-      html += '<span class="red-text"><i class="material-icons tiny">broken_image</i> '
+      html += '<span class="red-text">' + wfIcon('broken_image', 'tiny') + ' '
             + r.broken + ' cached path' + (r.broken !== 1 ? 's' : '') + ' with missing file</span>';
     }
     if (r.orphans > 0) {
-      html += '<span class="orange-text"><i class="material-icons tiny">delete_sweep</i> '
+      html += '<span class="orange-text">' + wfIcon('delete_sweep', 'tiny') + ' '
             + r.orphans + ' orphan file' + (r.orphans !== 1 ? 's' : '') + ' (no DB entry)</span>';
     }
     html += '</div>';

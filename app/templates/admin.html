@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Admin — Warframe Tracker{% endblock %}
 {% block content %}
 
-<h4 class="white-text"><i class="material-icons left">admin_panel_settings</i>Admin Panel</h4>
+<h4 class="white-text">{{ icon('admin_panel_settings', 'left') }}Admin Panel</h4>
 
 {% if not easyauth_enabled %}
 <!-- Create user -->
@@ -92,7 +93,7 @@
               {{ csrf_field() }}
               <button class="btn-flat {{ 'orange-text' if u.is_active else 'green-text' }} waves-effect" type="submit"
                       title="{{ 'Deactivate' if u.is_active else 'Activate' }}">
-                <i class="material-icons">{{ 'block' if u.is_active else 'check_circle' }}</i>
+                {{ icon('block' if u.is_active else 'check_circle', label='Deactivate' if u.is_active else 'Activate') }}
               </button>
             </form>
             {% if u.auth_type == 'local' and not easyauth_enabled %}
@@ -100,7 +101,7 @@
                     title="Reset password"
                     data-uid="{{ u.id }}" data-username="{{ u.username }}"
                     data-target="pw-modal" onclick="openResetModal(this)">
-              <i class="material-icons">lock_reset</i>
+              {{ icon('lock_reset', label='Reset password') }}
             </button>
             {% endif %}
             <form method="post" action="{{ url_for('admin.delete_user', uid=u.id) }}" style="display:inline"
@@ -108,7 +109,7 @@
               {{ csrf_field() }}
               <input type="hidden" name="confirm" value="DELETE">
               <button class="btn-flat red-text waves-effect" type="submit" title="Delete user">
-                <i class="material-icons">delete_forever</i>
+                {{ icon('delete_forever', label='Delete user') }}
               </button>
             </form>
             {% else %}
@@ -125,7 +126,7 @@
 <!-- Password reset modal -->
 <div id="pw-modal" class="modal blue-grey darken-2">
   <div class="modal-content white-text">
-    <h5><i class="material-icons left">lock_reset</i>Reset password — <span id="pw-modal-name"></span></h5>
+    <h5>{{ icon('lock_reset', 'left') }}Reset password — <span id="pw-modal-name"></span></h5>
     <div class="row" style="margin-bottom:0">
       <div class="input-field col s12 m6">
         <input id="pw-new" type="password" class="white-text" autocomplete="new-password">

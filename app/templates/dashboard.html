@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
+{% from '_icons.html' import icon %}
 {% block title %}Dashboard — Warframe Tracker{% endblock %}
 {% block content %}
 
-<h4 class="white-text"><i class="material-icons left">dashboard</i>Session Focus</h4>
+<h4 class="white-text">{{ icon('dashboard', 'left') }}Session Focus</h4>
 
 <!-- Row 1: MR rank widget (primary) + Resurgence alerts -->
 <div class="row">
@@ -63,14 +64,14 @@
     <div class="card red darken-3">
       <div class="card-content white-text">
         <span class="card-title">
-          <i class="material-icons left">notifications_active</i>Prime Resurgence — Available Now!
+          {{ icon('notifications_active', 'left') }}Prime Resurgence — Available Now!
         </span>
         {% for item in resurgence %}
         <div style="margin-bottom:.5rem">
           <strong>{{ item.name }}</strong>
           {% if item.wiki_url %}
           <a href="{{ item.wiki_url }}" target="_blank" class="white-text" title="Wiki">
-            <i class="material-icons tiny">open_in_new</i>
+            {{ icon('open_in_new', 'tiny', label='Open the wiki page') }}
           </a>
           {% endif %}
           <span class="badge white red-text text-darken-3 new" data-badge-caption="">Resurgence</span>
@@ -83,7 +84,7 @@
   <div class="col s12 m6">
     <div class="card-panel blue-grey darken-3 grey-text text-lighten-1 wf-resurgence-notice"
          style="padding:.6rem .8rem;font-size:.82rem">
-      <i class="material-icons tiny">info_outline</i> {{ resurgence_notice }}
+      {{ icon('info_outline', 'tiny') }} {{ resurgence_notice }}
     </div>
   </div>
   {% endif %}
@@ -95,7 +96,7 @@
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
         <span class="card-title">
-          <i class="material-icons left">bolt</i>Immediate Gains
+          {{ icon('bolt', 'left') }}Immediate Gains
           <span class="badge blue-grey lighten-1 white-text new" data-badge-caption="" id="gains-badge">
             {{ immediate | length }}
           </span>
@@ -111,7 +112,7 @@
                 <a href="#" class="dash-master-btn grey-text"
                    data-item="{{ item.id }}" data-category="{{ item.category }}"
                    title="Mark as Mastered">
-                  <i class="material-icons small">star_border</i>
+                  {{ icon('star_border', 'small', label='Mark as Mastered') }}
                 </a>
               </td>
               <td>
@@ -140,7 +141,7 @@
   <div class="col s12 m6">
     <div class="card blue-grey darken-2">
       <div class="card-content white-text">
-        <span class="card-title"><i class="material-icons left">agriculture</i>Farm Next</span>
+        <span class="card-title">{{ icon('agriculture', 'left') }}Farm Next</span>
         {% if pinned_goals %}
         <p class="grey-text" style="font-size:.85rem">Pinned farming goals.</p>
         {% for goal in pinned_goals %}
@@ -166,7 +167,7 @@
         {% if active_node and advisor_opportunities %}
         <div style="margin-top:.75rem;padding-top:.5rem;border-top:1px solid rgba(255,255,255,.1)">
           <p class="grey-text" style="font-size:.8rem;margin:.1rem 0 .4rem">
-            <i class="material-icons tiny">gps_fixed</i> Farming {{ active_node }} — secondary drops:
+            {{ icon('gps_fixed', 'tiny') }} Farming {{ active_node }} — secondary drops:
           </p>
           {% for opp in advisor_opportunities %}
           <div style="font-size:.82rem;margin-bottom:.2rem">
@@ -199,7 +200,7 @@
               <td>
                 {% if item.recommend_buy %}
                 <span class="green-text" title="{{ item.recommend_reason }}">
-                  Buy {{ item.market_price }}p <i class="material-icons tiny">thumb_up</i>
+                  Buy {{ item.market_price }}p {{ icon('thumb_up', 'tiny') }}
                 </span>
                 {% elif item.market_price %}
                 <span class="grey-text">{{ item.market_price }}p</span>
@@ -226,7 +227,7 @@
   <div class="col s12 m6">
     <div class="card blue-grey darken-2" id="market-watch">
       <div class="card-content white-text">
-        <span class="card-title"><i class="material-icons left">store</i>Market Watch</span>
+        <span class="card-title">{{ icon('store', 'left') }}Market Watch</span>
         <p class="grey-text" style="font-size:.85rem">
           Last cached prices; a price older than {{ market_cache_hours }} hour(s) is marked stale.
           Refresh them on the market page.
@@ -248,7 +249,7 @@
               <td>
                 {% if item.market_url %}
                 <a href="{{ item.market_url }}" target="_blank" rel="noopener" class="grey-text market-watch-link"
-                   title="warframe.market"><i class="material-icons tiny">open_in_new</i></a>
+                   title="warframe.market">{{ icon('open_in_new', 'tiny', label='Open on warframe.market') }}</a>
                 {% endif %}
               </td>
             </tr>
@@ -348,7 +349,7 @@ $(function() {
           catCounts[category] = Math.max(0, (catCounts[category] || 0) - 1);
           gainsBadge += 1;
           $('#gains-badge').text(gainsBadge);
-          $btn.find('i').text('star_border');
+          wfSetIcon($btn[0], 'star_border');
         }
         updateMRWidget(catCounts);
       }

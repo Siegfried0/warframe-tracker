@@ -1,9 +1,11 @@
+{% from '_icons.html' import icon -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="icon-sprite" content="{{ url_for('static', filename='icons/icons.svg') }}">
   <title>{% block title %}Warframe Tracker{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/materialize/css/materialize.min.css') }}">
   <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -15,40 +17,40 @@
 <nav class="blue-grey darken-3" role="navigation">
   <div class="nav-wrapper container">
     <a href="{{ url_for('dashboard.index') }}" class="brand-logo">
-      <i class="material-icons">shield</i> WF Tracker
+      {{ icon('shield') }} WF Tracker
     </a>
-    <a href="#" data-target="mobile-nav" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+    <a href="#" data-target="mobile-nav" class="sidenav-trigger">{{ icon('menu', label='Menu') }}</a>
     <ul class="right hide-on-med-and-down">
       <li{% if request.endpoint and request.endpoint.startswith('dashboard') %} class="active"{% endif %}>
-        <a href="{{ url_for('dashboard.index') }}"><i class="material-icons left">dashboard</i>Dashboard</a>
+        <a href="{{ url_for('dashboard.index') }}">{{ icon('dashboard', 'left') }}Dashboard</a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('collection') %} class="active"{% endif %}>
-        <a href="{{ url_for('collection.index') }}"><i class="material-icons left">list</i>Collection</a>
+        <a href="{{ url_for('collection.index') }}">{{ icon('list', 'left') }}Collection</a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('farming') %} class="active"{% endif %}>
-        <a href="{{ url_for('farming.index') }}"><i class="material-icons left">agriculture</i>Farming</a>
+        <a href="{{ url_for('farming.index') }}">{{ icon('agriculture', 'left') }}Farming</a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('market') %} class="active"{% endif %}>
-        <a href="{{ url_for('market.index') }}"><i class="material-icons left">store</i>Market</a>
+        <a href="{{ url_for('market.index') }}">{{ icon('store', 'left') }}Market</a>
       </li>
       {% if current_user.is_admin %}
       <li{% if request.endpoint and request.endpoint.startswith('admin') %} class="active"{% endif %}>
-        <a href="{{ url_for('admin.index') }}"><i class="material-icons left">admin_panel_settings</i>Admin</a>
+        <a href="{{ url_for('admin.index') }}">{{ icon('admin_panel_settings', 'left') }}Admin</a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('sync') %} class="active"{% endif %}>
-        <a href="{{ url_for('sync.index') }}"><i class="material-icons left">sync</i>Sync</a>
+        <a href="{{ url_for('sync.index') }}">{{ icon('sync', 'left') }}Sync</a>
       </li>
       {% endif %}
       <li{% if request.endpoint and request.endpoint.startswith('settings') %} class="active"{% endif %}>
-        <a href="{{ url_for('settings.index') }}"><i class="material-icons left">settings</i>Settings</a>
+        <a href="{{ url_for('settings.index') }}">{{ icon('settings', 'left') }}Settings</a>
       </li>
       <li>
         {% if easyauth_enabled %}
-        <a href="/.auth/logout"><i class="material-icons left">logout</i>{{ current_user.username }}</a>
+        <a href="/.auth/logout">{{ icon('logout', 'left') }}{{ current_user.username }}</a>
         {% else %}
         <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
           {{ csrf_field() }}
-          <button type="submit" title="Log out"><i class="material-icons left">logout</i>{{ current_user.username }}</button>
+          <button type="submit" title="Log out">{{ icon('logout', 'left') }}{{ current_user.username }}</button>
         </form>
         {% endif %}
       </li>
@@ -57,23 +59,23 @@
 </nav>
 
 <ul class="sidenav blue-grey darken-3" id="mobile-nav">
-  <li><a href="{{ url_for('dashboard.index') }}"><i class="material-icons">dashboard</i>Dashboard</a></li>
-  <li><a href="{{ url_for('collection.index') }}"><i class="material-icons">list</i>Collection</a></li>
-  <li><a href="{{ url_for('farming.index') }}"><i class="material-icons">agriculture</i>Farming</a></li>
-  <li><a href="{{ url_for('market.index') }}"><i class="material-icons">store</i>Market</a></li>
+  <li><a href="{{ url_for('dashboard.index') }}">{{ icon('dashboard') }}Dashboard</a></li>
+  <li><a href="{{ url_for('collection.index') }}">{{ icon('list') }}Collection</a></li>
+  <li><a href="{{ url_for('farming.index') }}">{{ icon('agriculture') }}Farming</a></li>
+  <li><a href="{{ url_for('market.index') }}">{{ icon('store') }}Market</a></li>
   {% if current_user.is_admin %}
-  <li><a href="{{ url_for('admin.index') }}"><i class="material-icons">admin_panel_settings</i>Admin</a></li>
-  <li><a href="{{ url_for('sync.index') }}"><i class="material-icons">sync</i>Wiki Sync</a></li>
+  <li><a href="{{ url_for('admin.index') }}">{{ icon('admin_panel_settings') }}Admin</a></li>
+  <li><a href="{{ url_for('sync.index') }}">{{ icon('sync') }}Wiki Sync</a></li>
   {% endif %}
-  <li><a href="{{ url_for('settings.index') }}"><i class="material-icons">settings</i>Settings</a></li>
+  <li><a href="{{ url_for('settings.index') }}">{{ icon('settings') }}Settings</a></li>
   <li><div class="divider"></div></li>
   <li>
     {% if easyauth_enabled %}
-    <a href="/.auth/logout"><i class="material-icons">logout</i>Logout</a>
+    <a href="/.auth/logout">{{ icon('logout') }}Logout</a>
     {% else %}
     <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
       {{ csrf_field() }}
-      <button type="submit"><i class="material-icons">logout</i>Logout</button>
+      <button type="submit">{{ icon('logout') }}Logout</button>
     </form>
     {% endif %}
   </li>
