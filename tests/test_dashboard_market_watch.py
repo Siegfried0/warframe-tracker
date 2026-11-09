@@ -54,8 +54,10 @@ def users(app, admin_client):
 
 def add_item(name, market_url_name=None, owner=None):
     """A tradable catalogue item; owned by `owner` so the dashboard's farm list skips it."""
-    Item.upsert(name, 'primary', source='standard', market_url_name=market_url_name)
+    Item.upsert(name, 'primary', source='standard')
     db = get_db()
+    db.execute("UPDATE items SET market_url_name = ? WHERE name = ? AND category = 'primary'",
+               (market_url_name, name))
     item_id = db.execute("SELECT id FROM items WHERE name = ? AND category = 'primary'",
                          (name,)).fetchone()[0]
     if owner is not None:

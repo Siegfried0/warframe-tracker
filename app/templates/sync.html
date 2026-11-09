@@ -12,7 +12,8 @@
         <p class="grey-text">
           Fetches the latest item lists from the Warframe wiki using the Cargo API.
           New items are added; vaulted status is updated, and Prime Resurgence's current
-          stock is read from the wiki's Prime Resurgence page.
+          stock is read from the wiki's Prime Resurgence page. Each item's warframe.market
+          listing is looked up in warframe.market's item list, for prices and links.
           Your existing progress data is never modified.
         </p>
         <p class="grey-text">
@@ -51,6 +52,7 @@
           <li>Drop sources (farming locations)</li>
           <li>Item images (downloaded &amp; cached locally)</li>
           <li>Prime Resurgence's current stock (the wiki's Prime Resurgence page)</li>
+          <li>Market listings (warframe.market's item list)</li>
         </ul>
         <p class="grey-text" style="margin-top:1rem;font-size:.85rem">
           Vaulted status and Prime Resurgence availability are also updated on each sync.
@@ -116,6 +118,13 @@ $('#sync-btn').on('click', function() {
         } else {
           msg += ' · Prime Resurgence not updated (' + (pr.error || 'not read') +
                  '); the last stock is kept.';
+        }
+        var ms = r.market_slugs || {};
+        if (ms.ok) {
+          msg += ' · Market listings: ' + ms.matched + ' items matched';
+        } else {
+          msg += ' · Market listings not updated (' + (ms.error || 'not read') +
+                 '); the last ones are kept.';
         }
       } else {
         cls = 'red darken-3';

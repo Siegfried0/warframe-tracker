@@ -242,6 +242,7 @@ def fake_catalogue(monkeypatch, items, components=(), component_status_ok=True,
     monkeypatch.setattr(wiki_sync, '_sync_wiki_images_for_missing', lambda db: 0)
     monkeypatch.setattr(wiki_sync, '_sync_component_wiki_images', lambda db: 0)
     monkeypatch.setattr(wiki_sync, 'sync_resurgence', lambda: {'ok': True})
+    monkeypatch.setattr(wiki_sync, 'sync_market_slugs', lambda: {'ok': True, 'matched': 0})
     if failing:
         def broken(*args, **kwargs):
             raise RuntimeError('source down')

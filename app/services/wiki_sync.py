@@ -18,6 +18,7 @@ import requests
 from models.db import get_db
 from models.item import Item
 from services import image_cache
+from services.market_slugs import sync_market_slugs
 from services.resurgence_sync import sync_resurgence
 
 log = logging.getLogger(__name__)
@@ -1882,9 +1883,13 @@ def run_sync(app=None):
         # Prime Resurgence's current stock: a failure is reported, never a failed sync
         log.info('Reading Prime Resurgence stock…')
         resurgence = sync_resurgence()
+        # Each item's warframe.market slug, from the market's item list: likewise reported
+        log.info('Reading the warframe.market item list…')
+        market_slugs = sync_market_slugs()
         total = sum(v for k, v in counts.items() if not k.startswith('images_'))
         log.info('Sync complete at %s — %d total items', datetime.utcnow().isoformat(), total)
-        return {'ok': True, 'counts': counts, 'total': total, 'resurgence': resurgence}
+        return {'ok': True, 'counts': counts, 'total': total, 'resurgence': resurgence,
+                'market_slugs': market_slugs}
     except Exception as exc:
         log.exception('Sync failed: %s', exc)
         return {'ok': False, 'error': str(exc)}

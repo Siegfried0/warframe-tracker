@@ -133,24 +133,24 @@ class Item:
     @classmethod
     def upsert(cls, name: str, category: str, source=None, wiki_url=None,
                vaulted=False,
-               market_url_name=None, tradable=True, image_url=None,
+               tradable=True, image_url=None,
                grants_mastery=True, mod_type=None, mod_polarity=None,
                mod_max_rank=None):
-        """Insert or update one catalogue row. `resurgence_available` is not written here:
-        a new row starts at 0 and an update keeps it; only the Prime Resurgence sync step
-        sets or clears it."""
+        """Insert or update one catalogue row. Two sync-owned columns are not written here:
+        a new row starts with `resurgence_available` 0 and `market_url_name` NULL, and an
+        update keeps both; only the Prime Resurgence sync step sets or clears the first and
+        only the market slug sync step the second."""
         db = get_db()
         db.execute('''
             INSERT INTO items
                 (name, category, source, wiki_url, vaulted,
-                 market_url_name, tradable, image_url, grants_mastery,
+                 tradable, image_url, grants_mastery,
                  mod_type, mod_polarity, mod_max_rank)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(name, category) DO UPDATE SET
                 source               = excluded.source,
                 wiki_url             = excluded.wiki_url,
                 vaulted              = excluded.vaulted,
-                market_url_name      = excluded.market_url_name,
                 tradable             = excluded.tradable,
                 image_url            = CASE
                                          WHEN items.image_url LIKE '/static/%'
@@ -164,7 +164,7 @@ class Item:
                 updated_at           = datetime('now')
         ''', (name, category, source, wiki_url,
               int(vaulted),
-              market_url_name, int(tradable), image_url, int(grants_mastery),
+              int(tradable), image_url, int(grants_mastery),
               mod_type, mod_polarity, mod_max_rank))
         db.commit()
 

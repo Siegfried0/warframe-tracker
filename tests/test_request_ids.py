@@ -100,8 +100,9 @@ def world(app, admin_client):
     with app.app_context():
         db = get_db()
         Item.upsert('Filler A', 'primary', source='standard')
-        Item.upsert('Arcane Energize', 'arcane', market_url_name='arcane_energize',
-                    mod_max_rank=5)
+        Item.upsert('Arcane Energize', 'arcane', mod_max_rank=5)
+        db.execute("UPDATE items SET market_url_name = 'arcane_energize' "
+                   "WHERE name = 'Arcane Energize'")
         Item.upsert('Braton', 'primary', source='standard')
         ids = {r['name']: r['id'] for r in db.execute('SELECT id, name FROM items')}
         admin = User.get_by_username('admin').id

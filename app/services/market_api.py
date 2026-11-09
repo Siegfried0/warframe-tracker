@@ -20,14 +20,32 @@ _HEADERS = {
 }
 
 
+# The item list is a few MB, so its read may take longer than a price request.
+_TIMEOUT = 15
+_ITEM_LIST_TIMEOUT = 60
+
+
+def _request(path: str, timeout: int = _TIMEOUT):
+    """The decoded JSON body of a GET; raises on a failed request, an HTTP error status or
+    a body that is not JSON."""
+    resp = requests.get(f'{_BASE}{path}', headers=_HEADERS, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def _get(path: str) -> dict | None:
     try:
-        resp = requests.get(f'{_BASE}{path}', headers=_HEADERS, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
+        return _request(path)
     except Exception as exc:
         log.warning('warframe.market request failed for %s: %s', path, exc)
         return None
+
+
+def fetch_item_list():
+    """The market's item list (`GET /items`) as decoded, unchecked: every listed item's
+    English name and slug under `payload.items`. Raises when the request fails or the body
+    is not JSON; the caller checks the shape."""
+    return _request('/items', timeout=_ITEM_LIST_TIMEOUT)
 
 
 def fetch_lowest_price(market_url_name: str) -> int | None:

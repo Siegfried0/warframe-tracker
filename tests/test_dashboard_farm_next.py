@@ -53,10 +53,13 @@ def admin_id(app, admin_client):
 
 
 def add_item(name, market_url_name='braton_prime_set', tradable=True):
-    Item.upsert(name, 'primary', source='standard', market_url_name=market_url_name,
-                tradable=tradable)
-    return get_db().execute("SELECT id FROM items WHERE name = ? AND category = 'primary'",
-                            (name,)).fetchone()[0]
+    Item.upsert(name, 'primary', source='standard', tradable=tradable)
+    db = get_db()
+    db.execute("UPDATE items SET market_url_name = ? WHERE name = ? AND category = 'primary'",
+               (market_url_name, name))
+    db.commit()
+    return db.execute("SELECT id FROM items WHERE name = ? AND category = 'primary'",
+                      (name,)).fetchone()[0]
 
 
 def cache(item_id, price, fetched_at):
