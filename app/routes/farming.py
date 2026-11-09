@@ -10,7 +10,6 @@ from services.farming_service import (
     add_farming_goal,
     clear_pinned_route,
     compute_farming_route,
-    enrich_with_market,
     get_advisor_opportunities,
     get_aggregate_shopping_list,
     get_all_nodes,

@@ -80,16 +80,21 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
     return {'platinum': price, 'fetched_at': now, 'from_cache': False}
 
 
-def get_prices_bulk(items: list[dict], cache_hours: int = 6) -> dict[int, dict]:
+def cached_prices(item_ids: list[int]) -> dict[int, int | None]:
+    """The cached price of each listed item that has a cache row, of any age.
+
+    Reads only the cache, in one query, and writes nothing: never requests a price. An item
+    without a cache row is absent from the result; a row without a price maps to None.
     """
-    Fetch prices for a list of {'id': int, 'market_url_name': str} dicts.
-    Returns {item_id: price_dict}.
-    """
-    return {
-        item['id']: get_price(item['id'], item['market_url_name'], cache_hours)
-        for item in items
-        if item.get('market_url_name')
-    }
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return {}
+    placeholders = ','.join('?' for _ in ids)
+    rows = get_db().execute(
+        f'SELECT item_id, platinum_price FROM market_cache WHERE item_id IN ({placeholders})',
+        ids,
+    ).fetchall()
+    return {row['item_id']: row['platinum_price'] for row in rows}
 
 
 def market_url_for(market_url_name: str) -> str:

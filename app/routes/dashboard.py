@@ -3,7 +3,7 @@ from flask_login import current_user, login_required
 
 from models.progress import Progress
 from services.farming_service import (
-    enrich_with_market,
+    farm_next_items,
     get_advisor_opportunities,
     get_pinned_goals,
 )
@@ -17,6 +17,9 @@ _SESSION_NODE_KEY = 'advisor_node'
 
 # Rows in the dashboard's market watch panel; the market page lists them all.
 MARKET_WATCH_ROWS = 10
+
+# Rows in the dashboard's "Farm next" list of unowned items.
+FARM_NEXT_ROWS = 10
 
 
 @dashboard_bp.route('/dashboard')
@@ -39,12 +42,12 @@ def index():
         advisor_data = get_advisor_opportunities(uid, active_node)
         advisor_opportunities = advisor_data.get('opportunities', [])[:3]
 
-    # Legacy unowned list (shown when no pinned goals)
-    cache_hours   = get_setting_int(uid, 'market_cache_hours')
-    buy_threshold = get_setting_int(uid, 'buy_threshold_plat')
-    plat_per_hour = get_setting_int(uid, 'plat_per_hour')
-    unowned = Progress.get_unowned_items(uid)[:10]
-    farm_next = enrich_with_market(uid, unowned, cache_hours, buy_threshold, plat_per_hour)
+    # Unowned list, priced from the cache only; the page shows it only without pinned goals
+    cache_hours = get_setting_int(uid, 'market_cache_hours')
+    farm_next = []
+    if not pinned_goals:
+        farm_next = farm_next_items(uid, get_setting_int(uid, 'buy_threshold_plat'),
+                                    get_setting_int(uid, 'plat_per_hour'), FARM_NEXT_ROWS)
 
     # Market watch panel: cached prices only, never a request
     market_watch = watchlist_prices(uid, cache_hours, limit=MARKET_WATCH_ROWS)

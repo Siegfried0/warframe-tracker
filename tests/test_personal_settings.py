@@ -62,15 +62,20 @@ def capture(monkeypatch):
     """Record the cache hours and thresholds the pages pass on; nothing reaches a market."""
     seen = {}
 
-    def fake_enrich(uid, items, cache_hours, buy_threshold, plat_per_hour):
-        seen['dashboard'] = (cache_hours, buy_threshold, plat_per_hour)
-        return items
+    def fake_watch(uid, cache_hours, limit=None):
+        seen['dashboard_hours'] = cache_hours
+        return []
+
+    def fake_farm_next(uid, buy_threshold, plat_per_hour, limit):
+        seen['dashboard_thresholds'] = (buy_threshold, plat_per_hour)
+        return []
 
     def fake_price(item_id, url_name, cache_hours):
         seen['price'] = cache_hours
         return {'platinum': 10}
 
-    monkeypatch.setattr(routes.dashboard, 'enrich_with_market', fake_enrich)
+    monkeypatch.setattr(routes.dashboard, 'watchlist_prices', fake_watch)
+    monkeypatch.setattr(routes.dashboard, 'farm_next_items', fake_farm_next)
     monkeypatch.setattr(routes.market, 'get_price', fake_price)
     return seen
 
@@ -103,7 +108,7 @@ def test_cache_hours_read_as_a_whole_number_or_six_on_every_page(
     expected = 6 if number is None else number
 
     assert admin_client.get('/dashboard').status_code == 200
-    assert capture['dashboard'][0] == expected
+    assert capture['dashboard_hours'] == expected
 
     page = admin_client.get('/market/')
     assert page.status_code == 200
@@ -123,12 +128,12 @@ def test_thresholds_read_as_a_whole_number_or_unset_on_the_dashboard(
     _store(app, uid, 'plat_per_hour', stored)
 
     assert admin_client.get('/dashboard').status_code == 200
-    assert capture['dashboard'][1:] == (number, number)
+    assert capture['dashboard_thresholds'] == (number, number)
 
 
 def test_no_settings_rows_read_as_the_defaults(app, admin_client, capture):
     assert admin_client.get('/dashboard').status_code == 200
-    assert capture['dashboard'] == (6, None, None)
+    assert (capture['dashboard_hours'], *capture['dashboard_thresholds']) == (6, None, None)
 
 
 def _save(client, **fields):

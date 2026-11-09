@@ -8,7 +8,8 @@ from collections import defaultdict
 
 from models.db import get_db
 from models.progress import Progress
-from services.market_api import get_price, market_url_for
+from services.auth_service import get_setting_int
+from services.market_api import cached_prices, get_price, market_url_for
 from services.resurgence_sync import resurgence_status, vaulted_note
 
 # Categories whose items can be farming goals (excludes raw resources)
@@ -202,18 +203,31 @@ def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict
     return route
 
 
-def enrich_with_market(user_id: int, items: list[dict], cache_hours: int,
-                       buy_threshold_plat: int | None,
-                       plat_per_hour: int | None) -> list[dict]:
+def farm_next_items(user_id: int, buy_threshold_plat: int | None,
+                    plat_per_hour: int | None, limit: int) -> list[dict]:
+    """The caller's first `limit` unowned, unmastered items, priced from the cache.
+
+    The dashboard's "Farm next" list. Never requests a price (see `enrich_with_cached_market`).
     """
-    Annotate each item dict with market price and a buy recommendation.
+    items = Progress.get_unowned_items(user_id)[:limit]
+    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour)
+
+
+def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
+                              plat_per_hour: int | None) -> list[dict]:
+    """
+    Annotate each tradable item dict with its cached market price and a buy recommendation.
     Mutates items in-place and returns them.
+
+    The price is the cached one of any age, read for all items in one query; nothing is
+    requested or written. An item without a cached price gets `market_price` None and no
+    recommendation.
     """
-    for item in items:
-        if not item.get('tradable') or not item.get('market_url_name'):
-            continue
-        price_data = get_price(item['id'], item['market_url_name'], cache_hours)
-        plat = price_data.get('platinum')
+    priced = [item for item in items
+              if item.get('tradable') and item.get('market_url_name')]
+    prices = cached_prices([item['id'] for item in priced])
+    for item in priced:
+        plat = prices.get(item['id'])
         item['market_price'] = plat
         item['market_url'] = market_url_for(item['market_url_name'])
         item['recommend_buy'] = False
@@ -729,7 +743,8 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         'SELECT tradable, market_url_name FROM items WHERE id = ?', (item_id,)
     ).fetchone()
     if item_row and item_row['tradable'] and item_row['market_url_name']:
-        price_data = get_price(item_id, item_row['market_url_name'], 6)
+        cache_hours = get_setting_int(user_id, 'market_cache_hours')
+        price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
         plan['market_price'] = price_data.get('platinum')
         plan['market_url'] = market_url_for(item_row['market_url_name'])
     else:
