@@ -7,7 +7,7 @@ try:
 except ImportError:
     _pyodbc = None
 
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 # What each backend raises for a violated constraint (UNIQUE, FOREIGN KEY, NOT NULL).
 INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
@@ -137,7 +137,7 @@ def _apply_migrations(db):
     current = row['version'] if row else 0
 
     migrations = [_migrate_v1, _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
-                  _migrate_v9]
+                  _migrate_v9, _migrate_v10]
     for i, migrate in enumerate(migrations, start=1):
         if current < i:
             migrate(db, backend)
@@ -147,6 +147,66 @@ def _apply_migrations(db):
                 db.execute('UPDATE schema_version SET version = ?', (i,))
             db.commit()
             current = i
+
+
+# The users columns that are unique when not NULL, and the filtered unique index that says so on MSSQL.
+# A fixed list in code: the only names migration v10 places into its SQL.
+_USERS_UNIQUE_WHEN_NOT_NULL = (('email', 'uq_users_email'), ('oidc_sub', 'uq_users_oidc_sub'))
+
+
+def _migrate_v10(db, backend='sqlite'):
+    """Let users.email and users.oidc_sub hold NULL in any number of rows on MSSQL.
+
+    v1 declared both columns UNIQUE inline. SQL Server treats NULLs as equal under a UNIQUE
+    constraint, so a second user without an email (or without an OIDC subject) was refused there.
+    On MSSQL each of the two constraints becomes a unique index filtered on `<col> IS NOT NULL`:
+    non-NULL values stay unique, NULL is allowed in any number of rows. SQLite's UNIQUE already
+    allows many NULLs, so on SQLite no table changes. No row is changed, no column is dropped.
+
+    Filled by: nothing; no field is added. The migration changes which rows MSSQL accepts.
+    """
+    if backend == 'mssql':
+        _migrate_v10_mssql(db)
+    else:
+        _migrate_v10_sqlite(db)
+
+
+def _migrate_v10_sqlite(db):
+    db.commit()
+
+
+def _migrate_v10_mssql(db):
+    # Per column: create the filtered index first, then drop the constraint, so the non-NULL
+    # values are never without a uniqueness rule. Each statement is guarded: a re-run, or a run
+    # after an interruption between the two, ends with the filtered index and no constraint.
+    # The constraint's name is the one SQL Server generated: it is read from the catalogue
+    # (a UQ constraint of users whose index has exactly one key column, that column) and reaches
+    # the dynamic SQL only through QUOTENAME.
+    for column, index in _USERS_UNIQUE_WHEN_NOT_NULL:
+        db.execute(f"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.indexes WHERE name = '{index}' AND object_id = OBJECT_ID('users')
+            ) CREATE UNIQUE INDEX {index} ON users({column}) WHERE {column} IS NOT NULL
+        """.strip())
+        db.execute(f"""
+            DECLARE @name sysname = (
+                SELECT TOP 1 kc.name FROM sys.key_constraints kc
+                WHERE kc.parent_object_id = OBJECT_ID('users') AND kc.type = 'UQ'
+                  AND (SELECT COUNT(*) FROM sys.index_columns ic
+                       WHERE ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+                         AND ic.key_ordinal > 0) = 1
+                  AND EXISTS (
+                      SELECT 1 FROM sys.index_columns ic
+                      JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                      WHERE ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+                        AND ic.key_ordinal > 0 AND c.name = '{column}'));
+            IF @name IS NOT NULL
+            BEGIN
+                DECLARE @sql NVARCHAR(MAX) = N'ALTER TABLE users DROP CONSTRAINT ' + QUOTENAME(@name);
+                EXEC sp_executesql @sql;
+            END
+        """.strip())
+    db.commit()
 
 
 def _migrate_v9(db, backend='sqlite'):

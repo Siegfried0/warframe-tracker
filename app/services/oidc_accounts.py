@@ -42,7 +42,7 @@ def _create_account(sub: str, claims: dict):
     An insert that still fails on a unique column is told apart by re-reading the ``sub``
     rather than by the backend's message: when an OIDC row of this ``sub`` exists now, a
     parallel first sign-in made it and it is used; otherwise (a name or email taken in the
-    meantime, a second NULL email on MSSQL) the sign-in is refused, nothing written."""
+    meantime) the sign-in is refused, nothing written."""
     if User.oidc_sub_held(sub, other_than='oidc'):
         raise SignInRefused('another kind of account holds this sub')
     base = (_claim_text(claims, 'preferred_username', USERNAME_MAX)

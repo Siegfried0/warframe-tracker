@@ -149,7 +149,7 @@ def test_a_database_of_the_previous_version_migrates_and_keeps_its_data(seeded):
     db_module._apply_migrations(conn)
     conn.close()
 
-    assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 9
+    assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 10
     assert db.execute('SELECT COUNT(*) FROM relic_drops').fetchone()[0] == 0
     assert _user_data(db) == before
 

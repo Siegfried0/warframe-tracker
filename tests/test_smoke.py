@@ -23,7 +23,7 @@ def test_empty_database_migrates_to_the_current_schema(app):
             version = db.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]
         finally:
             db.close()
-    assert version == 9
+    assert version == 10
 
 
 def test_first_run_sends_every_visitor_to_the_setup_wizard(client):
