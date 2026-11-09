@@ -127,18 +127,19 @@ def test_the_config_has_no_default_key():
 
 @pytest.mark.parametrize('value', REFUSED)
 def test_development_entry_without_a_usable_key_uses_loopback_and_a_random_key(value):
-    host, key, warning = app_module.development_run_settings(value)
+    host, key, debug, warning = app_module.development_run_settings(value, environ={})
     assert host == '127.0.0.1'
     assert isinstance(key, str) and len(key) == 64 and config.secret_key_is_usable(key)
-    assert app_module.development_run_settings(value)[1] != key  # fresh for every process
+    assert app_module.development_run_settings(value, environ={}).key != key  # per process
     assert 'SECRET_KEY' in warning and '127.0.0.1' in warning
     assert PUBLISHED not in warning
     warning.encode('ascii')
 
 
 @pytest.mark.parametrize('value', ACCEPTED)
-def test_development_entry_with_a_usable_key_runs_as_before(value):
-    assert app_module.development_run_settings(value) == ('0.0.0.0', None, None)
+def test_development_entry_with_a_usable_key_keeps_it_on_loopback_without_debug(value):
+    assert app_module.development_run_settings(value, environ={}) == (
+        '127.0.0.1', None, False, None)
 
 
 def _run_entry(monkeypatch, tmp_path, configured_key):
@@ -147,6 +148,8 @@ def _run_entry(monkeypatch, tmp_path, configured_key):
     monkeypatch.setattr(config.Config, 'DATABASE_PATH', str(tmp_path / 'entry.db'))
     monkeypatch.setattr(config.Config, 'SYNC_INTERVAL_HOURS', 0)
     monkeypatch.setattr(config.Config, 'AUTO_SYNC_ON_STARTUP', False)
+    monkeypatch.delenv('FLASK_RUN_HOST', raising=False)
+    monkeypatch.delenv('FLASK_DEBUG', raising=False)
     calls = []
     monkeypatch.setattr(flask.Flask, 'run', lambda self, **kw: calls.append((self, kw)))
     app_module.run_development_server()
@@ -166,11 +169,11 @@ def test_development_server_without_a_key_serves_loopback_with_one_warning(
     assert flask_app.config['SECRET_KEY'] not in warnings[0].getMessage()
 
 
-def test_development_server_with_a_key_serves_as_before_without_a_warning(
+def test_development_server_with_a_key_serves_loopback_without_debug_or_warning(
         monkeypatch, tmp_path, caplog):
     with caplog.at_level('WARNING'):
         flask_app, kwargs = _run_entry(monkeypatch, tmp_path, 'an-owner-chosen-key')
-    assert kwargs == {'host': '0.0.0.0', 'port': 5000, 'debug': True}
+    assert kwargs == {'host': '127.0.0.1', 'port': 5000, 'debug': False}
     assert flask_app.config['SECRET_KEY'] == 'an-owner-chosen-key'
     assert not [r for r in caplog.records if 'SECRET_KEY' in r.getMessage()]
 
@@ -179,7 +182,8 @@ def test_development_server_with_a_key_serves_as_before_without_a_warning(
 
 def _child_env(secret_key, db_path):
     env = {k: v for k, v in os.environ.items()
-           if k not in ('SECRET_KEY', 'MSSQL_CONNECTION_STRING', 'EASYAUTH_ENABLED')}
+           if k not in ('SECRET_KEY', 'MSSQL_CONNECTION_STRING', 'EASYAUTH_ENABLED',
+                         'FLASK_RUN_HOST', 'FLASK_DEBUG')}
     env.update(DATABASE_PATH=str(db_path), SYNC_INTERVAL_HOURS='0', AUTO_SYNC_ON_STARTUP='false',
                PYTHONIOENCODING='utf-8')
     if secret_key is not None:

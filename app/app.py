@@ -1,5 +1,7 @@
+import os
 import secrets
 from datetime import timedelta
+from typing import NamedTuple, Optional
 
 from flask import Flask, redirect, url_for
 from flask_login import LoginManager
@@ -113,24 +115,75 @@ DEVELOPMENT_KEYLESS_WARNING = (
 )
 
 
-def development_run_settings(configured_key):
-    """How `python app.py` runs: (host, secret key to use or None, warning or None).
+DEVELOPMENT_HOST_IGNORED_WARNING = (
+    'FLASK_RUN_HOST is set but was ignored: without a usable SECRET_KEY the development server '
+    'listens on 127.0.0.1 only.'
+)
 
-    With a usable SECRET_KEY it runs as before (all interfaces, that key). Without one it is the single exemption from the startup check: a random key for this process only,
-    and the loopback address only, so the keyless start is reachable from this machine alone.
+# The addresses that reach this machine only; debug mode never listens anywhere else.
+LOOPBACK_HOSTS = ('127.0.0.1', 'localhost', '::1')
+
+DEVELOPMENT_DEBUG_REFUSED = (
+    'The development server does not start: FLASK_DEBUG turns on the interactive debugger, '
+    'which must never be reachable from other machines, and FLASK_RUN_HOST names an address '
+    'other than 127.0.0.1, localhost or ::1. Unset FLASK_DEBUG, or set FLASK_RUN_HOST to a '
+    'loopback address.'
+)
+
+
+class DevelopmentRunRefused(RuntimeError):
+    """The development entry would serve the debugger beyond loopback."""
+
+
+class DevelopmentRun(NamedTuple):
+    host: str
+    key: Optional[str]  # the key to use for this process, or None to keep the configured one
+    debug: bool
+    warning: Optional[str]
+
+
+def development_debug_requested(value) -> bool:
+    """FLASK_DEBUG turns debug mode on only as `1` or `true` (any case, blanks ignored)."""
+    return (value or '').strip().lower() in ('1', 'true')
+
+
+def development_run_settings(configured_key, environ=None) -> DevelopmentRun:
+    """How the development entries (`python app.py`, `python run.py`) run.
+
+    Host: 127.0.0.1 unless FLASK_RUN_HOST names another address; without a usable
+    SECRET_KEY it stays 127.0.0.1 (a random key for this process only, so the keyless start
+    is reachable from this machine alone) and the warning says the setting was ignored.
+    Debug (the debugger and the reloader): off unless FLASK_DEBUG asks for it, and never
+    beyond loopback: that combination raises DevelopmentRunRefused. Port: always 5000.
     """
+    environ = os.environ if environ is None else environ
+    requested_host = (environ.get('FLASK_RUN_HOST') or '').strip()
+    debug = development_debug_requested(environ.get('FLASK_DEBUG'))
     if secret_key_is_usable(configured_key):
-        return '0.0.0.0', None, None
-    return '127.0.0.1', secrets.token_hex(32), DEVELOPMENT_KEYLESS_WARNING
+        host, key, warning = requested_host or '127.0.0.1', None, None
+    else:
+        host, key, warning = '127.0.0.1', secrets.token_hex(32), DEVELOPMENT_KEYLESS_WARNING
+        if requested_host and requested_host != host:
+            warning += ' ' + DEVELOPMENT_HOST_IGNORED_WARNING
+    if debug and host.lower() not in LOOPBACK_HOSTS:
+        raise DevelopmentRunRefused(DEVELOPMENT_DEBUG_REFUSED)
+    return DevelopmentRun(host, key, debug, warning)
 
 
 def run_development_server():
-    """The development entry (`python app.py`): build the app and serve it with Flask."""
-    host, key, warning = development_run_settings(Config.SECRET_KEY)
-    flask_app = create_app({'SECRET_KEY': key} if key is not None else None)
-    if warning:
-        flask_app.logger.warning(warning)
-    flask_app.run(host=host, port=5000, debug=True)
+    """The development entry: decide how to run, build the app and serve it with Flask.
+
+    A refused combination exits with its message and a non-zero status before anything
+    (the database included) is opened.
+    """
+    try:
+        run = development_run_settings(Config.SECRET_KEY)
+    except DevelopmentRunRefused as refused:
+        raise SystemExit(str(refused)) from None
+    flask_app = create_app({'SECRET_KEY': run.key} if run.key is not None else None)
+    if run.warning:
+        flask_app.logger.warning(run.warning)
+    flask_app.run(host=run.host, port=5000, debug=run.debug)
 
 
 if __name__ == '__main__':

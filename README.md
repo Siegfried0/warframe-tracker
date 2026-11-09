@@ -38,16 +38,27 @@ python -c "import secrets; print(secrets.token_hex(32))"
 $env:SECRET_KEY = '<the printed value>'    # Windows (PowerShell)
 # export SECRET_KEY='<the printed value>'  # macOS / Linux
 
-# 5 — start the server
+# 5 — start the development server (on this machine only: http://localhost:5000)
 python run.py
 ```
 
 The app does not start without `SECRET_KEY`, with a blank one, or with the example value
 older versions used (`dev-change-me-in-production`, published with the source): the message
-says how to make a key. Keep the same key across restarts, or everyone is logged out. Only
-`python app.py` run from inside `app/` starts without a key, for development: it then makes a
-random key for that run, listens on `127.0.0.1` only, and logs a warning (logins end when it
-stops).
+says how to make a key. Keep the same key across restarts, or everyone is logged out.
+
+`python run.py` (or `python app.py` from inside `app/`, the same thing) is the development
+server, not a production one; production runs Gunicorn (see Deployment below). It listens on
+`127.0.0.1` only, with Flask's debugger off. Two settings change that:
+
+- `FLASK_RUN_HOST`: another address to listen on, e.g. `0.0.0.0` to reach it from your
+  network (only when `SECRET_KEY` is set).
+- `FLASK_DEBUG`: `1` or `true` turns on the interactive debugger and the reloader. The
+  debugger runs code for whoever reaches it, so with `FLASK_DEBUG` on the server refuses to
+  start unless `FLASK_RUN_HOST` is unset, `127.0.0.1`, `localhost` or `::1`.
+
+Without a usable `SECRET_KEY` the development server still starts, for development: it then
+makes a random key for that run, listens on `127.0.0.1` only (ignoring `FLASK_RUN_HOST`), and
+logs a warning (logins end when it stops).
 
 Open `http://localhost:5000`. On first run with an empty database the setup wizard creates the initial admin account.
 
@@ -75,6 +86,8 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | Variable | Default | Notes |
 |---|---|---|
 | `SECRET_KEY` | — (**required**) | Signs logins and form tokens: a long random value (`python -c "import secrets; print(secrets.token_hex(32))"`); the app does not start without one, with a blank one or with `dev-change-me-in-production` |
+| `FLASK_RUN_HOST` | `127.0.0.1` | Development server only (`python run.py`): the address to listen on; ignored without a usable `SECRET_KEY` |
+| `FLASK_DEBUG` | off | Development server only: `1` or `true` turns on the debugger and reloader; refused with a host other than `127.0.0.1`, `localhost` or `::1` |
 | `DATABASE_PATH` | `warframe_tracker.db` | Absolute path to SQLite file |
 | `SESSION_LIFETIME_DAYS` | `30` | Session cookie lifetime |
 | `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS) |
