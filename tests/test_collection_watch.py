@@ -2,7 +2,8 @@
 
 Every tradable item (`items.tradable = 1`) shows a market-watch toggle in both collection views
 (card grid and table) on every category tab, mods and arcanes included; an item that is not
-tradable shows none. The toggle shows the caller's own watchlist state on page load and is
+tradable shows none (none of these items has a market slug, which would put it on the market
+as well). The toggle shows the caller's own watchlist state on page load and is
 told apart from the Prime Resurgence watch by its icon and title. A watched item is listed on
 the market page and in the dashboard's Market Watch panel; an unwatched one on neither.
 

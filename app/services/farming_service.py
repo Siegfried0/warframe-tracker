@@ -233,7 +233,9 @@ def farm_next_items(user_id: int, buy_threshold_plat: int | None,
 def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
                               plat_per_hour: int | None) -> list[dict]:
     """
-    Annotate each tradable item dict with its cached market price and a buy recommendation.
+    Annotate each item dict with a market slug with its cached market price and a buy
+    recommendation (the slug alone decides: an item the market sells only as a set is not
+    tradable, yet priced).
     Mutates items in-place and returns them.
 
     The price is the cached one of any age, read for all items in one query; nothing is
@@ -241,7 +243,7 @@ def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
     recommendation.
     """
     priced = [item for item in items
-              if item.get('tradable') and item.get('market_url_name')]
+              if item.get('market_url_name')]
     prices = cached_prices([item['id'] for item in priced])
     for item in priced:
         plat = prices.get(item['id'])
@@ -801,9 +803,9 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
 
     # Market price for the goal item itself
     item_row = db.execute(
-        'SELECT tradable, market_url_name FROM items WHERE id = ?', (item_id,)
+        'SELECT market_url_name FROM items WHERE id = ?', (item_id,)
     ).fetchone()
-    if item_row and item_row['tradable'] and item_row['market_url_name']:
+    if item_row and item_row['market_url_name']:
         cache_hours = get_setting_int(user_id, 'market_cache_hours')
         price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
         plan['market_price'] = price_data.get('platinum')

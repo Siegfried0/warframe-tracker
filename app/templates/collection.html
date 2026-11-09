@@ -2,7 +2,7 @@
 {% block title %}{{ category_label }} — Collection{% endblock %}
 {% block content %}
 
-{# The market-watch toggle of a tradable item (both views); the bookmark icon and its title
+{# The market-watch toggle of an item on the market (both views); the bookmark icon and its title
    set it apart from the Prime Resurgence watch's bell. #}
 {% macro market_watch_toggle(row, icon_class) %}
 <a href="#" class="wf-market-watch {{ 'green-text' if row.market_watched else 'grey-text' }}"
@@ -390,7 +390,7 @@
             <i class="material-icons small">{{ 'notifications_active' if row.resurgence_watch else 'notifications_none' }}</i>
           </a>
           {% endif %}
-          {% if row.tradable %}{{ market_watch_toggle(row, 'small') }}{% endif %}
+          {% if row.on_market %}{{ market_watch_toggle(row, 'small') }}{% endif %}
           {% if row.wiki_url %}
           <a href="{{ row.wiki_url }}" target="_blank" class="grey-text" title="Wiki page">
             <i class="material-icons small">open_in_new</i>
@@ -579,7 +579,7 @@
               </td>
               {% endif %}
               <td class="center-align">
-                {% if row.tradable %}{{ market_watch_toggle(row, '') }}{% else %}<span class="grey-text">—</span>{% endif %}
+                {% if row.on_market %}{{ market_watch_toggle(row, '') }}{% else %}<span class="grey-text">—</span>{% endif %}
               </td>
               <td>
                 <span class="wf-note-display grey-text" data-item="{{ row.id }}">{{ row.note or '' }}</span>

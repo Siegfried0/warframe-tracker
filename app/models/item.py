@@ -72,6 +72,15 @@ def rank_for_points(total_mr: int) -> int:
     return rank
 
 
+def on_market(item) -> bool:
+    """Whether warframe.market trades the item: it is tradable or it has a market slug.
+
+    Items the market sells only as a set (prime warframes) are not tradable in the item
+    data, yet the market lists them; an empty slug counts as none.
+    """
+    return bool(item['tradable']) or bool(item['market_url_name'])
+
+
 class Item:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():

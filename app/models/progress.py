@@ -1,5 +1,6 @@
 from .db import get_db
-from .item import MR_POINTS_PER_CATEGORY, MR_RANK_THRESHOLDS, rank_for_points, rank_label
+from .item import (MR_POINTS_PER_CATEGORY, MR_RANK_THRESHOLDS, on_market, rank_for_points,
+                   rank_label)
 
 
 class Progress:
@@ -152,7 +153,8 @@ class Progress:
         `resurgence_current` says whether the stored Prime Resurgence stock counts
         (services/resurgence_sync.resurgence_status); when it does not, the "available"
         filter matches nothing and every row's `resurgence_available` reads 0. Each row's
-        `market_watched` is 1 when the item is on this user's market watchlist, else 0.
+        `market_watched` is 1 when the item is on this user's market watchlist, else 0;
+        its `on_market` is 1 when warframe.market trades the item (`item.on_market`), else 0.
         """
         if filters is None:
             filters = {}
@@ -259,8 +261,9 @@ class Progress:
             sql + ' ORDER BY i.name LIMIT ? OFFSET ?',
             params + [per_page, offset],
         ).fetchall()]
-        if not resurgence_current:
-            for row in rows:
+        for row in rows:
+            row['on_market'] = 1 if on_market(row) else 0
+            if not resurgence_current:
                 row['resurgence_available'] = 0
         return rows, total
 

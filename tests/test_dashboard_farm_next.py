@@ -176,9 +176,9 @@ def test_the_farming_time_check_uses_the_cached_price(app, admin_client, admin_i
     assert requests_made == []
 
 
-def test_an_item_that_is_not_tradable_shows_no_price(app, admin_client, requests_made):
+def test_an_item_without_a_market_slug_shows_no_price(app, admin_client, requests_made):
     with app.app_context():
-        item = add_item('Braton Prime', tradable=False)
+        item = add_item('Braton Prime', market_url_name=None)
         cache(item, 120, ago(FRESH_AGE))
     assert market_cell(farm_card(admin_client), 'Braton Prime') == '—'
     assert requests_made == []
