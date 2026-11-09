@@ -298,7 +298,7 @@ function vaultedLock(note, inResurgence) {
 
 function renderAdvisorBody(data) {
   if (!data || !data.node) return '';
-  var html = '<h6 class="white-text">Farming: <span class="teal-text">' + data.node + '</span></h6>';
+  var html = '<h6 class="white-text">Farming: <span class="teal-text">' + escText(data.node) + '</span></h6>';
   if (data.guaranteed_free) {
     html += '<div class="card-panel teal darken-3 white-text" style="padding:.5rem .75rem;margin:.5rem 0">' +
             '<i class="material-icons tiny">check_circle</i>' +
@@ -311,12 +311,12 @@ function renderAdvisorBody(data) {
             '<th>Item</th><th>Here</th><th>Best</th><th>Efficiency</th><th>Goal</th>' +
             '</tr></thead><tbody>';
     data.opportunities.forEach(function(opp) {
-      html += '<tr><td class="white-text">' + opp.name;
+      html += '<tr><td class="white-text">' + escText(opp.name);
       if (opp.essentially_free) html += ' <span class="teal-text" style="font-size:.75rem"> free</span>';
       html += '</td><td class="grey-text">' + opp.drop_pct + '</td>';
       html += '<td class="grey-text">' + opp.best_pct + '</td>';
       html += '<td class="' + opp.rating_class + '">' + opp.rating + ' (' + opp.efficiency_pct + '%)</td>';
-      html += '<td class="grey-text" style="font-size:.8rem">' + (opp.goal_labels || []).join(', ') + '</td></tr>';
+      html += '<td class="grey-text" style="font-size:.8rem">' + escText((opp.goal_labels || []).join(', ')) + '</td></tr>';
     });
     html += '</tbody></table>';
   } else {
@@ -328,7 +328,7 @@ function renderAdvisorBody(data) {
     html += '<table class="wf-table" style="margin-top:.5rem"><thead><tr>' +
             '<th>Item</th><th>Drop %</th><th>Expected / 10 runs</th></tr></thead><tbody>';
     data.harvest_summary.forEach(function(h) {
-      html += '<tr><td class="grey-text">' + h.name + '</td>' +
+      html += '<tr><td class="grey-text">' + escText(h.name) + '</td>' +
               '<td class="grey-text">' + h.drop_pct + '</td>' +
               '<td class="white-text">~' + h.expected_per_10 + '</td></tr>';
     });
@@ -361,7 +361,7 @@ function renderTreeView(plan, goalId) {
   if (plan.market_price) {
     html += '<div class="grey-text" style="font-size:.82rem;margin-bottom:.5rem">' +
             'Market price: <span class="orange-text">' + plan.market_price + 'p</span>' +
-            (plan.market_url ? ' <a href="' + plan.market_url + '" target="_blank" class="grey-text"><i class="material-icons tiny">open_in_new</i></a>' : '') +
+            (plan.market_url ? ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text"><i class="material-icons tiny">open_in_new</i></a>' : '') +
             '</div>';
   }
   plan.components.forEach(function(comp) {
@@ -375,7 +375,7 @@ function renderTreeView(plan, goalId) {
             ' data-goal="' + goalId + '" data-key="' + encodeURIComponent(comp.component_name) + '"' +
             (acq ? ' checked' : '') + '><span></span></label>';
     if (comp.image_url) {
-      html += '<img src="' + comp.image_url + '" style="width:28px;height:28px;object-fit:contain;' +
+      html += '<img src="' + escText(comp.image_url) + '" style="width:28px;height:28px;object-fit:contain;' +
               'border-radius:50%;background:#2e3f47;flex-shrink:0;margin-top:.05rem" ' +
               'onerror="this.style.display=\'none\'">';
     }
@@ -415,11 +415,11 @@ function renderTreeView(plan, goalId) {
                 ' data-goal="' + goalId + '" data-key="' + encodeURIComponent(ing.ingredient_name) + '"' +
                 (ingDone ? ' checked' : '') + '><span></span></label>';
         if (ing.image_url) {
-          html += '<img src="' + ing.image_url + '" style="width:20px;height:20px;object-fit:contain;' +
+          html += '<img src="' + escText(ing.image_url) + '" style="width:20px;height:20px;object-fit:contain;' +
                   'border-radius:50%;background:#2e3f47;flex-shrink:0;vertical-align:middle" ' +
                   'onerror="this.style.display=\'none\'">';
         }
-        html += '<span class="white-text">' + ing.ingredient_name + '</span> ';
+        html += '<span class="white-text">' + escText(ing.ingredient_name) + '</span> ';
         html += '<span class="orange-text">×' + ing.ingredient_qty + '</span>';
         if (ing.drops && ing.drops.length) html += '<br>' + dropBadge(ing.drops[0]);
         html += '</div>';
@@ -468,7 +468,7 @@ function renderVisualPlanBody(plan, goalId) {
     html += '<div class="wf-plan-market-row" style="margin-bottom:.6rem">' +
             'Market: <span class="orange-text">' + plan.market_price + 'p</span>';
     if (plan.market_url) {
-      html += ' <a href="' + plan.market_url + '" target="_blank" class="grey-text">' +
+      html += ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text">' +
               '<i class="material-icons tiny">open_in_new</i></a>';
     }
     html += '</div>';
@@ -531,7 +531,7 @@ function renderVisualPlanBody(plan, goalId) {
 
       // Wrap div: positioning context for corner badges
       html += '<div class="wf-comp-wrap"' +
-              ' data-goal="' + goalId + '" data-key="' + safeKey + '" data-state="' + state + '"' +
+              ' data-goal="' + goalId + '" data-key="' + safeKey + '" data-state="' + escText(state) + '"' +
               ' title="' + stateTitle + '">';
 
       // The circle itself
@@ -539,7 +539,7 @@ function renderVisualPlanBody(plan, goalId) {
               ' style="border-color:' + col.hex + ';background:rgba(' + col.rgb + ',.12)">';
       html += '<i class="material-icons" style="font-size:1.3rem;color:' + col.hex + '">description</i>';
       if (comp.image_url) {
-        html += '<img src="' + comp.image_url + '" class="wf-comp-img" onerror="this.style.display=\'none\'">';
+        html += '<img src="' + escText(comp.image_url) + '" class="wf-comp-img" onerror="this.style.display=\'none\'">';
       }
       html += '</div>'; // /.wf-comp-circle
 
@@ -578,7 +578,7 @@ function renderVisualPlanBody(plan, goalId) {
         if (ci !== undefined) {
           var cState    = compStates[cname] || 'pending';
           var dotStyle  = 'background:' + COMP_COLORS[ci].hex;
-          var dotTitle  = cname;
+          var dotTitle  = escText(cname);
           if (cState === 'blueprint') {
             dotStyle += ';box-shadow:0 0 0 2px #ffa000';
             dotTitle += ' (blueprint owned)';
@@ -605,12 +605,12 @@ function renderVisualPlanBody(plan, goalId) {
       }
 
       html += '<div class="wf-res-item' + (grayed ? ' wf-res-grayed' : '') + '">';
-      html += '<div class="wf-res-name" title="' + res.ingredient_name + '">' + res.ingredient_name + '</div>';
+      html += '<div class="wf-res-name" title="' + escText(res.ingredient_name) + '">' + escText(res.ingredient_name) + '</div>';
 
       html += '<div class="wf-res-circle' + (satisfied && !grayed ? ' wf-res-satisfied' : '') + '">';
       html += '<i class="material-icons grey-text" style="font-size:1rem">layers</i>';
       if (res.image_url) {
-        html += '<img src="' + res.image_url + '" class="wf-res-img" onerror="this.style.display=\'none\'">';
+        html += '<img src="' + escText(res.image_url) + '" class="wf-res-img" onerror="this.style.display=\'none\'">';
       }
       if (satisfied && !grayed) {
         html += '<div class="wf-res-done-badge"><i class="material-icons teal-text" style="font-size:.75rem">check</i></div>';
@@ -630,7 +630,7 @@ function renderVisualPlanBody(plan, goalId) {
               ' value="' + res.qty_owned + '" title="Owned quantity">';
 
       if (bestDrop && bestDrop.location) {
-        var locSafe = bestDrop.location.replace(/"/g, '&quot;');
+        var locSafe = escText(bestDrop.location);
         html += '<button class="wf-advisor-loc-btn waves-effect" data-location="' + locSafe + '"' +
                 ' title="Send to advisor: ' + locSafe + '">' +
                 '<i class="material-icons" style="font-size:.75rem">gps_fixed</i></button>';
@@ -659,11 +659,11 @@ function renderAggregate(data) {
   data.resources.forEach(function(res) {
     var shared = res.shared ? '<span class="amber-text" title="Needed by multiple goals"> ★</span>' : '';
     html += '<tr>';
-    html += '<td class="white-text">' + res.ingredient_name + shared + '</td>';
+    html += '<td class="white-text">' + escText(res.ingredient_name) + shared + '</td>';
     html += '<td class="orange-text">' + res.qty_needed + '</td>';
     html += '<td class="teal-text">' + res.qty_owned + '</td>';
     html += '<td class="' + (res.still_needed > 0 ? 'red-text' : 'grey-text') + '">' + res.still_needed + '</td>';
-    html += '<td class="grey-text" style="font-size:.8rem">' + (res.goal_labels || []).join(', ') + '</td>';
+    html += '<td class="grey-text" style="font-size:.8rem">' + escText((res.goal_labels || []).join(', ')) + '</td>';
     html += '<td>' + (res.drops && res.drops.length ? dropBadge(res.drops[0]) : '<span class="grey-text">—</span>') + '</td>';
     html += '</tr>';
   });
@@ -687,15 +687,15 @@ $('#goal-search').on('input', function() {
                     'position:relative;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center">' +
                     '<i class="material-icons grey-text" style="font-size:.9rem">shield</i>';
         if (item.image_url) {
-          thumb += '<img src="' + item.image_url + '" style="width:32px;height:32px;object-fit:contain;' +
+          thumb += '<img src="' + escText(item.image_url) + '" style="width:32px;height:32px;object-fit:contain;' +
                    'position:absolute;top:0;left:0;background:#2e3f47" onerror="this.style.display=\'none\'">';
         }
         thumb += '</div>';
         html += '<div class="goal-search-item" data-id="' + item.id + '"' +
                 ' style="padding:.4rem .75rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.08);' +
                 'display:flex;align-items:center;gap:.5rem">';
-        html += thumb + '<span class="white-text">' + item.name + '</span>';
-        html += ' <span class="grey-text" style="font-size:.8rem">(' + item.category + ')</span>';
+        html += thumb + '<span class="white-text">' + escText(item.name) + '</span>';
+        html += ' <span class="grey-text" style="font-size:.8rem">(' + escText(item.category) + ')</span>';
         if (item.vaulted) html += ' <span class="orange-text" style="font-size:.75rem">Vaulted</span>';
         html += '</div>';
       });
@@ -715,11 +715,11 @@ $(document).on('click', '.goal-search-item', function() {
     method: 'POST', contentType: 'application/json',
     data: JSON.stringify({item_id: itemId}),
     success: function(r) {
-      if (!r.ok) { M.toast({html: r.error}); return; }
+      if (!r.ok) { M.toast({html: escText(r.error || 'Could not add the goal.')}); return; }
       if (r.already_exists) {
-        M.toast({html: r.goal.item_name + ' is already in your goals.'});
+        M.toast({html: escText(r.goal.item_name) + ' is already in your goals.'});
       } else {
-        M.toast({html: r.goal.item_name + ' added to farming goals.'});
+        M.toast({html: escText(r.goal.item_name) + ' added to farming goals.'});
         location.reload();
       }
     }
@@ -745,7 +745,7 @@ $('#node-input').on('input', function() {
     matches.forEach(function(n) {
       html += '<div class="node-result-item" style="padding:.35rem .75rem;cursor:pointer;' +
               'border-bottom:1px solid rgba(255,255,255,.08)">' +
-              '<span class="white-text" style="font-size:.9rem">' + n + '</span></div>';
+              '<span class="white-text" style="font-size:.9rem">' + escText(n) + '</span></div>';
     });
     $('#node-results').html(html).show();
   }, 200);
@@ -794,7 +794,7 @@ function setAdvisorNode(nodeLoc) {
 $(document).on('click', '.wf-advisor-loc-btn', function() {
   var nodeLoc = $(this).data('location');
   $('#node-input').val(nodeLoc);
-  M.toast({html: 'Advisor set to: ' + nodeLoc});
+  M.toast({html: 'Advisor set to: ' + escText(nodeLoc)});
   setAdvisorNode(nodeLoc);
   $('html, body').animate({scrollTop: $('#advisor-card').offset().top - 20}, 400);
 });

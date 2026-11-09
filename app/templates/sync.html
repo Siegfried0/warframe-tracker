@@ -147,6 +147,12 @@ $('#sync-btn').on('click', function() {
 
 // ── Image coverage ────────────────────────────────────────────────────────────
 
+// Every server string drawn into HTML text or a quoted attribute goes through this escape
+function escText(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;');
+}
+
 function loadCoverage() {
   $.getJSON('{{ url_for("sync.image_coverage") }}', function(r) {
     if (!r.ok) { $('#coverage-body').html('<span class="red-text">Failed to load.</span>'); return; }
@@ -162,7 +168,7 @@ function loadCoverage() {
       var bar  = '<div class="progress blue-grey darken-3" style="margin:.2rem 0;height:6px">'
                + '<div class="determinate ' + color + '" style="width:' + pct + '%"></div></div>';
       html += '<tr>'
-            + '<td class="white-text" style="text-transform:capitalize">' + cat.category + '</td>'
+            + '<td class="white-text" style="text-transform:capitalize">' + escText(cat.category) + '</td>'
             + '<td class="grey-text center-align">' + cat.total + '</td>'
             + '<td class="teal-text center-align">' + cat.cached + '</td>'
             + '<td class="' + (cat.missing > 0 ? 'red-text' : 'grey-text') + ' center-align">' + cat.missing + '</td>'
@@ -192,10 +198,10 @@ function loadCoverage() {
         if (item.category !== lastCat) {
           if (lastCat) listHtml += '</ul>';
           listHtml += '<p class="white-text" style="margin:.75rem 0 .25rem;font-weight:500;text-transform:capitalize">'
-                    + item.category + '</p><ul class="browser-default grey-text" style="padding-left:1.25rem;margin:0">';
+                    + escText(item.category) + '</p><ul class="browser-default grey-text" style="padding-left:1.25rem;margin:0">';
           lastCat = item.category;
         }
-        listHtml += '<li style="font-size:.85rem">' + item.name + '</li>';
+        listHtml += '<li style="font-size:.85rem">' + escText(item.name) + '</li>';
       });
       if (lastCat) listHtml += '</ul>';
       html += '<details style="margin-top:.75rem">'
