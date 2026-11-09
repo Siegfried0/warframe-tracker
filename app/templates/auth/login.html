@@ -25,6 +25,14 @@
             <a href="{{ url_for('auth.register') }}" class="btn-flat white-text" style="margin-left:1rem">Register</a>
           </div>
         </form>
+        {% if oidc_enabled %}
+        <div class="oidc-sign-in" style="margin-top:1.5rem">
+          <a href="{{ url_for('auth.oidc_login') }}"
+             class="btn blue-grey lighten-1 waves-effect waves-light">
+            <i class="material-icons left">vpn_key</i>Sign in with OpenID Connect
+          </a>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>

@@ -44,6 +44,15 @@ class User(UserMixin):
         return cls._from_row(row)
 
     @classmethod
+    def get_oidc_account(cls, sub):
+        """The OIDC account of ``sub``: only a row with auth_type 'oidc' matches, never a local
+        or EasyAuth row."""
+        row = get_db().execute(
+            "SELECT * FROM users WHERE auth_type = 'oidc' AND oidc_sub = ?", (sub,)
+        ).fetchone()
+        return cls._from_row(row)
+
+    @classmethod
     def get_all(cls):
         rows = get_db().execute('SELECT * FROM users ORDER BY username').fetchall()
         return [cls._from_row(r) for r in rows]
@@ -68,6 +77,23 @@ class User(UserMixin):
         )
         db.commit()
         return cls.get_by_id(cur.lastrowid)
+
+    @classmethod
+    def create_oidc_account(cls, username, email, sub):
+        """Insert an OIDC account (no password). Its role is decided in the same statement:
+        'admin' when the table is empty, else 'user'. On SQLite one statement holds the write
+        lock throughout, so two first sign-ins at once make at most one admin; on MSSQL under
+        READ COMMITTED both could read an empty table. Raises the backend's integrity error
+        when the username, email or sub is taken."""
+        db = get_db()
+        db.execute(
+            '''INSERT INTO users (username, email, password_hash, role, auth_type, oidc_sub)
+               SELECT ?, ?, NULL,
+                      CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END,
+                      'oidc', ?''',
+            (username, email, sub),
+        )
+        db.commit()
 
     def check_password(self, password: str) -> bool:
         row = get_db().execute('SELECT password_hash FROM users WHERE id = ?', (self.id,)).fetchone()

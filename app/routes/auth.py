@@ -1,7 +1,9 @@
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import (Blueprint, abort, current_app, flash, redirect, render_template, request,
+                   session, url_for)
 from flask_login import current_user, login_required, login_user, logout_user
 
 from models.user import User
+from services import oidc
 from services.csrf import rotate_token
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -64,11 +66,47 @@ def login():
     return render_template('auth/login.html')
 
 
+@auth_bp.route('/oidc/login')
+def oidc_login():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/login')
+    if not oidc.is_enabled(current_app.config):
+        abort(404)
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard.index'))
+    try:
+        target = oidc.start_sign_in(current_app.config, session)
+    except oidc.SignInRefused as refused:
+        current_app.logger.warning('OIDC sign-in refused: %s', refused.reason)
+        flash(refused.message, 'error')
+        return redirect(url_for('auth.login'))
+    return redirect(target)
+
+
+@auth_bp.route('/oidc/callback')
+def oidc_callback():
+    if current_app.config.get('EASYAUTH_ENABLED'):
+        return redirect('/.auth/login')
+    if not oidc.is_enabled(current_app.config):
+        abort(404)
+    try:
+        user = oidc.finish_sign_in(current_app.config, session, request.args)
+    except oidc.SignInRefused as refused:
+        current_app.logger.warning('OIDC sign-in refused: %s', refused.reason)
+        flash(refused.message, 'error')
+        return redirect(url_for('auth.login'))
+    rotate_token()
+    login_user(user, remember=True)
+    user.update_last_login()
+    return redirect(url_for('dashboard.index'))
+
+
 # POST only (with the CSRF token, like every unsafe request): a GET never signs anyone out.
 @auth_bp.route('/logout', methods=['POST'])
 @login_required
 def logout():
     rotate_token()
+    oidc.forget_pending(session)
     if current_app.config.get('EASYAUTH_ENABLED'):
         return redirect('/.auth/logout')
     logout_user()

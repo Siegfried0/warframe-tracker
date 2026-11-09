@@ -9,7 +9,7 @@ from flask_login import LoginManager
 from config import SECRET_KEY_HELP, Config, require_usable_secret_key, secret_key_is_usable
 from models.db import init_db
 from models.user import User
-from services import csrf
+from services import csrf, oidc
 from services.request_ids import Id64Converter, RequestJSONProvider
 
 login_manager = LoginManager()
@@ -50,9 +50,13 @@ def create_app(config_overrides: dict = None):
         _register_blueprints(flask_app)
         _start_scheduler(flask_app)
 
+    # A partial OIDC configuration leaves OIDC off; the log names the missing settings.
+    oidc.warn_if_partial(flask_app)
+
     @flask_app.context_processor
     def _inject_globals():
-        return {'easyauth_enabled': flask_app.config.get('EASYAUTH_ENABLED', False)}
+        return {'easyauth_enabled': flask_app.config.get('EASYAUTH_ENABLED', False),
+                'oidc_enabled': oidc.is_enabled(flask_app.config)}
 
     if flask_app.config.get('EASYAUTH_ENABLED'):
         from services.easyauth import register_easyauth

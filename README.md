@@ -95,16 +95,49 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `AUTO_SYNC_ON_STARTUP` | `false` | Run wiki sync at server start |
 | `SYNC_INTERVAL_HOURS` | `24` | Background sync interval (0 = off) |
 | `RESURGENCE_FALLBACK_DAYS` | `7` | Days the Prime Resurgence stock counts after a sync when the wiki page shows no end date |
-| `OIDC_CLIENT_ID` | — | Optional OIDC integration |
-| `OIDC_CLIENT_SECRET` | — | |
-| `OIDC_ISSUER_URL` | — | |
-| `OIDC_REDIRECT_URI` | — | |
+| `OIDC_CLIENT_ID` | — | Optional sign-in through an OpenID Connect provider: set all four `OIDC_*` (see below) |
+| `OIDC_CLIENT_SECRET` | — | The client secret the provider issued; kept out of the database |
+| `OIDC_ISSUER_URL` | — | The provider's issuer URL (`https`) |
+| `OIDC_REDIRECT_URI` | — | `https://<your host>/auth/oidc/callback` |
 | `BACKUP_LOCAL_PATH` | — | Local backup directory |
 | `BACKUP_S3_ENDPOINT` | — | S3-compatible endpoint URL |
 | `BACKUP_S3_BUCKET` | — | S3 bucket name |
 | `BACKUP_S3_PREFIX` | `warframe-tracker/` | S3 key prefix |
 | `BACKUP_S3_ACCESS_KEY` | — | S3 credentials |
 | `BACKUP_S3_SECRET_KEY` | — | |
+
+**Sign-in with an OpenID Connect provider** (Keycloak, Authentik, Google, …). Beside the local
+login, the app can sign users in through any OpenID Connect provider:
+
+1. Register the app at your provider as a *confidential* client using the authorization code
+   flow, with the redirect URI `https://<your host>/auth/oidc/callback` (the exact address users
+   reach the app at).
+2. Set all four variables: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL` (the
+   provider's issuer, for example `https://id.example.com/realms/home`; the app reads
+   `<issuer>/.well-known/openid-configuration`) and `OIDC_REDIRECT_URI` (the same redirect URI).
+   They are read from the environment only, so the secret never ends up in the database, a
+   backup or an export.
+3. Restart the app. The login page (and, on an empty database, the setup page) shows **Sign in
+   with OpenID Connect**.
+
+Notes:
+- With only some of the four set, OIDC sign-in stays off and the startup log names the missing
+  variables. With `EASYAUTH_ENABLED=true`, OIDC sign-in is off.
+- The provider must be reached over `https`; plain `http` is accepted only for a provider on the
+  same machine (`localhost`, `127.0.0.1`, `::1`). The app trusts the ID token because it comes
+  straight from the provider's token endpoint over TLS, so `OIDC_ISSUER_URL` must name a provider
+  you trust.
+- **Who can sign up:** anyone your provider signs in gets a `user` account on their first sign-in,
+  as with self-registration. With a public provider (Google, GitHub) that is anyone with an
+  account there, so prefer a provider or client limited to your own users. An admin can
+  deactivate or delete such accounts.
+- On an empty database the first account, local or OIDC, becomes the admin.
+- An OIDC account is never linked to another account. A first sign-in whose username (the
+  provider's `preferred_username`, else the email) or email another account already uses is
+  refused and creates nothing. Passwords cannot be reset for OIDC accounts.
+- Logging out ends the session in this app only; you stay signed in at your provider.
+- Pointing `OIDC_ISSUER_URL` at another provider later gives its users new accounts; the old
+  ones remain until an admin removes them.
 
 **Forms and cross-site requests.** Every form and every change the pages send carries a
 per-session security token, and the server refuses a change without it (protection against

@@ -36,6 +36,15 @@
             Create Account
           </button>
         </form>
+        {% if oidc_enabled %}
+        <div class="oidc-sign-in" style="margin-top:1.5rem">
+          <p class="grey-text text-lighten-1">Or sign in with your identity provider: the first
+            account it creates is the admin.</p>
+          <a href="{{ url_for('auth.oidc_login') }}" class="btn blue-grey lighten-1 waves-effect waves-light">
+            <i class="material-icons left">vpn_key</i>Sign in with OpenID Connect
+          </a>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
