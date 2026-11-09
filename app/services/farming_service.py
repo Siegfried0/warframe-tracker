@@ -6,6 +6,8 @@ Farming optimiser — builds efficient multi-target mission routes.
 import json
 from collections import defaultdict
 
+from flask import current_app
+
 from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
@@ -356,16 +358,7 @@ def add_farming_goal(user_id: int, item_id: int) -> dict:
             existing['pinned'], existing['display_mode'], existing['sort_order'])
         already_exists = True
     else:
-        max_row = db.execute(
-            'SELECT COALESCE(MAX(sort_order), -1) AS m FROM farming_goals WHERE user_id = ?',
-            (user_id,),
-        ).fetchone()
-        next_order = (max_row['m'] if max_row else -1) + 1
-        db.execute(
-            'INSERT INTO farming_goals (user_id, item_id, sort_order) VALUES (?, ?, ?)',
-            (user_id, item_id, next_order),
-        )
-        db.commit()
+        next_order = _insert_goal_last(db, user_id, item_id)
         goal_id = db.execute(
             'SELECT id FROM farming_goals WHERE user_id = ? AND item_id = ?',
             (user_id, item_id),
@@ -386,6 +379,73 @@ def add_farming_goal(user_id: int, item_id: int) -> dict:
         'progress_pct':  _compute_progress_pct(user_id, goal_id, item_id),
         'already_exists': already_exists,
     }
+
+
+# The largest value `farming_goals.sort_order` holds, per backend: SQLite's INTEGER is
+# 64-bit, the MSSQL schema's INT is 32-bit.
+_SORT_ORDER_MAX = {'sqlite': 2**63 - 1, 'mssql': 2**31 - 1}
+
+
+def _sort_order_max() -> int:
+    return _SORT_ORDER_MAX[current_app.config.get('DB_BACKEND', 'sqlite')]
+
+
+def _lock_user_goals(db, user_id: int):
+    """Open the transaction with a no-op write on the user's goals, so a concurrent move or
+    add of the same user waits until this one commits (SQLite: the write lock; MSSQL: the
+    rows' locks) and then reads what this one wrote."""
+    db.execute('UPDATE farming_goals SET sort_order = sort_order WHERE user_id = ?', (user_id,))
+
+
+def _goals_in_page_order(db, user_id: int) -> list[tuple]:
+    """The user's goals as (id, pinned, sort_order), in the planner's order."""
+    rows = db.execute(
+        '''SELECT id, pinned, sort_order FROM farming_goals
+            WHERE user_id = ?
+            ORDER BY pinned DESC, sort_order, created_at, id''',
+        (user_id,),
+    ).fetchall()
+    return [(r['id'], r['pinned'], r['sort_order']) for r in rows]
+
+
+def _renumber_goals(db, user_id: int, order: list[tuple]):
+    """Write `sort_order` 0..n-1 in the given order; a row already at its place is not
+    written. Runs inside the caller's transaction."""
+    for position, (row_id, _pinned, current) in enumerate(order):
+        if current != position:
+            db.execute(
+                'UPDATE farming_goals SET sort_order = ? WHERE id = ? AND user_id = ?',
+                (position, row_id, user_id),
+            )
+
+
+def _insert_goal_last(db, user_id: int, item_id: int) -> int:
+    """Insert a new goal after the user's largest `sort_order`; returns the value written.
+
+    When that value would pass the column's maximum for the backend, the user's goals are
+    first renumbered 0..n-1 in the planner's order (as a move does) and the new goal gets n.
+    One transaction, opened by the same lock as a move.
+    """
+    try:
+        _lock_user_goals(db, user_id)
+        largest = db.execute(
+            'SELECT MAX(sort_order) AS m FROM farming_goals WHERE user_id = ?',
+            (user_id,),
+        ).fetchone()['m']
+        next_order = 0 if largest is None else largest + 1
+        if next_order > _sort_order_max():
+            order = _goals_in_page_order(db, user_id)
+            _renumber_goals(db, user_id, order)
+            next_order = len(order)
+        db.execute(
+            'INSERT INTO farming_goals (user_id, item_id, sort_order) VALUES (?, ?, ?)',
+            (user_id, item_id, next_order),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return next_order
 
 
 def remove_farming_goal(user_id: int, goal_id: int):
@@ -434,17 +494,8 @@ def move_farming_goal(user_id: int, goal_id: int, direction: str) -> bool:
         return False
     db = get_db()
     try:
-        db.execute(
-            'UPDATE farming_goals SET sort_order = sort_order WHERE user_id = ?',
-            (user_id,),
-        )
-        rows = db.execute(
-            '''SELECT id, pinned, sort_order FROM farming_goals
-                WHERE user_id = ?
-                ORDER BY pinned DESC, sort_order, created_at, id''',
-            (user_id,),
-        ).fetchall()
-        order = [(r['id'], r['pinned'], r['sort_order']) for r in rows]
+        _lock_user_goals(db, user_id)
+        order = _goals_in_page_order(db, user_id)
         index = next((i for i, row in enumerate(order) if row[0] == goal_id), None)
         if index is None:
             db.rollback()
@@ -454,12 +505,7 @@ def move_farming_goal(user_id: int, goal_id: int, direction: str) -> bool:
             db.rollback()  # at the edge of its group: nothing changes
             return True
         order[index], order[other] = order[other], order[index]
-        for position, (row_id, _pinned, current) in enumerate(order):
-            if current != position:
-                db.execute(
-                    'UPDATE farming_goals SET sort_order = ? WHERE id = ? AND user_id = ?',
-                    (position, row_id, user_id),
-                )
+        _renumber_goals(db, user_id, order)
         db.commit()
     except Exception:
         db.rollback()
