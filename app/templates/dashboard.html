@@ -188,7 +188,7 @@
           <thead><tr><th>Name</th><th>Category</th><th>Market</th></tr></thead>
           <tbody>
             {% for item in farm_next %}
-            <tr>
+            <tr class="farm-next-row" data-item="{{ item.id }}">
               <td>
                 {% if item.wiki_url %}
                 <a href="{{ item.wiki_url }}" target="_blank" class="teal-text">{{ item.name }}</a>
@@ -271,6 +271,55 @@
 
 {% block scripts %}
 <script>
+// The Farm next Buy mark follows a refreshed price. After an ok refresh of a Farm next item's
+// price (the shared handler's 'wf-price-refreshed' event, whichever button of the item was
+// clicked) the page asks the server for that item's answer, read from the cache: the
+// buy-or-farm rule stays on the server. Only the row's Buy mark (inserted or removed before
+// the price) and the price's colour (green when buying, grey otherwise) change. A failed
+// answer, or one without the fields, leaves the row as it is; the answer of an older request
+// for the same item is dropped. No Farm next row of the item (Market Watch only, or pinned
+// goals and no list): nothing is asked.
+var FARM_NEXT_URL = {{ url_for('dashboard.farm_next_item', item_id=0) | tojson }};
+var wfFarmNextSeq = Object.create(null);
+
+function farmNextRows(itemId) {
+  return $('tr.farm-next-row').filter(function () {
+    return $(this).attr('data-item') === itemId &&
+           $(this).find('.farm-next-price > .wf-price').length > 0;
+  });
+}
+
+function redrawFarmNextMark($row, buy, reason) {
+  var $price = $row.find('.farm-next-price > .wf-price');
+  $row.find('.farm-next-buy').remove();
+  if (buy) {
+    var $mark = $('<span class="green-text farm-next-buy"></span>').text('Buy ')
+      .append(wfIcon('thumb_up', 'tiny'));
+    if (typeof reason === 'string') $mark.attr('title', reason);
+    $price.before($mark, ' ');
+  }
+  $price.toggleClass('green-text', buy).toggleClass('grey-text', !buy);
+}
+
+$(document).on('wf-price-refreshed', function (e, itemId) {
+  var id = String(itemId);
+  if (!WF_ITEM_ID.test(id) || !farmNextRows(id).length) return;
+  var seq = wfFarmNextSeq[id] = (wfFarmNextSeq[id] || 0) + 1;
+  $.ajax({
+    url: FARM_NEXT_URL.replace(/\/0$/, '/') + id,
+    method: 'GET',
+    dataType: 'json',
+    success: function (r) {
+      if (wfFarmNextSeq[id] !== seq || !r || r.ok !== true ||
+          typeof r.recommend_buy !== 'boolean' ||
+          !Object.prototype.hasOwnProperty.call(r, 'recommend_reason')) return;
+      farmNextRows(id).each(function () {
+        redrawFarmNextMark($(this), r.recommend_buy, r.recommend_reason);
+      });
+    }
+  });
+});
+
 // MR rank thresholds (cumulative pts to reach rank n) and per-category point values
 var MR_THRESHOLDS = {{ summary.rank_thresholds | tojson }};
 var MR_CAT_PTS    = {{ {'warframe':6000,'primary':3000,'secondary':3000,'melee':3000,'companion':3000,'archwing':6000,'arch-gun':3000,'arch-melee':3000,'k-drive':6000} | tojson }};

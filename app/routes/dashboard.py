@@ -1,8 +1,9 @@
-from flask import Blueprint, render_template, session
+from flask import Blueprint, jsonify, render_template, session
 from flask_login import current_user, login_required
 
 from models.progress import Progress
 from services.farming_service import (
+    farm_next_answer,
     farm_next_items,
     get_advisor_opportunities,
     get_pinned_goals,
@@ -67,3 +68,21 @@ def index():
         market_cache_hours=cache_hours,
     )
 
+
+
+@dashboard_bp.route('/dashboard/farm-next/<id64:item_id>')
+@login_required
+def farm_next_item(item_id):
+    """One Farm next item's buy-or-farm answer from its cached price, after a price refresh.
+
+    Reads the cache only, like the dashboard's load; 404 for an unknown item or one without a
+    market listing.
+    """
+    uid = current_user.id
+    answer = farm_next_answer(item_id, get_setting_int(uid, 'buy_threshold_plat'),
+                              get_setting_int(uid, 'plat_per_hour'),
+                              get_setting_int(uid, 'market_cache_hours'),
+                              get_setting_int(uid, 'farm_hour_cap'))
+    if answer is None:
+        return jsonify({'ok': False, 'error': 'No market listing for this item'}), 404
+    return jsonify({'ok': True, **answer})

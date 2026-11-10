@@ -10,6 +10,7 @@ from datetime import datetime
 from flask import current_app
 
 from models.db import get_db
+from models.item import Item
 from models.progress import Progress
 from services.auth_service import get_setting_int
 from services.buy_vs_farm import (expected_hours, item_sources, part_hours, recommend,
@@ -234,6 +235,24 @@ def farm_next_items(user_id: int, buy_threshold_plat: int | None,
     items = Progress.get_unowned_items(user_id)[:limit]
     return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour, cache_hours,
                                      farm_hour_cap)
+
+
+def farm_next_answer(item_id: int, buy_threshold_plat: int | None,
+                     plat_per_hour: int | None, cache_hours: int = 6,
+                     farm_hour_cap: int | None = None) -> dict | None:
+    """One item's Farm next buy-or-farm answer from its cached price, as the list draws it.
+
+    `{'recommend_buy', 'recommend_reason'}` through `enrich_with_cached_market` with the same
+    settings `farm_next_items` takes, so the answer is the one the dashboard's load would
+    give. None for an unknown item or one without a market slug. Requests and writes nothing.
+    """
+    found = Item.get_by_id(item_id)
+    if found is None or not found.market_url_name:
+        return None
+    item = {'id': found.id, 'market_url_name': found.market_url_name}
+    enrich_with_cached_market([item], buy_threshold_plat, plat_per_hour, cache_hours,
+                              farm_hour_cap)
+    return {'recommend_buy': item['recommend_buy'], 'recommend_reason': item['recommend_reason']}
 
 
 def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,

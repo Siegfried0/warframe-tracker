@@ -8,6 +8,10 @@ pinned goals the list is not built. The prices are read in one query and nothing
 written. The Farming Planner's goal plan keeps fetching the goal item's price on open, but
 honours the user's market cache setting.
 
+After a price refresh the page asks `GET /dashboard/farm-next/<id>` for one item's answer:
+from the cache only, with the caller's settings, the same answer the load would draw; the page
+redraws only that row's Buy mark and the price's colour from it.
+
 Network refused (tests/conftest.py); the market request function is replaced by a recorder.
 """
 import re
@@ -23,6 +27,7 @@ from services import market_api
 from services.farming_service import (
     add_farming_goal,
     enrich_with_cached_market,
+    farm_next_items,
     update_farming_goal,
 )
 
@@ -95,7 +100,7 @@ def farm_card(client):
 
 def market_cell(card_html, name):
     """The text of the Market cell in the Farm next row of the item `name`."""
-    for row in re.findall(r'<tr>(.*?)</tr>', card_html, re.S):
+    for row in re.findall(r'<tr[^>]*>(.*?)</tr>', card_html, re.S):
         if name in row:
             last = re.findall(r'<td[^>]*>(.*?)</td>', row, re.S)[-1]
             return ' '.join(re.sub(r'<[^>]+>', ' ', last).split())
@@ -294,3 +299,167 @@ def test_the_goal_plan_refetches_only_a_price_older_than_the_users_cache_setting
     else:
         assert market_answers == []
         assert plan['market_price'] == 33
+
+
+# ---------------------------------------------------------------------------
+# One item's answer after a price refresh: GET /dashboard/farm-next/<id>
+# ---------------------------------------------------------------------------
+
+def add_drops(item_id, avg_runs=120):
+    """One mission source: 120 runs at 5 min are 10 h of farming."""
+    get_db().execute('INSERT INTO drop_sources (item_id, location, avg_runs) '
+                     "VALUES (?, 'Earth/Mantle', ?)", (item_id, avg_runs))
+    get_db().commit()
+
+
+def answer_of(client, item_id):
+    response = client.get(f'/dashboard/farm-next/{item_id}')
+    return response.status_code, response.get_json()
+
+
+def setting(settings, key, default=None):
+    return int(settings[key]) if key in settings else default
+
+
+# (case id, cached price or None, fetch age or None for no row, {setting: value}, drops)
+ANSWER_CASES = [
+    ('below threshold', 40, STALE_AGE, {'buy_threshold_plat': '50'}, False),
+    ('at threshold', 50, FRESH_AGE, {'buy_threshold_plat': '50'}, False),
+    ('above threshold', 60, STALE_AGE, {'buy_threshold_plat': '50'}, False),
+    ('no settings', 40, STALE_AGE, {}, False),
+    ('farming worth more', 150, STALE_AGE, {'plat_per_hour': '20'}, True),
+    ('farming worth less', 250, STALE_AGE, {'plat_per_hour': '20'}, True),
+    ('over the hour cap', 900, STALE_AGE, {'farm_hour_cap': '5'}, True),
+    ('no price, over the hour cap', None, None, {'farm_hour_cap': '5'}, True),
+    ('price NULL, threshold', None, FRESH_AGE, {'buy_threshold_plat': '50'}, True),
+    ('old under a 24 h setting', 40, timedelta(hours=10),
+     {'market_cache_hours': '24', 'buy_threshold_plat': '50'}, False),
+]
+
+
+@pytest.mark.parametrize('case', ANSWER_CASES, ids=lambda c: c[0])
+def test_one_items_answer_is_the_one_the_dashboards_load_draws(
+        app, admin_client, admin_id, requests_made, case):
+    _, price, age, settings, drops = case
+    with app.app_context():
+        item = add_item('Braton Prime')
+        if age is not None:
+            cache(item, price, ago(age))
+        if drops:
+            add_drops(item)
+        for key, value in settings.items():
+            set_setting(admin_id, key, value)
+        loaded = farm_next_items(admin_id, setting(settings, 'buy_threshold_plat'),
+                                 setting(settings, 'plat_per_hour'), 10,
+                                 setting(settings, 'market_cache_hours', 6),
+                                 setting(settings, 'farm_hour_cap'))
+        before = cache_rows()
+    [row] = [i for i in loaded if i['id'] == item]
+
+    status, body = answer_of(admin_client, item)
+
+    assert status == 200
+    assert body == {'ok': True, 'recommend_buy': row['recommend_buy'],
+                    'recommend_reason': row['recommend_reason']}
+    assert market_cell(farm_card(admin_client), 'Braton Prime').startswith('Buy ') \
+        is body['recommend_buy']
+    assert requests_made == []
+    with app.app_context():
+        assert cache_rows() == before
+
+
+def test_the_answer_follows_the_cache_row_an_ok_refresh_writes(app, admin_client, admin_id,
+                                                               requests_made):
+    with app.app_context():
+        item = add_item('Braton Prime')
+        cache(item, 60, ago(STALE_AGE))
+        set_setting(admin_id, 'buy_threshold_plat', '50')
+    assert answer_of(admin_client, item)[1]['recommend_buy'] is False
+    with app.app_context():
+        get_db().execute('UPDATE market_cache SET platinum_price = 40, fetched_at = ? '
+                         'WHERE item_id = ?', (ago(timedelta(0)), item))
+        get_db().commit()
+    status, body = answer_of(admin_client, item)
+    assert (status, body['recommend_buy']) == (200, True)
+    assert '50' in body['recommend_reason']
+    with app.app_context():
+        get_db().execute('UPDATE market_cache SET platinum_price = 70 WHERE item_id = ?', (item,))
+        get_db().commit()
+    assert answer_of(admin_client, item)[1]['recommend_buy'] is False
+    assert requests_made == []
+
+
+@pytest.mark.parametrize('which', ['unknown', 'no slug', 'zero', 'over 64 bits'])
+def test_an_item_without_a_market_listing_has_no_answer(app, admin_client, requests_made, which):
+    with app.app_context():
+        item = add_item('Braton Prime', market_url_name=None)
+        cache(item, 40, ago(FRESH_AGE))
+    item_id = {'unknown': item + 1, 'no slug': item, 'zero': 0,
+               'over 64 bits': 2 ** 63}[which]
+    response = admin_client.get(f'/dashboard/farm-next/{item_id}')
+    assert response.status_code == 404
+    if which != 'over 64 bits':
+        assert response.get_json()['ok'] is False
+    assert requests_made == []
+
+
+def test_the_answer_uses_the_callers_settings_only(app, admin_client, requests_made):
+    with app.app_context():
+        item = add_item('Braton Prime')
+        cache(item, 40, ago(STALE_AGE))
+        alice = User.create('alice', password='pw-alice-1').id
+        set_setting(alice, 'buy_threshold_plat', '50')
+    alice_client = type(admin_client)(app, app.response_class, use_cookies=True)
+    assert alice_client.post('/auth/login', data={'username': 'alice',
+                                                  'password': 'pw-alice-1'}).status_code == 302
+    assert answer_of(admin_client, item)[1]['recommend_buy'] is False
+    assert answer_of(alice_client, item)[1]['recommend_buy'] is True
+    assert answer_of(admin_client, item)[1]['recommend_buy'] is False
+
+
+def test_an_anonymous_request_is_refused_like_the_dashboard(app, client):
+    with app.app_context():
+        item = add_item('Braton Prime')
+    dashboard = client.get('/dashboard')
+    response = client.get(f'/dashboard/farm-next/{item}')
+    assert response.status_code == dashboard.status_code == 302
+    assert response.headers['Location'].split('?')[0] == \
+        dashboard.headers['Location'].split('?')[0]
+
+
+# ---------------------------------------------------------------------------
+# The page script that follows a refresh (its run: the browser test)
+# ---------------------------------------------------------------------------
+
+def farm_next_script(page):
+    start = page.index('// The Farm next Buy mark follows a refreshed price.')
+    return page[start:page.index('// MR rank thresholds', start)]
+
+
+def test_each_farm_next_row_carries_its_item_for_the_follow_up(app, admin_client):
+    with app.app_context():
+        item = add_item('Braton Prime')
+        cache(item, 40, ago(STALE_AGE))
+    assert f'<tr class="farm-next-row" data-item="{item}">' in farm_card(admin_client)
+
+
+def test_the_dashboard_follows_only_an_ok_refresh_of_a_farm_next_row(admin_client):
+    script = farm_next_script(admin_client.get('/dashboard').get_data(as_text=True))
+    assert "$(document).on('wf-price-refreshed', function (e, itemId)" in script
+    assert '"/dashboard/farm-next/0"' in script
+    # the id is checked before it reaches a URL; rows are matched by attribute, not selector
+    assert script.index('WF_ITEM_ID.test(id)') < script.index('url:')
+    assert '[data-item' not in script
+    # the answer is used only when it is current, ok and complete; a failure says nothing
+    assert 'wfFarmNextSeq[id] !== seq || !r || r.ok !== true' in script
+    assert "typeof r.recommend_buy !== 'boolean'" in script
+    assert 'error:' not in script and 'M.toast' not in script
+    # values go in as text
+    assert "$mark.attr('title', reason)" in script
+    assert '.html(' not in script and 'innerHTML' not in script
+
+
+def test_with_pinned_goals_the_page_has_no_farm_next_row_to_follow(app, admin_client, admin_id):
+    with app.app_context():
+        pin(admin_id, add_item('Soma Prime', 'soma_prime_set'))
+    assert 'farm-next-row' not in farm_card(admin_client)
