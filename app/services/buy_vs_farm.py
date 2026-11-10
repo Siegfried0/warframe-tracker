@@ -172,6 +172,13 @@ def expected_hours(sources: dict, needed=None) -> float | None:
     return total / 60
 
 
+def part_hours(sources: dict, part) -> float | None:
+    """Expected hours of farming one part from ``item_sources()``: its best source (``part``
+    in any spelling of case and blanks), or None when it has no source."""
+    minutes = sources['parts'].get(name_key(part))
+    return None if minutes is None else minutes / 60
+
+
 def vaulted_parts(sources: dict, needed=None) -> list[str]:
     """The needed parts (``needed`` as in ``expected_hours()``) that are vaulted, by their
     names from ``item_sources()``, in the order of their name keys."""

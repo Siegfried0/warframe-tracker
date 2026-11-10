@@ -13,6 +13,7 @@ import requests
 
 from models import db as db_module
 from models.db import get_connection, get_db
+from services import component_prices as cp
 from services import market_slugs as ms
 from component_price_fixtures import (  # noqa: F401  (fixtures: market, admin_id, refused)
     OLD_AT, FakeResponse, add_item, admin_id, ash_goal, cache_slug, components_of, drop,
@@ -229,6 +230,16 @@ def test_the_component_slug_write_uses_no_sqlite_only_sql():
     for sqlite_only in ('LIMIT ', "datetime('now')", 'ON CONFLICT', 'INSERT OR ',
                         'executescript'):
         assert sqlite_only not in source, sqlite_only
+
+
+def test_the_component_price_sql_runs_on_both_backends():
+    """The component price reads and writes use no SQLite-only clause (MSSQL has none)."""
+    for fn in (cp.get_slug_price, cp._store_slug_price, cp.component_slugs,
+               cp.component_price_rows):
+        source = inspect.getsource(fn).replace(fn.__doc__ or '', '')
+        for sqlite_only in ('LIMIT ', "datetime('now')", 'ON CONFLICT', 'INSERT OR ',
+                            'executescript'):
+            assert sqlite_only not in source, (fn.__name__, sqlite_only)
 
 
 def test_the_slug_step_still_writes_the_catalogue_only(app, admin_id, market):

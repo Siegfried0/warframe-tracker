@@ -94,16 +94,26 @@ window.wfPriceMarkup = function (itemId, p, name, link) {
 // Show one refresh answer in every display of the item: `ok` the fresh price (mark and button
 // gone), otherwise the kept price and fetch time when the answer has them, marked old, and
 // a "not refreshed" note whose title is the error.
+// wfPriceShowIn does it for any set of price displays (a component's, in the Farming Planner).
 function wfPriceShow(itemId, answer, ok, error) {
+  var label = window.wfPriceShowIn($('.wf-price[data-item="' + itemId + '"]'), answer, ok, error);
+  if (label) $('.wf-price-fetched[data-item="' + itemId + '"]').text(label);
+}
+
+// Show one refresh answer in each of `$prices` (elements holding a .wf-price-value, and a
+// .wf-price-old and a refresh button, .wf-price-refresh or a component's
+// .wf-comp-price-refresh, when shown); returns the answer's fetch time or null.
+window.wfPriceShowIn = function ($prices, answer, ok, error) {
   var hasPrice = !!answer && Object.prototype.hasOwnProperty.call(answer, 'platinum');
   var label = answer && typeof answer.fetched_label === 'string' ? answer.fetched_label : null;
-  $('.wf-price[data-item="' + itemId + '"]').each(function () {
+  $prices.each(function () {
     var $p = $(this), $value = $p.find('.wf-price-value');
     if (ok || hasPrice) $value.text(window.wfPriceText(answer.platinum));
     $p.find('.wf-price-failed').remove();
     if (ok) {
-      var focused = $p.find('.wf-price-refresh').is(':focus');
-      $p.find('.wf-price-old, .wf-price-refresh').remove();
+      var $button = $p.find('.wf-price-refresh, .wf-comp-price-refresh');
+      var focused = $button.is(':focus');
+      $p.find('.wf-price-old').add($button).remove();
       if (focused) $value.attr('tabindex', '-1').trigger('focus');
       return;
     }
@@ -118,8 +128,8 @@ function wfPriceShow(itemId, answer, ok, error) {
     var $note = $('<span class="wf-price-failed red-text">not refreshed</span>').attr('title', error);
     ($old.length ? $old : $value).after($note).after(' ');
   });
-  if (label) $('.wf-price-fetched[data-item="' + itemId + '"]').text(label);
-}
+  return label;
+};
 
 $(document).on('click', '.wf-price-refresh', function (e) {
   e.preventDefault();

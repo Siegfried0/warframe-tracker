@@ -275,11 +275,13 @@ function escText(s) {
                   .replace(/"/g, '&quot;');
 }
 
-// Buy or farm, beside the goal item's price: the reason names the check that fired, or the
-// estimated farming time of the parts still needed
-function buyVsFarmNote(plan) {
+// Buy or farm, beside the goal item's price (or a component's: `part` true): the reason names
+// the check that fired, or the estimated farming time of the parts still needed (of the part)
+function buyVsFarmNote(plan, part) {
   if (!plan.recommend_reason) return '';
-  var title = ' title="Estimate: the best source of each part still needed, runs x typical minutes of its mission type">';
+  var title = part
+    ? ' title="Estimate: the best source of this part, runs x typical minutes of its mission type">'
+    : ' title="Estimate: the best source of each part still needed, runs x typical minutes of its mission type">';
   if (plan.recommend_buy) {
     return ' <span class="green-text wf-plan-buy-farm"' + title + wfIcon('thumb_up', 'tiny') +
            ' Buy: ' + escText(plan.recommend_reason) + '</span>';
@@ -287,6 +289,79 @@ function buyVsFarmNote(plan) {
   return ' <span class="grey-text wf-plan-buy-farm"' + title +
          (plan.expected_hours === null ? '' : 'Farm: ') + escText(plan.recommend_reason) + '</span>';
 }
+
+// A component's market price, as the item prices show theirs (value, "old" mark with the fetch
+// time, refresh button beside an old or missing price, the warframe.market link), and its own
+// buy-or-farm answer. Only a component with a market slug has one. The display carries the
+// slug (every display of it updates together), the goal item's id and the component's name
+// (what the refresh asks for). Values are inserted as text, never as markup.
+var WF_COMP_SLUG = /^[A-Za-z0-9_-]{1,255}$/;
+var WF_COMP_ITEM = /^[1-9][0-9]*$/;
+var COMP_PRICE_URL = {{ url_for('market.component_price', item_id=0) | tojson }};
+var wfCompPriceBusy = {};
+
+function compPriceMarkup(plan, comp, style) {
+  var p = comp && comp.market;
+  var slug = comp && typeof comp.market_slug === 'string' ? comp.market_slug : '';
+  var itemId = String(plan.item_id);
+  if (!p || !WF_COMP_SLUG.test(slug) || !WF_COMP_ITEM.test(itemId)) return '';
+  var html = '<div class="wf-comp-market" style="' + escText(style) + '">' +
+             '<span class="wf-comp-price" data-slug="' + escText(slug) + '"' +
+             ' data-item="' + escText(itemId) + '"' +
+             ' data-component="' + escText(comp.component_name) + '">' +
+             '<span class="wf-price-value">' + escText(wfPriceText(p.platinum)) + '</span>';
+  if (p.stale) {
+    html += ' <span class="wf-price-old orange-text" title="Fetched ' + escText(p.fetched_label) + '">' +
+            'old (' + escText(p.fetched_label) + ')</span>';
+  }
+  if (p.refresh) {
+    html += ' <button type="button" class="wf-comp-price-refresh"' +
+            ' title="Ask warframe.market for this part&#39;s current price"' +
+            ' aria-label="Refresh the price of ' + escText(plan.item_name + ' ' + comp.component_name) +
+            ' from warframe.market">' + wfIcon('sync', 'tiny') + '</button>';
+  }
+  if (p.market_url) {
+    html += ' <a href="' + escText(p.market_url) + '" target="_blank" rel="noopener" class="wf-price-link grey-text"' +
+            ' title="Open on warframe.market">' + wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>';
+  }
+  return html + '</span>' + buyVsFarmNote(comp, true) + '</div>';
+}
+
+// A refresh click asks GET /market/component-price/<item id>?component=<name> for that one
+// component; the answer updates every display of its slug. A click while that slug's request
+// runs is ignored; a failure keeps the shown price, marked old, and says so.
+$(document).on('click', '.wf-comp-price-refresh', function (e) {
+  e.preventDefault();
+  var $price = $(this).closest('.wf-comp-price');
+  var slug = String($price.attr('data-slug') || ''), itemId = String($price.attr('data-item') || '');
+  var name = $price.attr('data-component');
+  if (!WF_COMP_SLUG.test(slug) || !WF_COMP_ITEM.test(itemId) || typeof name !== 'string' ||
+      wfCompPriceBusy[slug]) return;
+  wfCompPriceBusy[slug] = true;
+  var $prices = $('.wf-comp-price').filter(function () {
+    return $(this).attr('data-slug') === slug;
+  }).attr('aria-busy', 'true');
+  var failed = function (answer, fallback) {
+    var error = (answer && typeof answer.error === 'string' && answer.error) || fallback;
+    wfPriceShowIn($prices, answer, false, error);
+    M.toast({html: 'The price was not refreshed: ' + escText(error)});
+  };
+  $.ajax({
+    url: COMP_PRICE_URL.replace(/\/0$/, '/') + itemId,
+    data: {component: name},
+    method: 'GET',
+    dataType: 'json',
+    success: function (r) {
+      if (r && r.ok === true) wfPriceShowIn($prices, r, true, null);
+      else failed(r, 'no answer.');
+    },
+    error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },
+    complete: function () {
+      delete wfCompPriceBusy[slug];
+      $prices.removeAttr('aria-busy');
+    }
+  });
+});
 
 function vaultedPlanNote(plan) {
   if (!plan.vaulted) return '';
@@ -395,6 +470,7 @@ function renderTreeView(plan, goalId) {
     html += '<div style="flex:1">';
     html += '<strong class="white-text" style="overflow-wrap:anywhere">' + escText(comp.component_name) + '</strong>';
     if (comp.vaulted) html += vaultedLock(comp.vaulted_note, plan.in_resurgence);
+    html += compPriceMarkup(plan, comp, 'font-size:.78rem');
     if (comp.drops && comp.drops.length) {
       html += '<br>' + dropBadge(comp.drops[0]);
       if (comp.drops.length > 1) {
@@ -475,6 +551,10 @@ function renderVisualPlanBody(plan, goalId) {
   var resPct = resNeeded > 0 ? Math.round(resCovered / resNeeded * 100) : 100;
 
   var html = vaultedPlanNote(plan);
+
+  // The plan's components by name, for their market prices under the circles
+  var planComps = Object.create(null);
+  (plan.components || []).forEach(function(c) { planComps[c.component_name] = c; });
 
   // ── Market price ────────────────────────────────────────────────────────────
   if (plan.market) {
@@ -565,6 +645,9 @@ function renderVisualPlanBody(plan, goalId) {
       html += '</div>'; // /.wf-comp-wrap
       html += '<div class="wf-comp-name grey-text">' + escText(comp.component_name) +
               (plan.vaulted ? vaultedLock(plan.vaulted_note, false) : '') + '</div>';
+      html += compPriceMarkup(plan, planComps[comp.component_name],
+                              'font-size:.62rem;text-align:center;line-height:1.25;' +
+                              'word-break:break-word;max-width:82px');
       html += '</div>'; // /.wf-comp-item
     });
     html += '</div>';

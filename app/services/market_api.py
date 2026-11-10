@@ -118,6 +118,36 @@ def fetch_lowest_price(market_url_name: str) -> int | None:
         raise
 
 
+def cached_or_fetched(row, market_url_name: str, cache_hours: int, store) -> dict:
+    """The price of a cache row (`platinum_price`, `fetched_at`, or None without one) while
+    it is fresh, otherwise asked of the market for `market_url_name`; `store(price, now)`
+    writes a successful answer. The result is as `get_price()` describes it."""
+    # Compared in seconds, not as a timedelta: a cache duration of any whole number of
+    # hours (up to the 64-bit bound a setting allows) must not overflow the comparison.
+    if row and is_fresh(row['fetched_at'], cache_hours):
+        return {
+            'platinum': row['platinum_price'],
+            'fetched_at': row['fetched_at'],
+            'fetched_label': _fetch_label(row['fetched_at']),
+            'from_cache': True,
+        }
+    try:
+        price = fetch_lowest_price(market_url_name)
+    except MarketRequestFailed as exc:
+        return {
+            'platinum': row['platinum_price'] if row else None,
+            'fetched_at': row['fetched_at'] if row else None,
+            'fetched_label': _fetch_label(row['fetched_at']) if row else None,
+            'from_cache': row is not None,
+            'failed': True,
+            'error': f'warframe.market gave no price ({exc}); the last price is kept.',
+        }
+    now = datetime.utcnow().isoformat()
+    store(price, now)
+    return {'platinum': price, 'fetched_at': now, 'fetched_label': _fetch_label(now),
+            'from_cache': False}
+
+
 def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
     """The item's price: the cached one while it is fresh, otherwise asked of the market.
 
@@ -135,40 +165,18 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
         (item_id,),
     ).fetchone()
 
-    if row:
-        # Compared in seconds, not as a timedelta: a cache duration of any whole number of
-        # hours (up to the 64-bit bound a setting allows) must not overflow the comparison.
-        if is_fresh(row['fetched_at'], cache_hours):
-            return {
-                'platinum': row['platinum_price'],
-                'fetched_at': row['fetched_at'],
-                'fetched_label': _fetch_label(row['fetched_at']),
-                'from_cache': True,
-            }
+    def store(price, now):
+        db.execute(
+            '''INSERT INTO market_cache (item_id, platinum_price, fetched_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(item_id) DO UPDATE SET
+                   platinum_price = excluded.platinum_price,
+                   fetched_at     = excluded.fetched_at''',
+            (item_id, price, now),
+        )
+        db.commit()
 
-    try:
-        price = fetch_lowest_price(market_url_name)
-    except MarketRequestFailed as exc:
-        return {
-            'platinum': row['platinum_price'] if row else None,
-            'fetched_at': row['fetched_at'] if row else None,
-            'fetched_label': _fetch_label(row['fetched_at']) if row else None,
-            'from_cache': row is not None,
-            'failed': True,
-            'error': f'warframe.market gave no price ({exc}); the last price is kept.',
-        }
-    now = datetime.utcnow().isoformat()
-    db.execute(
-        '''INSERT INTO market_cache (item_id, platinum_price, fetched_at)
-           VALUES (?, ?, ?)
-           ON CONFLICT(item_id) DO UPDATE SET
-               platinum_price = excluded.platinum_price,
-               fetched_at     = excluded.fetched_at''',
-        (item_id, price, now),
-    )
-    db.commit()
-    return {'platinum': price, 'fetched_at': now, 'fetched_label': _fetch_label(now),
-            'from_cache': False}
+    return cached_or_fetched(row, market_url_name, cache_hours, store)
 
 
 def cached_price_rows(item_ids: list[int]) -> dict[int, dict]:

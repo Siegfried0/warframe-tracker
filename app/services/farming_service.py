@@ -5,17 +5,19 @@ Farming optimiser — builds efficient multi-target mission routes.
 
 import json
 from collections import defaultdict
+from datetime import datetime
 
 from flask import current_app
 
 from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
-from services.buy_vs_farm import (expected_hours, item_sources, recommend, user_thresholds,
-                                  vaulted_parts)
+from services.buy_vs_farm import (expected_hours, item_sources, part_hours, recommend,
+                                  user_thresholds, vaulted_parts)
+from services.component_prices import component_price_rows
 from services.market_api import cached_price_rows, get_price, market_url_for, price_view
 from services.relic_sources import is_relic_source, relics_by_part
-from services.relic_sync import is_relic_name
+from services.relic_sync import is_relic_name, name_key
 from services.resurgence_sync import resurgence_status, vaulted_note
 
 # Categories whose items can be farming goals (excludes raw resources)
@@ -799,8 +801,11 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
     item_row = db.execute(
         'SELECT market_url_name FROM items WHERE id = ?', (item_id,)
     ).fetchone()
+    cache_hours = get_setting_int(user_id, 'market_cache_hours')
+    thresholds = user_thresholds(user_id)
+    sources = item_sources(item_id, db)
+    _add_component_prices(plan, item_id, cache_hours, thresholds, sources, db)
     if item_row and item_row['market_url_name']:
-        cache_hours = get_setting_int(user_id, 'market_cache_hours')
         price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
         plan['market_price'] = price_data.get('platinum')
         plan['market_url'] = market_url_for(item_row['market_url_name'])
@@ -816,10 +821,8 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         # Buy or farm: the parts not yet crafted and not held as a blueprint still need farming
         needed = [c['component_name'] for c in plan.get('components', [])
                   if c['goal_comp_state'] == 'pending']
-        sources = item_sources(item_id, db)
         answer = recommend(plan['market_price'], expected_hours(sources, needed),
-                           **user_thresholds(user_id),
-                           vaulted=vaulted_parts(sources, needed))
+                           **thresholds, vaulted=vaulted_parts(sources, needed))
         plan['recommend_buy'] = answer['recommend']
         plan['recommend_reason'] = answer['reason']
         plan['expected_hours'] = answer['expected_hours']
@@ -832,6 +835,39 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         plan['expected_hours'] = None
 
     return plan
+
+
+def _add_component_prices(plan: dict, item_id: int, cache_hours: int, thresholds: dict,
+                          sources: dict, db) -> None:
+    """Give each component of the plan that has a market slug its cached price and its own
+    buy-or-farm answer; a component without a slug gets `market` None.
+
+    One query reads the prices of the plan's components (any age, old ones marked): opening a
+    plan never requests a component price. Each priced component gets `market` (its
+    `price_view`, with a refresh button beside an old or missing price), `market_slug`,
+    `recommend_buy`, `recommend_reason` and `expected_hours`: the rule of
+    `services.buy_vs_farm` with the cached price and the part's own best source.
+    """
+    rows = component_price_rows(item_id, db)
+    now = datetime.utcnow()
+    for comp in plan.get('components', []):
+        cname = comp['component_name']
+        found = rows.get(name_key(cname))
+        if found is None:
+            comp['market'] = None
+            comp['market_slug'] = None
+            comp['recommend_buy'] = False
+            comp['recommend_reason'] = None
+            comp['expected_hours'] = None
+            continue
+        slug = found['market_url_name']
+        comp['market'] = price_view(found['cache'], cache_hours, slug, now)
+        comp['market_slug'] = slug
+        answer = recommend(comp['market']['platinum'], part_hours(sources, cname),
+                           **thresholds, vaulted=vaulted_parts(sources, [cname]))
+        comp['recommend_buy'] = answer['recommend']
+        comp['recommend_reason'] = answer['reason']
+        comp['expected_hours'] = answer['expected_hours']
 
 
 def _build_shopping_list(item_id: int, prog_map: dict, all_comp_names: list = None) -> dict:

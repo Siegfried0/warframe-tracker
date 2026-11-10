@@ -357,7 +357,8 @@ def test_a_goal_without_a_market_slug_has_no_price_view(app, admin_client, admin
 def test_a_hostile_goal_name_reaches_the_plan_script_only_through_the_escaping_markup(
         app, admin_client, admin_id, requests_made):
     """The plan's JSON carries the name as data; its script draws it only as the button's
-    name inside wfPriceMarkup, which escapes it (pinned by the page-script tests above)."""
+    name inside wfPriceMarkup, which escapes it (pinned by the page-script tests above), and
+    as a component price button's name, through escText."""
     hostile = '<b>&Co" x'
     with app.app_context():
         iid = add_item(hostile, slug='hostile')
@@ -368,10 +369,10 @@ def test_a_hostile_goal_name_reaches_the_plan_script_only_through_the_escaping_m
     assert plan['market']['refresh'] and plan['market_item_id'] == iid
     html = html_of(admin_client, '/farming/')
     uses = [m.start() for m in re.finditer(r'plan\.item_name', html)]
-    assert len(uses) == 2
-    for at in uses:
-        assert html[at - len('wfPriceMarkup(plan.market_item_id, plan.market, '):at] == \
-            'wfPriceMarkup(plan.market_item_id, plan.market, '
+    shared = 'wfPriceMarkup(plan.market_item_id, plan.market, '
+    before = [html[at - len(shared):at] for at in uses]
+    assert before.count(shared) == 2 and len(uses) == 3
+    assert [b for b in before if b != shared][0].endswith('escText(')
 
 
 @pytest.mark.parametrize('spot', ["'Market price: ' + wfPriceMarkup(plan.market_item_id, "
@@ -447,7 +448,8 @@ SCRIPT_HOOKS = [
     "error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },",
     "var hasPrice = !!answer && Object.prototype.hasOwnProperty.call(answer, 'platinum');",
     "if (ok || hasPrice) $value.text(window.wfPriceText(answer.platinum));",
-    "$p.find('.wf-price-old, .wf-price-refresh').remove();",
+    "var $button = $p.find('.wf-price-refresh, .wf-comp-price-refresh');",
+    "$p.find('.wf-price-old').add($button).remove();",
     "$old.text('old (' + label + ')').attr('title', 'Fetched ' + label);",
     "var $note = $('<span class=\"wf-price-failed red-text\">not refreshed</span>').attr('title', error);",
     "if (label) $('.wf-price-fetched[data-item=\"' + itemId + '\"]').text(label);",
