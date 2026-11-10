@@ -50,7 +50,10 @@ window.wfSetIcon = function (el, name) {
 // for that one item and updates every display of it on the page. A click while that item's
 // request runs is ignored. A refresh that fails (ok false: 502 with the kept price, a 404, any
 // error) keeps the shown price, marked old with the kept fetch time, and says so beside it and
-// in a toast. Values from an answer are inserted as text, never as markup.
+// in a toast. Values from an answer are inserted as text, never as markup. After an ok refresh
+// the handler triggers 'wf-price-refreshed' on document with the item id (a string of digits),
+// so a page can follow the new price (the Farming Planner redraws its buy-or-farm answers);
+// a failed refresh triggers nothing.
 var WF_ITEM_ID = /^[1-9][0-9]*$/;
 var wfPriceBusy = {};
 
@@ -149,8 +152,10 @@ $(document).on('click', '.wf-price-refresh', function (e) {
     method: 'GET',
     dataType: 'json',
     success: function (r) {
-      if (r && r.ok === true) wfPriceShow(itemId, r, true, null);
-      else failed(r, 'no answer.');
+      if (r && r.ok === true) {
+        wfPriceShow(itemId, r, true, null);
+        $(document).trigger('wf-price-refreshed', [itemId]);
+      } else failed(r, 'no answer.');
     },
     error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },
     complete: function () {

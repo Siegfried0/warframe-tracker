@@ -19,6 +19,7 @@ from services.farming_service import (add_farming_goal, get_goal_plan_with_progr
                                       set_goal_progress)
 from component_price_fixtures import (  # noqa: F401  (fixtures: market, admin_id, refused)
     OLD_AT, FakeResponse, add_item, admin_id, ash_goal, cache_slug, components_of, drop,
+    orders,
     item_list, listed, market, meta, now_text, refused, set_component_slug, slug_cache,
     store_setting, stored_component_slugs)
 
@@ -303,7 +304,7 @@ PAGE_HOOKS = [
     "wfCompPriceBusy[slug]) return;",
     "delete wfCompPriceBusy[slug];",
     # only ok true is a success; a failure keeps the price, marked old
-    "if (r && r.ok === true) wfPriceShowIn($prices, r, true, null);",
+    "if (r && r.ok === true) {\n        wfPriceShowIn($prices, r, true, null);",
     "error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },",
     # the toast's markup is the escaped error
     "M.toast({html: 'The price was not refreshed: ' + escText(error)});",
@@ -324,3 +325,184 @@ def test_both_planner_modes_draw_the_component_price_as_text(admin_client, hook)
 def test_the_page_carries_the_route_of_the_component_refresh(admin_client):
     page = admin_client.get('/farming/').get_data(as_text=True)
     assert 'var COMP_PRICE_URL = "/market/component-price/0";' in page
+
+
+# ── The buy-or-farm answers follow a refreshed price (axes 1, 4, 6, 9) ───────
+
+def test_after_an_ok_goal_price_refresh_the_next_plan_answers_from_the_new_price_unasked(
+        app, admin_client, admin_id, market):
+    with app.app_context():
+        ash, goal = ash_goal(admin_id, item_slug='ash_prime')
+        get_db().execute('INSERT INTO market_cache (item_id, platinum_price, fetched_at) '
+                         'VALUES (?, 95, ?)', (ash, OLD_AT))
+        get_db().commit()
+        store_setting(admin_id, 'buy_threshold_plat', '50')
+    market.orders = requests.ConnectionError('refused')
+    before = admin_client.get(f'/farming/goals/{goal}/plan').get_json()['plan']
+    assert (before['market_price'], before['recommend_buy']) == (95, False)
+    market.orders = FakeResponse(payload=orders(30, 22))
+    assert admin_client.get(f'/market/price/{ash}').get_json()['ok'] is True
+    calls = len(market.calls)
+    after = admin_client.get(f'/farming/goals/{goal}/plan').get_json()['plan']
+    assert (after['market_price'], after['recommend_buy'], after['recommend_reason']) == \
+        (22, True, '22p ≤ threshold 50p')
+    assert len(market.calls) == calls                     # the refreshed price is fresh
+
+
+def test_after_an_ok_component_price_refresh_the_next_plan_answers_from_the_new_slug_price(
+        app, admin_client, admin_id, market):
+    with app.app_context():
+        ash, goal = ash_goal(admin_id)
+        store_setting(admin_id, 'buy_threshold_plat', '50')
+    before = components_of(admin_client.get(f'/farming/goals/{goal}/plan').get_json()['plan'])
+    assert (before['Neuroptics']['recommend_buy'],
+            before['Neuroptics']['recommend_reason']) == (False, '~0.5h farming')
+    assert admin_client.get(refresh_url(ash, 'Neuroptics')).get_json()['ok'] is True
+    calls = len(market.calls)
+    after = components_of(admin_client.get(f'/farming/goals/{goal}/plan').get_json()['plan'])
+    assert (after['Neuroptics']['recommend_buy'], after['Neuroptics']['recommend_reason']) == \
+        (True, '22p ≤ threshold 50p')
+    assert after['Chassis']['recommend_reason'] == before['Chassis']['recommend_reason']
+    assert len(market.calls) == calls
+
+
+def test_a_component_refresh_re_read_asks_nothing_for_an_old_goal_price_the_page_keeps(
+        app, admin_client, admin_id, market):
+    """The goal item is on the market with an old price that the open could not refresh (the
+    market was down): the page shows it old and keeps that display through a component
+    refresh. The plan read again after the component refresh must not ask the market for the
+    goal item: that would be a second request for one click, and the goal's redrawn note would
+    follow a price the page does not show beside it."""
+    with app.app_context():
+        ash, goal = ash_goal(admin_id, item_slug='ash_prime')
+        get_db().execute('INSERT INTO market_cache (item_id, platinum_price, fetched_at) '
+                         'VALUES (?, 95, ?)', (ash, OLD_AT))
+        get_db().commit()
+        store_setting(admin_id, 'buy_threshold_plat', '50')
+    market.orders = requests.ConnectionError('refused')
+    shown = admin_client.get(f'/farming/goals/{goal}/plan').get_json()['plan']
+    assert (shown['market']['platinum'], shown['market']['stale']) == (95, True)
+    market.orders = FakeResponse(payload=orders(30, 22))
+    assert admin_client.get(refresh_url(ash, 'Neuroptics')).get_json()['ok'] is True
+    calls = len(market.calls)
+    after = admin_client.get(f'/farming/goals/{goal}/plan?prices=cached').get_json()['plan']
+    assert market.calls[calls:] == []
+    assert (after['market_price'], after['recommend_buy'], after['recommend_reason']) == \
+        (shown['market_price'], shown['recommend_buy'], shown['recommend_reason'])
+
+
+def old_goal_price_unreachable(app, admin_id, market):
+    """Ash Prime on the market with an old 95p price, a 50p threshold; the market answers 22p."""
+    with app.app_context():
+        ash, goal = ash_goal(admin_id, item_slug='ash_prime')
+        get_db().execute('INSERT INTO market_cache (item_id, platinum_price, fetched_at) '
+                         'VALUES (?, 95, ?)', (ash, OLD_AT))
+        get_db().commit()
+        store_setting(admin_id, 'buy_threshold_plat', '50')
+    market.orders = FakeResponse(payload=orders(30, 22))
+    return ash, goal
+
+
+# Only `prices=cached`, exactly, reads the cached goal price; any other spelling is an open
+PLAN_READ_SPELLINGS = [
+    ('', True), ('?prices=cached', False), ('?prices=CACHED', True), ('?prices=', True),
+    ('?prices=cached%00', True), ('?prices=%20cached', True), ('?price=cached', True),
+    ('?prices=cached&prices=fresh', False), ('?prices=fresh&prices=cached', True),
+]
+
+
+@pytest.mark.parametrize('query, asks', PLAN_READ_SPELLINGS,
+                         ids=[q or 'no query' for q, _ in PLAN_READ_SPELLINGS])
+def test_only_the_cached_plan_read_leaves_an_old_goal_price_unasked(
+        app, admin_client, admin_id, market, query, asks):
+    ash, goal = old_goal_price_unreachable(app, admin_id, market)
+    plan = admin_client.get(f'/farming/goals/{goal}/plan{query}').get_json()['plan']
+    assert bool(market.calls) is asks
+    assert (plan['market_price'], plan['recommend_buy']) == ((22, True) if asks else (95, False))
+    assert (plan['market']['platinum'], plan['market']['stale']) ==         ((22, False) if asks else (95, True))
+
+
+def test_the_cached_plan_read_of_a_goal_price_never_cached_is_a_missing_price(
+        app, admin_client, admin_id, market):
+    with app.app_context():
+        ash, goal = ash_goal(admin_id, item_slug='ash_prime')
+    plan = admin_client.get(f'/farming/goals/{goal}/plan?prices=cached').get_json()['plan']
+    assert market.calls == []
+    assert (plan['market_price'], plan['market']['cached'], plan['market']['refresh'],
+            plan['recommend_buy'], plan['market_item_id']) == (None, False, True, False, ash)
+    with app.app_context():
+        assert get_db().execute('SELECT COUNT(*) FROM market_cache').fetchone()[0] == 0
+
+
+def test_the_cached_plan_read_after_an_ok_goal_refresh_answers_from_the_refreshed_price(
+        app, admin_client, admin_id, market):
+    """With a cache duration of 0 a just-fetched price is already old: the re-read still asks
+    nothing and answers from the price the refresh wrote."""
+    ash, goal = old_goal_price_unreachable(app, admin_id, market)
+    with app.app_context():
+        store_setting(admin_id, 'market_cache_hours', '0')
+    assert admin_client.get(f'/market/price/{ash}').get_json()['ok'] is True
+    calls = len(market.calls)
+    plan = admin_client.get(f'/farming/goals/{goal}/plan?prices=cached').get_json()['plan']
+    assert market.calls[calls:] == []
+    assert (plan['market_price'], plan['recommend_buy'], plan['recommend_reason']) ==         (22, True, '22p ≤ threshold 50p')
+
+
+def planner_follow_script(page):
+    start = page.index('// The buy-or-farm answers follow a refreshed price.')
+    return page[start:page.index('function vaultedPlanNote', start)]
+
+
+FOLLOW_HOOKS = [
+    # the goal price: the shared handler's event, for the panels showing that item's price,
+    # found by comparing the attribute, not by a selector built of the id
+    "$(document).on('wf-price-refreshed', function (e, itemId) {",
+    "return $(this).attr('data-item') === String(itemId);",
+    # only open panels read their plan again
+    "if (!match || !$(this).closest('.wf-goal-expanded-inner').is(':visible')) return;",
+    "url: '/farming/goals/' + goalId + '/plan?prices=cached',",
+    # a late answer (the panel drawn or re-read again since) and a failed one change nothing
+    "if (wfPlanNoteSeq[goalId] !== seq || !r || r.ok !== true || !r.plan ||",
+    "typeof r.plan !== 'object') return;",
+    "['recommend_buy', 'recommend_reason', 'expected_hours']",
+    # only the notes after each price display, drawn by the escaping note builder
+    "$panel.find('.wf-plan-market-row > .wf-price').each(function () {",
+    "replaceBuyFarmNote(this, buyVsFarmNote(plan));",
+    "$panel.find('.wf-comp-market > .wf-comp-price').each(function () {",
+    "var comp = typeof name === 'string' ? comps[name] : null;",
+    "if (hasBuyFarmFields(comp)) replaceBuyFarmNote(this, buyVsFarmNote(comp, true));",
+    "while (price.nextSibling) price.parentNode.removeChild(price.nextSibling);",
+    "var comps = Object.create(null);",
+]
+
+
+@pytest.mark.parametrize('hook', FOLLOW_HOOKS)
+def test_the_planner_redraws_only_the_buy_or_farm_notes_after_an_ok_refresh(admin_client, hook):
+    page = admin_client.get('/farming/').get_data(as_text=True)
+    assert hook in planner_follow_script(page)
+
+
+def test_only_the_ok_branch_of_the_component_refresh_follows_the_plan(admin_client):
+    page = admin_client.get('/farming/').get_data(as_text=True)
+    handler = page[page.index("$(document).on('click', '.wf-comp-price-refresh'"):
+                   page.index('// The buy-or-farm answers follow a refreshed price.')]
+    ok = handler[handler.index('if (r && r.ok === true) {'):handler.index("} else failed(r,")]
+    assert "followPlanNotes($prices.closest('.wf-goal-plan-panel'));" in ok
+    assert handler.count('followPlanNotes(') == 1
+    failed = handler[handler.index('var failed = function'):handler.index('$.ajax(')]
+    assert 'followPlanNotes' not in failed
+
+
+def test_a_failed_plan_re_read_says_nothing_and_the_redraw_writes_no_raw_markup(admin_client):
+    script = planner_follow_script(admin_client.get('/farming/').get_data(as_text=True))
+    assert 'error:' not in script and 'M.toast' not in script
+    assert '.html(' not in script and 'innerHTML' not in script
+    # a component's note is found by its name compared as data, never through a selector
+    assert "[data-component" not in script and "data-item=\"' +" not in script
+
+
+def test_every_draw_of_a_plan_panel_makes_a_late_note_answer_stale(admin_client):
+    page = admin_client.get('/farming/').get_data(as_text=True)
+    assert page.count("$('#plan-panel-' + goalId).html(body);\n    planDrawn(goalId);") == 1
+    assert page.count('$panel.html(body);\n      planDrawn(goalId);') == 1
+    assert page.count('.html(body)') == 2

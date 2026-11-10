@@ -443,8 +443,8 @@ SCRIPT_HOOKS = [
     # every display of the item
     "$('.wf-price[data-item=\"' + itemId + '\"]')",
     # only ok true is a success; ok false (502), a 404 and a network error keep the price
-    "if (r && r.ok === true) wfPriceShow(itemId, r, true, null);",
-    "else failed(r, 'no answer.');",
+    "if (r && r.ok === true) {\n        wfPriceShow(itemId, r, true, null);",
+    "} else failed(r, 'no answer.');",
     "error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },",
     "var hasPrice = !!answer && Object.prototype.hasOwnProperty.call(answer, 'platinum');",
     "if (ok || hasPrice) $value.text(window.wfPriceText(answer.platinum));",
@@ -464,6 +464,18 @@ SCRIPT_HOOKS = [
 @pytest.mark.parametrize('hook', SCRIPT_HOOKS)
 def test_the_page_script_refreshes_one_item_everywhere_and_keeps_it_on_failure(hook):
     assert hook in price_script()
+
+
+def test_only_an_ok_refresh_announces_the_item_to_the_page():
+    """After an ok refresh the shared handler triggers 'wf-price-refreshed' on document with
+    the item id (the Farming Planner follows it); a failure announces nothing."""
+    script = price_script()
+    handler = script[script.index("$(document).on('click', '.wf-price-refresh'"):]
+    ok = handler[handler.index('if (r && r.ok === true) {'):handler.index("} else failed(r,")]
+    assert "$(document).trigger('wf-price-refreshed', [itemId]);" in ok
+    assert script.count('.trigger(') == 2                 # the focus move and the announcement
+    failed = handler[handler.index('var failed = function'):handler.index('$.ajax(')]
+    assert 'trigger' not in failed
 
 
 def test_the_page_script_inserts_answer_values_as_text_only():

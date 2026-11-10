@@ -352,8 +352,10 @@ $(document).on('click', '.wf-comp-price-refresh', function (e) {
     method: 'GET',
     dataType: 'json',
     success: function (r) {
-      if (r && r.ok === true) wfPriceShowIn($prices, r, true, null);
-      else failed(r, 'no answer.');
+      if (r && r.ok === true) {
+        wfPriceShowIn($prices, r, true, null);
+        followPlanNotes($prices.closest('.wf-goal-plan-panel'));
+      } else failed(r, 'no answer.');
     },
     error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },
     complete: function () {
@@ -361,6 +363,78 @@ $(document).on('click', '.wf-comp-price-refresh', function (e) {
       $prices.removeAttr('aria-busy');
     }
   });
+});
+
+// The buy-or-farm answers follow a refreshed price. After an ok refresh of the goal item's
+// price (the shared handler's 'wf-price-refreshed' event) or of a component's (above), each
+// open goal panel showing that price reads its plan again (`?prices=cached`: the goal price
+// as cached, nothing asked of the market, so the goal's answer follows the price the page
+// shows even when only a component was refreshed) and replaces only its buy-or-farm
+// notes, the goal's and each component's, from the new plan: the prices, the focus, the
+// checkboxes, the expanded state and the scroll stay. A note that appears or disappears is
+// inserted or removed after its price. A failed re-read, or a plan without the answer's
+// fields, leaves the notes as they are. A panel drawn again (opened, a mode switch, a
+// checkbox) or re-read again after the request started ignores its late answer.
+var wfPlanNoteSeq = Object.create(null);
+var WF_PLAN_PANEL = /^plan-panel-([1-9][0-9]*)$/;
+
+function planDrawn(goalId) {
+  wfPlanNoteSeq[goalId] = (wfPlanNoteSeq[goalId] || 0) + 1;
+  return wfPlanNoteSeq[goalId];
+}
+
+function hasBuyFarmFields(o) {
+  return !!o && typeof o === 'object' && ['recommend_buy', 'recommend_reason', 'expected_hours']
+    .every(function (key) { return Object.prototype.hasOwnProperty.call(o, key); });
+}
+
+// Replace what follows a price display in its row (its buy-or-farm note) with `markup`
+function replaceBuyFarmNote(price, markup) {
+  while (price.nextSibling) price.parentNode.removeChild(price.nextSibling);
+  if (markup) $(price).after(markup);
+}
+
+function redrawPlanNotes($panel, plan) {
+  if (hasBuyFarmFields(plan)) {
+    $panel.find('.wf-plan-market-row > .wf-price').each(function () {
+      replaceBuyFarmNote(this, buyVsFarmNote(plan));
+    });
+  }
+  var comps = Object.create(null);
+  (Array.isArray(plan.components) ? plan.components : []).forEach(function (c) {
+    if (c && typeof c.component_name === 'string') comps[c.component_name] = c;
+  });
+  $panel.find('.wf-comp-market > .wf-comp-price').each(function () {
+    var name = $(this).attr('data-component');
+    var comp = typeof name === 'string' ? comps[name] : null;
+    if (hasBuyFarmFields(comp)) replaceBuyFarmNote(this, buyVsFarmNote(comp, true));
+  });
+}
+
+function followPlanNotes($panels) {
+  $panels.each(function () {
+    var match = WF_PLAN_PANEL.exec(this.id || '');
+    if (!match || !$(this).closest('.wf-goal-expanded-inner').is(':visible')) return;
+    var goalId = match[1], $panel = $(this), seq = planDrawn(goalId);
+    $.ajax({
+      url: '/farming/goals/' + goalId + '/plan?prices=cached',
+      method: 'GET',
+      dataType: 'json',
+      success: function (r) {
+        if (wfPlanNoteSeq[goalId] !== seq || !r || r.ok !== true || !r.plan ||
+            typeof r.plan !== 'object') return;
+        redrawPlanNotes($panel, r.plan);
+      }
+    });
+  });
+}
+
+$(document).on('wf-price-refreshed', function (e, itemId) {
+  followPlanNotes($('.wf-goal-plan-panel').filter(function () {
+    return $(this).find('.wf-plan-market-row > .wf-price').filter(function () {
+      return $(this).attr('data-item') === String(itemId);
+    }).length > 0;
+  }));
 });
 
 function vaultedPlanNote(plan) {
@@ -946,6 +1020,7 @@ function loadGoalPlan(goalId, mode) {
     var displayMode = plan.display_mode || mode || 'list';
     var body        = displayMode === 'tree' ? renderTreeView(plan, goalId) : renderVisualPlanBody(plan, goalId);
     $('#plan-panel-' + goalId).html(body);
+    planDrawn(goalId);
     bindPlanEvents(goalId);
   });
 }
@@ -977,6 +1052,7 @@ function updateProgressBar(goalId) {
       var displayMode = plan.display_mode || 'list';
       var body = displayMode === 'tree' ? renderTreeView(plan, goalId) : renderVisualPlanBody(plan, goalId);
       $panel.html(body);
+      planDrawn(goalId);
       bindPlanEvents(goalId);
     }
 

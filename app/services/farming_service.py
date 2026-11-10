@@ -717,8 +717,14 @@ def _ingredient_drops_for(db, ing_name: str) -> list[dict]:
 
 # ── Goal Plan with Progress ──────────────────────────────────────────────────
 
-def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
-    """Return full crafting plan for a goal, merged with goal-scoped progress."""
+def get_goal_plan_with_progress(goal_id: int, user_id: int, fetch_price: bool = True) -> dict:
+    """Return full crafting plan for a goal, merged with goal-scoped progress.
+
+    The goal item's price is `get_price()`'s (asked of the market when the cached one is not
+    fresh) when `fetch_price` is true, as when a plan is opened; with `fetch_price` false it is
+    the cached one of any age and nothing is requested, as when the planner reads the plan
+    again after a price refresh: the page keeps the goal price it shows, so the answer must
+    follow that price, not one fetched behind the user's back."""
     db = get_db()
     goal_row = db.execute(
         'SELECT item_id, display_mode FROM farming_goals WHERE id = ? AND user_id = ?',
@@ -806,7 +812,10 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
     sources = item_sources(item_id, db)
     _add_component_prices(plan, item_id, cache_hours, thresholds, sources, db)
     if item_row and item_row['market_url_name']:
-        price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
+        if fetch_price:
+            price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
+        else:
+            price_data = cached_price_rows([item_id]).get(item_id) or                 {'platinum': None, 'fetched_at': None}
         plan['market_price'] = price_data.get('platinum')
         plan['market_url'] = market_url_for(item_row['market_url_name'])
         # How the page shows it: a fresh answer or row is fresh; a kept row after a failed

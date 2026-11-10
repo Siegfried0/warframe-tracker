@@ -155,7 +155,9 @@ def goals_progress(goal_id):
 @farming_bp.route('/goals/<id64:goal_id>/plan')
 @login_required
 def goals_plan(goal_id):
-    plan = get_goal_plan_with_progress(goal_id, current_user.id)
+    # `?prices=cached` (exactly): the cached goal price, nothing requested (a re-read)
+    fetch_price = request.args.get('prices') != 'cached'
+    plan = get_goal_plan_with_progress(goal_id, current_user.id, fetch_price)
     if not plan:
         return jsonify({'ok': False, 'error': 'Goal not found'}), 404
     return jsonify({'ok': True, 'plan': plan})
