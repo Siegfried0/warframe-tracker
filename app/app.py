@@ -98,22 +98,19 @@ def _register_blueprints(flask_app):
 
 
 def _start_scheduler(flask_app):
+    """The scheduled sync: a check every 15 minutes (first 2 minutes after the start) that
+    syncs when the stored last sync is older than SYNC_INTERVAL_HOURS, and with
+    AUTO_SYNC_ON_STARTUP one sync 2 minutes after the start. Neither: no scheduler."""
     if not flask_app.config.get('AUTO_SYNC_ON_STARTUP') and \
-            not flask_app.config.get('SYNC_INTERVAL_HOURS'):
+            not (flask_app.config.get('SYNC_INTERVAL_HOURS') or 0) > 0:
         return
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
+        from services import sync_schedule
         from services.wiki_sync import run_sync
 
-        scheduler = BackgroundScheduler(daemon=True)
-
-        if flask_app.config.get('AUTO_SYNC_ON_STARTUP'):
-            scheduler.add_job(lambda: run_sync(flask_app), 'date')
-
-        interval_h = flask_app.config.get('SYNC_INTERVAL_HOURS', 0)
-        if interval_h:
-            scheduler.add_job(lambda: run_sync(flask_app), 'interval', hours=interval_h)
-
+        scheduler = BackgroundScheduler(daemon=True, timezone='UTC')
+        sync_schedule.add_jobs(scheduler, flask_app, run_sync)
         scheduler.start()
         flask_app.scheduler = scheduler
     except ImportError:

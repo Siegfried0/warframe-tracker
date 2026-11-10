@@ -21,6 +21,7 @@
           <strong>Note:</strong> A full sync — including drop source data — can take
           2–4 minutes depending on network latency. The page will update when it completes.
         </p>
+        <p id="last-sync" class="white-text" role="status" aria-live="polite"></p>
         <button id="sync-btn" class="btn teal waves-effect">
           {{ icon('sync', 'left') }}Run Sync Now
         </button>
@@ -84,17 +85,89 @@
 {% endblock %}
 {% block scripts %}
 <script>
-$('#sync-btn').on('click', function() {
-  $(this).prop('disabled', true);
+// ── The last sync ─────────────────────────────────────────────────────────────
+
+var LAST_SYNC = {{ last_sync | tojson }};
+
+// How long ago, from the server's clock (a browser's clock may differ)
+function agoText(fromIso, nowIso) {
+  var minutes = Math.max(0, Math.floor((Date.parse(nowIso) - Date.parse(fromIso)) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return minutes + ' minute' + (minutes !== 1 ? 's' : '') + ' ago';
+  var hours = Math.floor(minutes / 60);
+  if (hours < 48) return hours + ' hour' + (hours !== 1 ? 's' : '') + ' ago';
+  var days = Math.floor(hours / 24);
+  return days + ' days ago';
+}
+
+// Times are stored in UTC and shown in the reader's local time; drawn with .text(), never as HTML
+function renderLastSync(s) {
+  if (!s) return;
+  var line;
+  if (s.state === 'ok' || s.state === 'failed') {
+    line = 'Last sync: ' + new Date(s.finished_at).toLocaleString() + ' (' +
+           agoText(s.finished_at, s.now) + '), ' + (s.state === 'ok' ? 'succeeded' : 'failed') + '.';
+  } else if (s.state === 'unknown') {
+    line = 'Last sync: unknown (the stored record cannot be read).';
+  } else {
+    line = 'Last sync: never.';
+  }
+  if (s.unfinished_started_at) {
+    line += ' A sync started at ' + new Date(s.unfinished_started_at).toLocaleString() +
+            ' did not finish.';
+  }
+  if (s.running) line += ' A sync is running now.';
+  $('#last-sync').text(line);
+}
+
+renderLastSync(LAST_SYNC);
+
+function syncDone() {
+  $('#sync-msg').hide();
+  $('#sync-btn').prop('disabled', false);
+}
+
+function showResult(cls, msg) {
+  $('#sync-progress').hide();
+  $('#sync-result').removeClass().addClass('card-panel ' + cls + ' white-text').text(msg).show();
+  syncDone();
+}
+
+// The question before a second sync within the hour (a plain-text dialog, never HTML)
+function confirmQuestion(minutes) {
+  var n = Math.max(0, Math.floor(Number(minutes) || 0));
+  var when = n < 1 ? 'less than a minute' : String(n) + ' minute' + (n !== 1 ? 's' : '');
+  return ['The last sync finished', when, 'ago. Run another one now?'].join(' ');
+}
+
+$('#sync-btn').on('click', function() { runSync(false); });
+
+// The server decides whether to ask: within an hour after a successful sync it answers
+// needs_confirmation, and only a yes sends the request again with confirm: true.
+function runSync(confirmed) {
+  $('#sync-btn').prop('disabled', true);
   $('#sync-status').show();
+  $('#sync-progress').show();
+  $('#sync-msg').show();
   $('#sync-result').hide();
   $.ajax({
     url: '{{ url_for("sync.run") }}',
     method: 'POST',
     contentType: 'application/json',
-    data: JSON.stringify({}),
+    data: JSON.stringify(confirmed ? {confirm: true} : {}),
     timeout: 240000,
     success: function(r) {
+      renderLastSync(r.last_sync);
+      if (r.needs_confirmation) {
+        $('#sync-status').hide();
+        syncDone();
+        if (window.confirm(confirmQuestion(r.minutes_ago))) {
+          runSync(true);
+        } else {
+          $('#sync-btn').trigger('focus');
+        }
+        return;
+      }
       $('#sync-progress').hide();
       var cls, msg;
       if (r.ok) {
@@ -136,15 +209,17 @@ $('#sync-btn').on('click', function() {
       $('#sync-btn').prop('disabled', false);
       loadCoverage();
     },
-    error: function() {
-      $('#sync-progress').hide();
-      $('#sync-result').removeClass().addClass('card-panel red darken-3 white-text')
-        .text('Request failed. Check server logs.').show();
-      $('#sync-msg').hide();
-      $('#sync-btn').prop('disabled', false);
+    error: function(xhr) {
+      var r = xhr.responseJSON || {};
+      if (xhr.status === 409 && r.running) {
+        renderLastSync(r.last_sync);
+        showResult('orange darken-3', 'A sync is already running. Its result shows here once you reload the page after it ends.');
+        return;
+      }
+      showResult('red darken-3', 'Request failed. Check server logs.');
     }
   });
-});
+}
 
 // ── Image coverage ────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ import requests
 
 from models.db import get_db
 from models.item import Item
-from services import image_cache, relic_sync
+from services import image_cache, relic_sync, sync_schedule
 from services.market_slugs import sync_market_slugs
 from services.resurgence_sync import sync_resurgence
 
@@ -1856,12 +1856,24 @@ def _sync_drop_sources() -> int:
 # ---------------------------------------------------------------------------
 
 def run_sync(app=None):
-    """Run a full item sync. Pass the Flask app when calling outside a request context."""
+    """Run a full item sync. Pass the Flask app when calling outside a request context.
+
+    One sync runs at a time, and each records its start, finish and result; a sync asked for
+    while one runs starts nothing and answers ``running`` (services/sync_schedule.py)."""
     from flask import has_app_context
     ctx = app.app_context() if (app and not has_app_context()) else None
     try:
         if ctx:
             ctx.push()
+        return sync_schedule.run_recorded(_run_sync_steps)
+    finally:
+        if ctx:
+            ctx.pop()
+
+
+def _run_sync_steps():
+    """Every step of a full sync, inside an app context; a failure is a result, not raised."""
+    try:
         log.info('Sync started at %s', datetime.utcnow().isoformat())
         db = get_db()
         # A stored picture that came from a deleted row with the same ID is cleared first,
@@ -1925,6 +1937,3 @@ def run_sync(app=None):
     except Exception as exc:
         log.exception('Sync failed: %s', exc)
         return {'ok': False, 'error': str(exc)}
-    finally:
-        if ctx:
-            ctx.pop()
