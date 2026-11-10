@@ -242,8 +242,8 @@ def market_answers(monkeypatch):
             pass
 
         def json(self):
-            return {'payload': {'orders': [
-                {'order_type': 'sell', 'platinum': 77, 'user': {'status': 'ingame'}}]}}
+            return {'data': [{'type': 'sell', 'platinum': 77, 'visible': True,
+                               'user': {'status': 'ingame'}}], 'error': None}
 
     def fake_get(url, *args, **kwargs):
         calls.append(url)

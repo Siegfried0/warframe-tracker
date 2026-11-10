@@ -15,6 +15,13 @@ from models.item import Item
 from services import market_slugs as ms
 from services import wiki_sync
 
+
+def listed(name, slug):
+    """One entry of the v2 item list in the measured shape (a few of its fields only)."""
+    return {'id': 'x' + slug[:20], 'slug': slug, 'gameRef': '/Lotus/X', 'tags': [],
+            'i18n': {'en': {'name': name, 'icon': 'items/x.png', 'thumb': 'items/x.thumb.png'}}}
+
+
 # (name, category) of the catalogue every test starts with
 CATALOGUE = [
     ('Braton Prime', 'primary'),        # listed only as "Braton Prime Set"
@@ -31,18 +38,18 @@ CATALOGUE = [
 ]
 
 ITEMS = [
-    {'item_name': 'Braton Prime Set', 'url_name': 'braton_prime_set'},
-    {'item_name': 'Soma Prime Set', 'url_name': 'soma_prime_set'},
-    {'item_name': 'Soma Prime', 'url_name': 'soma_prime'},
-    {'item_name': 'SERRATION', 'url_name': 'serration'},
-    {'item_name': '  Vitality  ', 'url_name': 'vitality'},
-    {'item_name': 'Hornet Strike', 'url_name': 'hornet_strike'},
-    {'item_name': 'ŌMEN', 'url_name': 'omen'},
-    {'item_name': 'Lato Vandal', 'url_name': 'lato_vandal'},
-    {'item_name': "Saryn's Gift", 'url_name': 'saryns_gift'},
-    {'item_name': 'Detron', 'url_name': 'detron'},
-    {'item_name': 'detron', 'url_name': 'detron_duplicate'},
-    {'item_name': 'Orokin Cell', 'url_name': 'orokin-cell_2'},
+    listed('Braton Prime Set', 'braton_prime_set'),
+    listed('Soma Prime Set', 'soma_prime_set'),
+    listed('Soma Prime', 'soma_prime'),
+    listed('SERRATION', 'serration'),
+    listed('  Vitality  ', 'vitality'),
+    listed('Hornet Strike', 'hornet_strike'),
+    listed('ŌMEN', 'omen'),
+    listed('Lato Vandal', 'lato_vandal'),
+    listed("Saryn's Gift", 'saryns_gift'),
+    listed('Detron', 'detron'),
+    listed('detron', 'detron_duplicate'),
+    listed('Orokin Cell', 'orokin-cell_2'),
 ]
 
 # (case id, catalogue name, category, the slug a good read stores)
@@ -77,7 +84,7 @@ class FakeResponse:
 
 
 def item_list(items):
-    return {'payload': {'items': items}}
+    return {'apiVersion': '0.0.0', 'data': items, 'error': None}
 
 
 @pytest.fixture
@@ -86,17 +93,17 @@ def market(monkeypatch):
     and `market.orders` for a price request; every request is recorded."""
     class Market:
         response = FakeResponse(payload=item_list(ITEMS))
-        orders = {'payload': {'orders': [
-            {'order_type': 'sell', 'platinum': 40, 'user': {'status': 'ingame'}},
-            {'order_type': 'sell', 'platinum': 25, 'user': {'status': 'ingame'}},
-            {'order_type': 'sell', 'platinum': 10, 'user': {'status': 'offline'}},
-            {'order_type': 'buy', 'platinum': 5, 'user': {'status': 'ingame'}},
-        ]}}
+        orders = {'apiVersion': '0.0.0', 'error': None, 'data': [
+            {'type': 'sell', 'platinum': 40, 'visible': True, 'user': {'status': 'ingame'}},
+            {'type': 'sell', 'platinum': 25, 'visible': True, 'user': {'status': 'ingame'}},
+            {'type': 'sell', 'platinum': 10, 'visible': True, 'user': {'status': 'offline'}},
+            {'type': 'buy', 'platinum': 5, 'visible': True, 'user': {'status': 'ingame'}},
+        ]}
         calls = []
 
     def fake_get(url, headers=None, timeout=None, **kwargs):
         Market.calls.append((url, headers, timeout))
-        if url.endswith('/orders'):
+        if '/orders/item/' in url:
             return FakeResponse(payload=Market.orders)
         if isinstance(Market.response, BaseException):
             raise Market.response
@@ -134,11 +141,23 @@ def test_a_good_read_gives_each_item_the_slug_its_name_matches(ctx, market, case
     assert slugs(ctx)[(name, category)] == want
 
 
-def test_the_list_is_read_once_from_the_price_clients_api(ctx, market):
+def test_the_list_is_read_once_from_v2_under_the_apps_own_client_name(ctx, market):
     ms.sync_market_slugs()
     assert [(url, timeout) for url, _, timeout in market.calls] == [
-        ('https://api.warframe.market/v1/items', 60)]
-    assert market.calls[0][1]['Language'] == 'en'
+        ('https://api.warframe.market/v2/items', 60)]
+    headers = market.calls[0][1]
+    assert headers['User-Agent'].strip()
+    assert not headers['User-Agent'].lower().startswith('python-requests')
+    assert (headers['Accept'], headers['Platform'], headers['Language']) == (
+        'application/json', 'pc', 'en')
+
+
+@pytest.mark.parametrize('error', [None, '', {}, []], ids=['null', 'empty text', 'empty object',
+                                                          'empty list'])
+def test_an_empty_error_field_and_unknown_fields_do_not_refuse_the_list(ctx, market, error):
+    market.response = FakeResponse(payload={'apiVersion': '9.9.9', 'error': error, 'extra': 1,
+                                            'data': [{**e, 'ducats': 45} for e in ITEMS]})
+    assert ms.sync_market_slugs() == {'ok': True, 'matched': MATCHED}
 
 
 def test_a_new_item_starts_without_a_slug_and_a_catalogue_upsert_keeps_it(ctx, market):
@@ -161,7 +180,7 @@ def test_a_second_sync_in_a_row_writes_no_row(ctx, market):
 def test_a_slug_of_the_longest_length_the_column_holds_is_stored(ctx, market):
     long_slug = 'a' * 255
     market.response = FakeResponse(payload=item_list(
-        [{'item_name': 'Excalibur Umbra', 'url_name': long_slug}]))
+        [listed('Excalibur Umbra', long_slug)]))
     assert ms.sync_market_slugs() == {'ok': True, 'matched': 1}
     assert slugs(ctx)[('Excalibur Umbra', 'warframe')] == long_slug
 
@@ -177,56 +196,84 @@ def test_the_tradable_flag_is_neither_read_nor_changed(ctx, market):
 
 # ── Failures change nothing (axis 4: dependency errors) ──────────────────────
 
-def _entry(**fields):
-    return item_list(ITEMS + [fields])
+def _entry(change):
+    """The list with one extra last entry (the 13th, entry 12), changed by `change(entry)`."""
+    entry = listed('X', 'x')
+    change(entry)
+    return item_list(ITEMS + [entry])
 
+
+def _set(*path, value):
+    """A change that sets the value at `path` (keys from the entry down)."""
+    def change(entry):
+        for key in path[:-1]:
+            entry = entry[key]
+        entry[path[-1]] = value
+    return change
+
+
+def _drop(*path):
+    """A change that removes the key at the end of `path`."""
+    def change(entry):
+        for key in path[:-1]:
+            entry = entry[key]
+        del entry[path[-1]]
+    return change
+
+
+NO_NAME = 'list unreadable: entry 12 has no i18n.en.name'
+NO_SLUG = 'list unreadable: entry 12 has no valid slug'
+NO_LIST = 'list unreadable: no data list'
+REPORTED = 'list unreadable: the market reported an error'
 
 FAILURES = [
     ('timeout', requests.Timeout('slow'), 'fetch failed: slow'),
     ('unreachable', requests.ConnectionError('refused'), 'fetch failed: refused'),
     ('http error', FakeResponse(status=503), 'fetch failed: 503 error'),
+    ('forbidden', FakeResponse(status=403, text='<html>bot check</html>'),
+     'fetch failed: 403 error'),
+    ('too many requests', FakeResponse(status=429), 'fetch failed: 429 error'),
     ('not json', FakeResponse(text='<html>maintenance</html>'), 'fetch failed: '),
-    ('a json list', FakeResponse(payload=[ITEMS]), 'list unreadable: no payload.items list'),
-    ('no payload', FakeResponse(payload={'items': ITEMS}),
-     'list unreadable: no payload.items list'),
-    ('payload null', FakeResponse(payload={'payload': None}),
-     'list unreadable: no payload.items list'),
-    ('items null', FakeResponse(payload=item_list(None)),
-     'list unreadable: no payload.items list'),
-    ('items an object', FakeResponse(payload=item_list({'a': ITEMS[0]})),
-     'list unreadable: no payload.items list'),
+    ('a json list', FakeResponse(payload=[ITEMS]), NO_LIST),
+    ('no data', FakeResponse(payload={'apiVersion': '0.0.0', 'error': None}), NO_LIST),
+    ('the v1 shape', FakeResponse(payload={'payload': {'items': ITEMS}}), NO_LIST),
+    ('data null', FakeResponse(payload=item_list(None)), NO_LIST),
+    ('data an object', FakeResponse(payload=item_list({'a': ITEMS[0]})), NO_LIST),
+    ('data a text', FakeResponse(payload=item_list('items')), NO_LIST),
+    ('error a text', FakeResponse(payload={**item_list(ITEMS), 'error': 'bad request'}),
+     REPORTED),
+    ('error an object', FakeResponse(payload={**item_list(ITEMS), 'error': {'request': ['x']}}),
+     REPORTED),
+    ('error without data', FakeResponse(payload={'data': None, 'error': 'not found'}), REPORTED),
     ('empty list', FakeResponse(payload=item_list([])),
      'list unreadable: the item list is empty'),
     ('entry not an object', FakeResponse(payload=item_list(ITEMS + ['detron'])),
      'list unreadable: entry 12 is not an object'),
-    ('no item_name', FakeResponse(payload=_entry(url_name='x')),
-     'list unreadable: entry 12 has no item_name'),
-    ('item_name a number', FakeResponse(payload=_entry(item_name=7, url_name='x')),
-     'list unreadable: entry 12 has no item_name'),
-    ('item_name blank', FakeResponse(payload=_entry(item_name='  ', url_name='x')),
-     'list unreadable: entry 12 has no item_name'),
-    ('no url_name', FakeResponse(payload=_entry(item_name='X')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name null', FakeResponse(payload=_entry(item_name='X', url_name=None)),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name a number', FakeResponse(payload=_entry(item_name='X', url_name=12)),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name empty', FakeResponse(payload=_entry(item_name='X', url_name='')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name a path', FakeResponse(payload=_entry(item_name='X', url_name='../orders')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name a query', FakeResponse(payload=_entry(item_name='X', url_name='x?y=1')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name a blank', FakeResponse(payload=_entry(item_name='X', url_name='x y')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name a newline', FakeResponse(payload=_entry(item_name='X', url_name='x\n')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name non-ASCII', FakeResponse(payload=_entry(item_name='X', url_name='ōmen')),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('url_name too long', FakeResponse(payload=_entry(item_name='X', url_name='a' * 256)),
-     'list unreadable: entry 12 has no valid url_name'),
-    ('bad entry first', FakeResponse(payload=item_list([{'item_name': 'X'}] + ITEMS)),
-     'list unreadable: entry 0 has no valid url_name'),
+    ('no i18n', FakeResponse(payload=_entry(_drop('i18n'))), NO_NAME),
+    ('i18n null', FakeResponse(payload=_entry(_set('i18n', value=None))), NO_NAME),
+    ('i18n a list', FakeResponse(payload=_entry(_set('i18n', value=[{'name': 'X'}]))), NO_NAME),
+    ('no en', FakeResponse(payload=_entry(_drop('i18n', 'en'))), NO_NAME),
+    ('only another language', FakeResponse(payload=_entry(_set('i18n', value={
+        'de': {'name': 'X'}}))), NO_NAME),
+    ('en a text', FakeResponse(payload=_entry(_set('i18n', 'en', value='X'))), NO_NAME),
+    ('no name', FakeResponse(payload=_entry(_drop('i18n', 'en', 'name'))), NO_NAME),
+    ('name null', FakeResponse(payload=_entry(_set('i18n', 'en', 'name', value=None))), NO_NAME),
+    ('name a number', FakeResponse(payload=_entry(_set('i18n', 'en', 'name', value=7))), NO_NAME),
+    ('name blank', FakeResponse(payload=_entry(_set('i18n', 'en', 'name', value='  '))), NO_NAME),
+    ('a v1 entry', FakeResponse(payload=item_list(ITEMS + [{'item_name': 'X', 'url_name': 'x'}])),
+     NO_NAME),
+    ('no slug', FakeResponse(payload=_entry(_drop('slug'))), NO_SLUG),
+    ('slug null', FakeResponse(payload=_entry(_set('slug', value=None))), NO_SLUG),
+    ('slug a number', FakeResponse(payload=_entry(_set('slug', value=12))), NO_SLUG),
+    ('slug empty', FakeResponse(payload=_entry(_set('slug', value=''))), NO_SLUG),
+    ('slug a path', FakeResponse(payload=_entry(_set('slug', value='../orders'))), NO_SLUG),
+    ('slug a query', FakeResponse(payload=_entry(_set('slug', value='x?y=1'))), NO_SLUG),
+    ('slug a blank', FakeResponse(payload=_entry(_set('slug', value='x y'))), NO_SLUG),
+    ('slug a newline', FakeResponse(payload=_entry(_set('slug', value='x\n'))), NO_SLUG),
+    ('slug non-ASCII', FakeResponse(payload=_entry(_set('slug', value='ōmen'))), NO_SLUG),
+    ('slug too long', FakeResponse(payload=_entry(_set('slug', value='a' * 256))), NO_SLUG),
+    ('bad entry first', FakeResponse(payload=item_list([{'i18n': {'en': {'name': 'X'}}}] + ITEMS)),
+     'list unreadable: entry 0 has no valid slug'),
 ]
 
 
@@ -317,7 +364,7 @@ def test_a_matched_item_gets_its_price_and_link_after_a_sync(app, admin_client, 
     response = admin_client.get(f'/market/price/{braton}')
     assert response.status_code == 200
     assert (response.get_json()['ok'], response.get_json()['platinum']) == (True, 25)
-    assert market.calls[-1][0] == 'https://api.warframe.market/v1/items/braton_prime_set/orders'
+    assert market.calls[-1][0] == 'https://api.warframe.market/v2/orders/item/braton_prime_set'
     assert admin_client.get(f'/market/price/{umbra}').status_code == 404
 
     assert admin_client.post('/market/watch', json={'item_id': braton}).status_code == 200

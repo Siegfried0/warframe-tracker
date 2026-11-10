@@ -1,6 +1,8 @@
 """
-warframe.market public REST API client — read-only price lookups.
-Docs: https://warframe.market/api_doc
+warframe.market public REST API client (v2): read-only price lookups and the item list.
+
+Every request names the app as its client (`User-Agent`): the market's CDN refuses the HTTP
+library's default name, and its v1 API is retired.
 """
 
 import logging
@@ -12,8 +14,12 @@ from models.db import INTEGRITY_ERRORS, get_db
 
 log = logging.getLogger(__name__)
 
-_BASE = 'https://api.warframe.market/v1'
+_BASE = 'https://api.warframe.market/v2'
+# The app's own client name: a fixed product name and version, nothing that names a user, the
+# owner, the instance or its address. Raise the version when the client's requests change.
+CLIENT_NAME = 'WarframeProgressTracker/2.0'
 _HEADERS = {
+    'User-Agent': CLIENT_NAME,
     'Accept': 'application/json',
     'Platform': 'pc',
     'Language': 'en',
@@ -25,6 +31,12 @@ _TIMEOUT = 15
 _ITEM_LIST_TIMEOUT = 60
 
 
+class MarketRequestFailed(Exception):
+    """A price request without a usable answer: none (unreachable, a timeout), an HTTP error
+    status, a body that is not JSON or not v2's shape, or an answer reporting an error. Never
+    the same as "no sell order in game"."""
+
+
 def _request(path: str, timeout: int = _TIMEOUT):
     """The decoded JSON body of a GET; raises on a failed request, an HTTP error status or
     a body that is not JSON."""
@@ -33,40 +45,88 @@ def _request(path: str, timeout: int = _TIMEOUT):
     return resp.json()
 
 
-def _get(path: str) -> dict | None:
-    try:
-        return _request(path)
-    except Exception as exc:
-        log.warning('warframe.market request failed for %s: %s', path, exc)
-        return None
-
-
 def fetch_item_list():
-    """The market's item list (`GET /items`) as decoded, unchecked: every listed item's
-    English name and slug under `payload.items`. Raises when the request fails or the body
-    is not JSON; the caller checks the shape."""
+    """The market's item list (`GET /v2/items`) as decoded, unchecked: every listed item's
+    slug and English name under `data`. Raises when the request fails or the body is not
+    JSON; the caller checks the shape."""
     return _request('/items', timeout=_ITEM_LIST_TIMEOUT)
 
 
-def fetch_lowest_price(market_url_name: str) -> int | None:
-    """Return the lowest current sell-order price in platinum, or None on failure."""
-    data = _get(f'/items/{market_url_name}/orders')
-    if not data:
+def _counted(order) -> int | None:
+    """The platinum of a sell order, visible, of a player in game, when it is a whole number of
+    at least 0; None for any other order."""
+    if not isinstance(order, dict) or order.get('type') != 'sell':
         return None
-    orders = data.get('payload', {}).get('orders', [])
-    sell_prices = [
-        o['platinum']
-        for o in orders
-        if o.get('order_type') == 'sell'
-        and o.get('user', {}).get('status') == 'ingame'
-    ]
-    return min(sell_prices) if sell_prices else None
+    if order.get('visible') is False:
+        return None
+    user = order.get('user')
+    if not isinstance(user, dict) or user.get('status') != 'ingame':
+        return None
+    platinum = order.get('platinum')
+    if isinstance(platinum, int) and not isinstance(platinum, bool) and platinum >= 0:
+        return platinum
+    return None
+
+
+def lowest_sell_price(answer) -> int | None:
+    """The lowest price in a decoded `GET /v2/orders/item/<slug>` answer, or None when it lists
+    no sell order of a player in game.
+
+    Counted: an order with `type` "sell", `visible` not false and `user.status` "ingame"
+    (exact spellings) whose `platinum` is a whole number of at least 0; any other order is not
+    counted. Raises `MarketRequestFailed` when the answer is not v2's shape (an object with a
+    `data` list) or its `error` is not empty.
+    """
+    if not isinstance(answer, dict):
+        raise MarketRequestFailed('the answer is not in the expected shape')
+    if answer.get('error'):
+        raise MarketRequestFailed('the market reported an error')
+    orders = answer.get('data')
+    if not isinstance(orders, list):
+        raise MarketRequestFailed('the answer is not in the expected shape')
+    prices = [p for p in map(_counted, orders) if p is not None]
+    return min(prices) if prices else None
+
+
+def fetch_lowest_price(market_url_name: str) -> int | None:
+    """The lowest current sell price in platinum (`GET /v2/orders/item/<slug>`), or None when
+    the market lists no sell order of a player in game.
+
+    Raises `MarketRequestFailed` on a failed request: no answer (unreachable, a timeout), an
+    HTTP error status (403, 429, 5xx, ...), a body that is not JSON or not v2's shape.
+    """
+    path = f'/orders/item/{market_url_name}'
+    try:
+        answer = _request(path)
+    except requests.HTTPError as exc:
+        status = getattr(exc.response, 'status_code', None)
+        log.warning('warframe.market request failed for %s: HTTP %s', path, status)
+        raise MarketRequestFailed(f'HTTP {status}' if status else 'an HTTP error') from exc
+    except requests.Timeout as exc:
+        log.warning('warframe.market request timed out for %s', path)
+        raise MarketRequestFailed('no answer in time') from exc
+    except ValueError as exc:                     # the body is not JSON
+        log.warning('warframe.market answer for %s is not JSON', path)
+        raise MarketRequestFailed('the answer is not JSON') from exc
+    except Exception as exc:                      # unreachable, refused, any other failure
+        log.warning('warframe.market request failed for %s: %s', path, exc)
+        raise MarketRequestFailed('no answer') from exc
+    try:
+        return lowest_sell_price(answer)
+    except MarketRequestFailed as exc:
+        log.warning('warframe.market answer for %s refused: %s', path, exc)
+        raise
 
 
 def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
-    """
-    Return cached price if fresh, otherwise fetch from API and cache result.
-    Returns {'platinum': int|None, 'fetched_at': str, 'from_cache': bool}
+    """The item's price: the cached one while it is fresh, otherwise asked of the market.
+
+    Returns `{'platinum': int|None, 'fetched_at': str|None, 'from_cache': bool}`. A successful
+    answer is written to the cache: the price, or NULL for no sell order in game, with the
+    current time. A failed request writes nothing: the cache row keeps its price and fetch
+    time, and the result holds those kept values (None without a row; `from_cache` True when a
+    row exists) plus `failed: True` and `error`, a short text for the user. Only a failed
+    result has the `failed` key.
     """
     db = get_db()
     row = db.execute(
@@ -84,7 +144,16 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
                 'from_cache': True,
             }
 
-    price = fetch_lowest_price(market_url_name)
+    try:
+        price = fetch_lowest_price(market_url_name)
+    except MarketRequestFailed as exc:
+        return {
+            'platinum': row['platinum_price'] if row else None,
+            'fetched_at': row['fetched_at'] if row else None,
+            'from_cache': row is not None,
+            'failed': True,
+            'error': f'warframe.market gave no price ({exc}); the last price is kept.',
+        }
     now = datetime.utcnow().isoformat()
     db.execute(
         '''INSERT INTO market_cache (item_id, platinum_price, fetched_at)

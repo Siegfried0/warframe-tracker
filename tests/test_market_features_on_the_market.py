@@ -129,8 +129,8 @@ def test_the_goal_plan_prices_and_links_an_item_by_its_slug_alone(
             pass
 
         def json(self):
-            return {'payload': {'orders': [
-                {'order_type': 'sell', 'platinum': 77, 'user': {'status': 'ingame'}}]}}
+            return {'data': [{'type': 'sell', 'platinum': 77, 'visible': True,
+                               'user': {'status': 'ingame'}}], 'error': None}
 
     def fake_get(url, *args, **kwargs):
         calls.append(url)

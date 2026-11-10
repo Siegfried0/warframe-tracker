@@ -28,6 +28,10 @@ def price(item_id):
 
     cache_hours = get_setting_int(current_user.id, 'market_cache_hours')
     data = get_price(item_id, item.market_url_name, cache_hours)
+    if data.get('failed'):
+        # The market failed, not the request: 502, with the price and fetch time kept.
+        return jsonify({'ok': False, 'error': data['error'], 'platinum': data['platinum'],
+                        'fetched_at': data['fetched_at']}), 502
     return jsonify({'ok': True, **data})
 
 

@@ -1,9 +1,9 @@
 """Market slugs: each catalogue item's warframe.market slug, read once per sync.
 
-Source: warframe.market's own item list (``GET /items`` of the API and version the price
+Source: warframe.market's own item list (``GET /v2/items``, the API and version the price
 client uses, ``services/market_api.py``), which maps every listed item's English name
-(``item_name``) to its slug (``url_name``, the ``<slug>`` of ``/items/<slug>/orders``). The
-official wiki and the WFCD data the catalogue sync reads carry no slug.
+(``i18n.en.name``) to its slug (``slug``, the ``<slug>`` of ``/v2/orders/item/<slug>`` and of
+the listing link). The official wiki and the WFCD data the catalogue sync reads carry no slug.
 
 Matching, per catalogue row: the listed name equal to the item's name, compared
 case-insensitively after trimming the outer blanks; failing that, the listed name equal to
@@ -39,28 +39,35 @@ def _key(name: str) -> str:
     return name.strip().casefold()
 
 
+def _english_name(entry: dict):
+    i18n = entry.get('i18n')
+    english = i18n.get('en') if isinstance(i18n, dict) else None
+    return english.get('name') if isinstance(english, dict) else None
+
+
 def parse_item_list(data) -> dict[str, str]:
     """The listed names (as matching keys) mapped to their slugs.
 
-    Expects ``{"payload": {"items": [{"item_name": str, "url_name": str}, ...]}}`` with at
-    least one entry; raises ``ListUnreadable`` otherwise, naming the first entry at fault. A
-    name listed twice keeps the slug of its first entry.
+    Expects ``{"data": [{"slug": str, "i18n": {"en": {"name": str}}}, ...]}`` with at least
+    one entry and no ``error`` that is not empty; raises ``ListUnreadable`` otherwise, naming
+    the first entry at fault. A name listed twice keeps the slug of its first entry.
     """
-    payload = data.get('payload') if isinstance(data, dict) else None
-    items = payload.get('items') if isinstance(payload, dict) else None
+    if isinstance(data, dict) and data.get('error'):
+        raise ListUnreadable('the market reported an error')
+    items = data.get('data') if isinstance(data, dict) else None
     if not isinstance(items, list):
-        raise ListUnreadable('no payload.items list')
+        raise ListUnreadable('no data list')
     if not items:
         raise ListUnreadable('the item list is empty')
     slugs: dict[str, str] = {}
     for pos, entry in enumerate(items):
         if not isinstance(entry, dict):
             raise ListUnreadable(f'entry {pos} is not an object')
-        name, slug = entry.get('item_name'), entry.get('url_name')
+        name, slug = _english_name(entry), entry.get('slug')
         if not isinstance(name, str) or not name.strip():
-            raise ListUnreadable(f'entry {pos} has no item_name')
+            raise ListUnreadable(f'entry {pos} has no i18n.en.name')
         if not isinstance(slug, str) or not _SLUG.fullmatch(slug):
-            raise ListUnreadable(f'entry {pos} has no valid url_name')
+            raise ListUnreadable(f'entry {pos} has no valid slug')
         slugs.setdefault(_key(name), slug)
     return slugs
 
