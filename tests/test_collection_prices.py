@@ -1,7 +1,8 @@
 """Market prices in the collection browser: the price column and the card price badge.
 
 Every item on the market (tradable, or with a market slug) shows its price in both views (the
-table's "Price" column and a line on its card) on every category tab: the cached price or `—`
+table's "Price" column and the right-hand side of its card's head, beside the name) on every
+category tab: the cached price or `—`
 when none is cached, an "old" mark with the fetch time when the cache row is older than the
 user's `market_cache_hours` (an unreadable fetch time counts as old), and a warframe.market
 link (new tab, `rel="noopener"`) when the item has a market slug. With a slug an old or missing
@@ -12,6 +13,7 @@ Loading a page requests no price: one cache-only query over the page's on-market
 their prices, whatever the page size, and nothing is written. Network refused
 (tests/conftest.py); `requests.get` is also patched to fail the test if called.
 """
+import os
 import re
 from datetime import datetime, timedelta
 
@@ -109,11 +111,27 @@ def view_chunks(html, view):
     return {int(part[:part.index('"')]): part for part in parts}
 
 
+def div_inner(markup, cls):
+    """The inner markup of the first `<div class="cls">` in markup (nested divs balanced), or
+    None when there is none."""
+    start = re.search(rf'<div class="{cls}">', markup)
+    if start is None:
+        return None
+    depth, at = 1, start.end()
+    for tag in re.finditer(r'<(/?)div\b', markup[at:]):
+        depth += -1 if tag.group(1) else 1
+        if depth == 0:
+            return markup[at:at + tag.start()]
+    raise AssertionError(f'unclosed <div class="{cls}">')
+
+
 def price_markup(chunk, view):
-    """The price markup of one card or row, or None when it shows no price."""
+    """The price markup of one card or row, or None when it shows no price. A card shows it in
+    its head's right-hand column."""
     if view == 'cards':
-        match = re.search(r'<p class="coll-card-price">(.*?)</p>', chunk, re.S)
-        return match.group(1) if match else None
+        head = div_inner(chunk, 'coll-card-head')
+        assert head is not None
+        return div_inner(head, 'coll-card-market')
     cell = re.search(r'<td class="wf-price-cell">(.*?)</td>', chunk, re.S).group(1)
     return cell if 'class="wf-price"' in cell else None
 
@@ -204,6 +222,132 @@ def test_a_hostile_fetch_time_renders_as_text(app, admin_client):
     html = page(admin_client, 'warframe')
     assert '<b>&"x' not in html
     assert 'old (&lt;b&gt;&amp;&#34;x)' in html
+
+
+# ── The card's head: name and labels on the left, the price on the right ──────
+
+# tab: (source, mod type, mod polarity, the label lines the card shows)
+HEAD_TABS = {
+    'warframe':  ('prime', None, None, ['prime']),
+    'primary':   ('prime', None, None, ['prime']),          # a prime weapon's tab
+    'companion': ('standard', None, None, ['standard']),
+    'mod':       ('standard', 'Warframe', 'Madurai', ['Warframe', 'Madurai · R5']),
+    'arcane':    ('eidolon', None, None, ['Eidolon']),
+    'k-drive':   (None, None, None, []),                 # no source label
+}
+
+
+def add_labelled(name, category, on_market, source):
+    _src, mod_type, polarity, _labels = HEAD_TABS[category]
+    Item.upsert(name, category, source=source, tradable=on_market, mod_type=mod_type,
+                mod_polarity=polarity, mod_max_rank=5 if polarity else None)
+    db = get_db()
+    db.execute('UPDATE items SET market_url_name = ? WHERE name = ? AND category = ?',
+               ('head_slug' if on_market else None, name, category))
+    db.commit()
+    return db.execute('SELECT id FROM items WHERE name = ? AND category = ?',
+                      (name, category)).fetchone()['id']
+
+
+def head_parts(chunk):
+    """(the head's left column, its price column or None, the card markup after the head)."""
+    head = div_inner(chunk, 'coll-card-head')
+    assert head is not None
+    after = chunk[chunk.index(head) + len(head):]
+    return div_inner(head, 'coll-card-title'), div_inner(head, 'coll-card-market'), after
+
+
+def labels_in(markup):
+    return re.findall(r'<p class="grey-text coll-card-source"[^>]*>([^<]*)</p>', markup)
+
+
+@pytest.mark.parametrize('on_market', [True, False], ids=['on-market', 'off-market'])
+@pytest.mark.parametrize('category', list(HEAD_TABS))
+def test_a_card_head_holds_the_name_labels_and_price_on_every_tab(
+        app, admin_client, requests_made, category, on_market):
+    source, _type, _polarity, labels = HEAD_TABS[category]
+    with app.app_context():
+        iid = add_labelled('Head Item', category, on_market, source)
+        cache(iid, 12345, ago(FRESH))
+    html = page(admin_client, category)
+    chunk = view_chunks(html, 'cards')[iid]
+    title, market, after = head_parts(chunk)
+    assert '<p class="white-text coll-card-name" title="Head Item">Head Item</p>' in title
+    assert labels_in(title) == labels
+    for text in labels:                               # a truncated label keeps its full text
+        assert f'title="{text}">{text}</p>' in title
+    assert labels_in(after) == []                      # no label line outside the head
+    assert 'coll-card-price' not in html
+    assert '<div class="coll-card-icons">' in after   # the icon row stays below the head
+    if category == 'arcane':                          # the rank bar too, full width
+        assert 'arc-rank-btn' in after and 'arc-rank-btn' not in title
+    if on_market:
+        assert text_of(market, 'wf-price-value') == '12345p'
+        assert 'wf-price-link' in market
+        assert 'wf-price' not in after
+    else:
+        assert market is None
+        assert 'wf-price' not in chunk
+    assert requests_made == []
+
+
+@pytest.mark.parametrize('on_market', [True, False], ids=['on-market', 'off-market'])
+def test_a_card_without_a_label_line_still_has_its_head(app, admin_client, on_market):
+    with app.app_context():
+        iid = add_labelled('No Label', 'warframe', on_market, None)
+    title, market, _after = head_parts(view_chunks(page(admin_client, 'warframe'), 'cards')[iid])
+    assert 'title="No Label">No Label</p>' in title
+    assert labels_in(title) == []
+    assert (market is not None) == on_market
+
+
+@pytest.mark.parametrize('name, shown', [
+    ('Excalibur Umbra Prime With A Name Far Longer Than Any Card Is Wide',
+     'Excalibur Umbra Prime With A Name Far Longer Than Any Card Is Wide'),
+    ('Fish <b> & "Chips"', 'Fish &lt;b&gt; &amp; &#34;Chips&#34;'),
+])
+def test_a_long_or_hostile_name_sits_escaped_in_the_head_beside_its_price(
+        app, admin_client, name, shown):
+    with app.app_context():
+        iid = add_labelled(name, 'warframe', True, 'prime')
+        cache(iid, 120, STALE_AT.isoformat())
+    html = page(admin_client, 'warframe')
+    title, market, _after = head_parts(view_chunks(html, 'cards')[iid])
+    assert f'<p class="white-text coll-card-name" title="{shown}">{shown}</p>' in title
+    assert '<b>' not in title
+    assert text_of(market, 'wf-price-old') == STALE_TEXT
+    refresh = re.search(r'class="wf-price-refresh"[^>]*aria-label="([^"]*)"', market)
+    assert refresh.group(1) == f'Refresh the price of {shown} from warframe.market'
+
+
+def css_rule(css, selector):
+    """The declarations of the stylesheet's rule for exactly this selector."""
+    match = re.search(r'(?m)^' + re.escape(selector) + r'\s*\{([^}]*)\}', css)
+    assert match, selector
+    body = re.sub(r'/\*.*?\*/', '', match.group(1), flags=re.S)
+    return dict(re.findall(r'([\w-]+)\s*:\s*([^;]+);', body))
+
+
+def test_the_stylesheet_lays_the_head_out_as_a_row_with_a_reserved_height(app):
+    with open(os.path.join(app.root_path, 'static', 'css', 'app.css'), encoding='utf-8') as fh:
+        css = fh.read()
+    head = css_rule(css, '.coll-card-head')
+    assert head['display'] == 'flex'
+    assert head.get('flex-direction', 'row') == 'row'
+    assert re.fullmatch(r'[\d.]+(rem|em|px)', head['min-height'])
+    assert float(re.match(r'[\d.]+', head['min-height']).group()) > 0
+    title = css_rule(css, '.coll-card-title')
+    assert title['min-width'].strip() == '0'                 # lets the name truncate
+    label = css_rule(css, '.coll-card-head .coll-card-source')
+    assert label['white-space'] == 'nowrap'                  # a label never wraps the head
+    assert label['overflow'] == 'hidden'
+    assert label['text-overflow'] == 'ellipsis'
+    market = css_rule(css, '.coll-card-market')
+    shrink = market.get('flex-shrink') or market['flex'].split()[1]
+    assert shrink == '0'
+    assert market['text-align'] == 'right'
+    assert market['max-width'].endswith('%')
+    assert '.coll-card-price' not in css
 
 
 # ── Page load: no market request, one cache query, no write ──────────────────

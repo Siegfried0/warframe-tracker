@@ -344,12 +344,23 @@
         {% endif %}
       </div>
       <div class="card-content" style="padding:.5rem .6rem .4rem">
-        <p class="white-text coll-card-name" title="{{ row.name }}">{{ row.name }}</p>
-        {% if current_cat == 'mod' %}
-          {% if row.mod_type %}<p class="grey-text coll-card-source" style="font-size:.7rem">{{ row.mod_type }}</p>{% endif %}
-          {% if row.mod_polarity %}<p class="grey-text coll-card-source" style="font-size:.7rem">{{ row.mod_polarity }} · R{{ row.mod_max_rank or 0 }}</p>{% endif %}
-        {% elif current_cat == 'arcane' %}
-          {% if row.source and row.source != 'standard' %}<p class="grey-text coll-card-source">{{ row.source | capitalize }}</p>{% endif %}
+        {#- The card's head: the name and the tab's label lines on the left, the market price
+            on the right, so a card on the market is no taller than one off it. -#}
+        <div class="coll-card-head">
+          <div class="coll-card-title">
+            <p class="white-text coll-card-name" title="{{ row.name }}">{{ row.name }}</p>
+            {% if current_cat == 'mod' %}
+              {% if row.mod_type %}<p class="grey-text coll-card-source" style="font-size:.7rem" title="{{ row.mod_type }}">{{ row.mod_type }}</p>{% endif %}
+              {% if row.mod_polarity %}<p class="grey-text coll-card-source" style="font-size:.7rem" title="{{ row.mod_polarity }} · R{{ row.mod_max_rank or 0 }}">{{ row.mod_polarity }} · R{{ row.mod_max_rank or 0 }}</p>{% endif %}
+            {% elif current_cat == 'arcane' %}
+              {% if row.source and row.source != 'standard' %}<p class="grey-text coll-card-source" title="{{ row.source | capitalize }}">{{ row.source | capitalize }}</p>{% endif %}
+            {% else %}
+              {% if row.source %}<p class="grey-text coll-card-source" title="{{ row.source }}">{{ row.source }}</p>{% endif %}
+            {% endif %}
+          </div>
+          {% if row.on_market %}<div class="coll-card-market">{{ item_price(row) }}</div>{% endif %}
+        </div>
+        {% if current_cat == 'arcane' %}
           <!-- Arcane rank progress bar -->
           <div style="margin:.3rem 0 .2rem">
             <div style="background:#37474f;border-radius:2px;height:4px">
@@ -379,10 +390,7 @@
                      style="width:2rem;background:none;border:none;border-bottom:1px solid #546e7a;font-size:.75rem;padding:0;text-align:center">
             </div>
           </div>
-        {% else %}
-          {% if row.source %}<p class="grey-text coll-card-source">{{ row.source }}</p>{% endif %}
         {% endif %}
-        {% if row.on_market %}<p class="coll-card-price">{{ item_price(row) }}</p>{% endif %}
         <div class="coll-card-icons">
           {% if current_cat not in ('arcane',) %}
           <a href="#" class="wf-toggle {% if row.in_possession %}teal-text{% else %}grey-text{% endif %}"
