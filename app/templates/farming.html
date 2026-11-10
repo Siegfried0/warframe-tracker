@@ -359,10 +359,9 @@ function renderTreeView(plan, goalId) {
     return '<p class="grey-text">No component data available. Run a Wiki Sync to populate recipes.</p>';
   }
   var html = vaultedPlanNote(plan);
-  if (plan.market_price) {
-    html += '<div class="grey-text" style="font-size:.82rem;margin-bottom:.5rem">' +
-            'Market price: <span class="orange-text">' + plan.market_price + 'p</span>' +
-            (plan.market_url ? ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text">' + wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>' : '') +
+  if (plan.market) {
+    html += '<div class="grey-text wf-plan-market-row" style="font-size:.82rem;margin-bottom:.5rem">' +
+            'Market price: ' + wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true) +
             '</div>';
   }
   plan.components.forEach(function(comp) {
@@ -465,14 +464,10 @@ function renderVisualPlanBody(plan, goalId) {
   var html = vaultedPlanNote(plan);
 
   // ── Market price ────────────────────────────────────────────────────────────
-  if (plan.market_price) {
+  if (plan.market) {
     html += '<div class="wf-plan-market-row" style="margin-bottom:.6rem">' +
-            'Market: <span class="orange-text">' + plan.market_price + 'p</span>';
-    if (plan.market_url) {
-      html += ' <a href="' + escText(plan.market_url) + '" target="_blank" class="grey-text">' +
-              wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>';
-    }
-    html += '</div>';
+            'Market: ' + wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true) +
+            '</div>';
   }
 
   // ── Progress bars block ─────────────────────────────────────────────────────

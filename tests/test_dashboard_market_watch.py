@@ -1,8 +1,9 @@
 """The dashboard's market watch panel shows the caller's watchlist with its cached prices.
 
 The panel reads the price cache only: loading the dashboard requests no price. Each row is
-the item's name, its cached price (a dash when none), a stale mark with the fetch time when
-the price is older than the user's cache setting, and the item's warframe.market link when it
+the item's name, its cached price (a dash when none), an "old" mark with the fetch time when
+the price is older than the user's cache setting, a refresh button beside an old or missing
+price of an item with a listing, and the item's warframe.market link when it
 has a listing. At most ten rows, by name, with a link to the market page; an empty watchlist
 says so. The watchlist is per user: another user's items and prices never show.
 
@@ -133,11 +134,11 @@ def test_a_watched_item_shows_its_cached_price_stale_mark_and_link(
     assert text(cell(row, 'market-watch-name')) == 'Braton Prime Set'
     price_text = text(cell(row, 'market-watch-price'))
     if want_stale:
-        assert price_text == f'{want_price} stale ({label(fetched_at)})'
-        assert 'market-watch-stale' in row
+        assert price_text == f'{want_price} old ({label(fetched_at)})'
+        assert 'wf-price-old' in row
     else:
         assert price_text == want_price
-        assert 'market-watch-stale' not in row
+        assert 'wf-price-old' not in row
     if url_name:
         assert f'href="https://warframe.market/items/{url_name}"' in row
     else:
@@ -151,12 +152,12 @@ def test_the_users_cache_setting_decides_stale(app, admin_client, users, request
         item = add_item('Soma Prime Set', 'soma_prime_set', owner=users['admin'])
         watch(users['admin'], item)
         cache(item, 40, ago(timedelta(hours=2)))
-    assert 'market-watch-stale' not in panel(admin_client)
+    assert 'wf-price-old' not in panel(admin_client)
     with app.app_context():
         get_db().execute("INSERT INTO settings (user_id, key, value) "
                          "VALUES (?, 'market_cache_hours', '1')", (users['admin'],))
         get_db().commit()
-    assert 'market-watch-stale' in panel(admin_client)
+    assert 'wf-price-old' in panel(admin_client)
     assert requests_made == []
 
 

@@ -15,7 +15,7 @@ ESCAPED_SITES = [
     ('/farming/', 'escText(opp.name)'),
     ('/farming/', "escText((opp.goal_labels || []).join(', '))"),
     ('/farming/', 'escText(h.name)'),
-    ('/farming/', 'escText(plan.market_url)'),
+    ('/farming/', 'wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true)'),
     ('/farming/', 'escText(comp.image_url)'),
     ('/farming/', 'escText(ing.image_url)'),
     ('/farming/', 'escText(ing.ingredient_name)'),

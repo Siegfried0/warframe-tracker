@@ -66,8 +66,9 @@ def capture(monkeypatch):
         seen['dashboard_hours'] = cache_hours
         return []
 
-    def fake_farm_next(uid, buy_threshold, plat_per_hour, limit):
+    def fake_farm_next(uid, buy_threshold, plat_per_hour, limit, cache_hours):
         seen['dashboard_thresholds'] = (buy_threshold, plat_per_hour)
+        seen['farm_next_hours'] = cache_hours
         return []
 
     def fake_price(item_id, url_name, cache_hours):
@@ -109,6 +110,7 @@ def test_cache_hours_read_as_a_whole_number_or_six_on_every_page(
 
     assert admin_client.get('/dashboard').status_code == 200
     assert capture['dashboard_hours'] == expected
+    assert capture['farm_next_hours'] == expected
 
     page = admin_client.get('/market/')
     assert page.status_code == 200
@@ -133,7 +135,8 @@ def test_thresholds_read_as_a_whole_number_or_unset_on_the_dashboard(
 
 def test_no_settings_rows_read_as_the_defaults(app, admin_client, capture):
     assert admin_client.get('/dashboard').status_code == 200
-    assert (capture['dashboard_hours'], *capture['dashboard_thresholds']) == (6, None, None)
+    assert (capture['dashboard_hours'], capture['farm_next_hours'],
+            *capture['dashboard_thresholds']) == (6, 6, None, None)
 
 
 def _save(client, **fields):

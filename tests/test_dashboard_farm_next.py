@@ -2,7 +2,8 @@
 
 Loading the dashboard never requests a market price, with or without pinned goals, whatever
 the cache holds. Without pinned goals the list shows the unowned items with their cached
-price of any age (a dash without one) and the buy recommendation computed from it; with
+price of any age (a dash without one), an "old" mark with its fetch time when it is older
+than the user's cache setting, and the buy recommendation computed from it; with
 pinned goals the list is not built. The prices are read in one query and nothing is
 written. The Farming Planner's goal plan keeps fetching the goal item's price on open, but
 honours the user's market cache setting.
@@ -31,6 +32,10 @@ STALE_AGE = timedelta(hours=30)    # older than the default 6 h and than 24 h
 
 def ago(age):
     return (datetime.utcnow() - age).isoformat()
+
+
+def old_mark(fetched_at):
+    return ' old (' + datetime.fromisoformat(fetched_at).strftime('%Y-%m-%d %H:%M') + ' UTC)'
 
 
 @pytest.fixture
@@ -117,10 +122,13 @@ CACHE_STATES = [
 def test_loading_the_dashboard_requests_no_market_price_and_writes_no_cache_row(
         app, admin_client, admin_id, requests_made, state, pinned):
     _, price, age, want_cell = state
+    fetched_at = ago(age) if age is not None else None
+    if age == STALE_AGE:
+        want_cell += old_mark(fetched_at)
     with app.app_context():
         item = add_item('Braton Prime')
         if age is not None:
-            cache(item, price, ago(age))
+            cache(item, price, fetched_at)
         if pinned:
             pin(admin_id, add_item('Soma Prime', 'soma_prime_set'))
         before = cache_rows()
@@ -151,12 +159,13 @@ THRESHOLD_CASES = [
 def test_the_buy_recommendation_comes_from_the_cached_price_and_the_threshold(
         app, admin_client, admin_id, requests_made, case):
     _, price, threshold, want_cell = case
+    fetched_at = ago(STALE_AGE)
     with app.app_context():
         item = add_item('Braton Prime')
-        cache(item, price, ago(STALE_AGE))
+        cache(item, price, fetched_at)
         if threshold is not None:
             set_setting(admin_id, 'buy_threshold_plat', threshold)
-    assert market_cell(farm_card(admin_client), 'Braton Prime') == want_cell
+    assert market_cell(farm_card(admin_client), 'Braton Prime') == want_cell + old_mark(fetched_at)
     assert requests_made == []
 
 
@@ -165,13 +174,14 @@ def test_the_farming_time_check_uses_the_cached_price(app, admin_client, admin_i
     """120 runs at 5 min are 10 h; at 20p/h that is 200p, above a cached 150p: buy."""
     with app.app_context():
         item = add_item('Braton Prime')
-        cache(item, 150, ago(STALE_AGE))
+        fetched_at = ago(STALE_AGE)
+        cache(item, 150, fetched_at)
         get_db().execute('INSERT INTO drop_sources (item_id, location, avg_runs) '
                          "VALUES (?, 'Earth/Mantle', 120)", (item,))
         get_db().commit()
         set_setting(admin_id, 'plat_per_hour', '20')
     card = farm_card(admin_client)
-    assert market_cell(card, 'Braton Prime') == 'Buy 150p'
+    assert market_cell(card, 'Braton Prime') == 'Buy 150p' + old_mark(fetched_at)
     assert '~10.0h farming × 20p/h &gt; market 150p' in card
     assert requests_made == []
 
@@ -210,7 +220,8 @@ def test_the_prices_are_read_in_one_query(app, requests_made):
             get_db().set_trace_callback(None)
     reads = [s for s in statements if 'market_cache' in s]
     assert len(reads) == 1
-    assert reads[0].startswith('SELECT item_id, platinum_price FROM market_cache WHERE item_id IN')
+    assert reads[0].startswith('SELECT item_id, platinum_price, fetched_at FROM market_cache '
+                               'WHERE item_id IN')
     assert not any(s.lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE'))
                    for s in statements)
     assert [i['market_price'] for i in items] == [10, None, 30, 40, 50]

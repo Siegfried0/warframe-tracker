@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from '_icons.html' import icon %}
+{% from '_prices.html' import market_price %}
 {% block title %}Dashboard — Warframe Tracker{% endblock %}
 {% block content %}
 
@@ -197,13 +198,13 @@
                 {% endif %}
               </td>
               <td class="grey-text">{{ item.category }}</td>
-              <td>
+              <td class="farm-next-price">
+                {% if item.price %}
                 {% if item.recommend_buy %}
-                <span class="green-text" title="{{ item.recommend_reason }}">
-                  Buy {{ item.market_price }}p {{ icon('thumb_up', 'tiny') }}
-                </span>
-                {% elif item.market_price %}
-                <span class="grey-text">{{ item.market_price }}p</span>
+                <span class="green-text farm-next-buy" title="{{ item.recommend_reason }}">Buy {{ icon('thumb_up', 'tiny') }}</span>
+                {% endif %}
+                {{ market_price(item.id, item.price, name=item.name,
+                                classes='green-text' if item.recommend_buy else 'grey-text') }}
                 {% else %}—{% endif %}
               </td>
             </tr>
@@ -229,8 +230,8 @@
       <div class="card-content white-text">
         <span class="card-title">{{ icon('store', 'left') }}Market Watch</span>
         <p class="grey-text" style="font-size:.85rem">
-          Last cached prices; a price older than {{ market_cache_hours }} hour(s) is marked stale.
-          Refresh them on the market page.
+          Last cached prices; a price older than {{ market_cache_hours }} hour(s) is marked old,
+          with a refresh button beside it that asks warframe.market for that item alone.
         </p>
         {% if market_watch %}
         <table class="wf-table" id="market-watch-table">
@@ -239,13 +240,7 @@
             {% for item in market_watch %}
             <tr class="market-watch-row">
               <td class="market-watch-name">{{ item.name }}</td>
-              <td class="market-watch-price">
-                {% if item.platinum_price is not none %}{{ item.platinum_price }}p{% else %}—{% endif %}
-                {% if item.stale %}
-                <span class="orange-text market-watch-stale" style="font-size:.75rem"
-                      title="Fetched {{ item.fetched_label }}">stale ({{ item.fetched_label }})</span>
-                {% endif %}
-              </td>
+              <td class="market-watch-price">{{ market_price(item.id, item.price, name=item.name) }}</td>
               <td>
                 {% if item.market_url %}
                 <a href="{{ item.market_url }}" target="_blank" rel="noopener" class="grey-text market-watch-link"

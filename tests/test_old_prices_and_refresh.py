@@ -1,6 +1,7 @@
 """Old market prices stay shown with their age, and each old or missing price has a refresh button.
 
-The market page and the collection browser (its cards and its table) show
+Every place that shows a price (the market page, the dashboard's Market Watch panel and its
+Farm next list, the farming plan's goal price, the collection browser's cards and table) shows
 the cached price of any age: `—` only when none is cached or the market had no sell order in
 game, `0p` for a cached zero. A price older than the user's `market_cache_hours` (an unreadable
 fetch time included), or kept after a failed request, carries an "old" mark with its fetch time.
@@ -10,8 +11,8 @@ a fresh price has none. One page script (static/js/app.js) handles every button:
 every display of the item, ignores a click while that item's request runs, keeps the shown
 price on any failure and inserts values from an answer as text only.
 
-Loading a page requests no price (`requests.get` is patched to fail the test if called).
-Network refused (tests/conftest.py).
+Loading a page requests no price (`requests.get` is patched to fail the test if called), except
+the goal plan's one `get_price()` per open. Network refused (tests/conftest.py).
 """
 import re
 from datetime import datetime, timedelta
@@ -24,6 +25,7 @@ from models.db import get_db
 from models.item import Item
 from models.user import User
 from services import market_api
+from services.farming_service import add_farming_goal
 from services.market_api import price_view
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -51,7 +53,7 @@ STATES = [
     ('large fresh', (2147483647, ago(FRESH)), '2147483647p', None, False),
     ('unreadable fetch time', (75, 'not a time'), '75p', 'old (not a time)', True),
 ]
-PLACES = ['market page', 'collection cards', 'collection table']
+PLACES = ['market page', 'Market Watch', 'Farm next', 'collection cards', 'collection table']
 NAME = 'Braton Prime'
 
 
@@ -110,6 +112,11 @@ def section(client, place):
     """The markup of one place that shows prices."""
     if place == 'market page':
         return html_of(client, '/market/')
+    if place in ('Market Watch', 'Farm next'):
+        html = html_of(client, '/dashboard')
+        if place == 'Market Watch':
+            return between(html, 'id="market-watch"', '<script')
+        return between(html, 'Farm Next</span>', 'Farming Planner</a>')
     html = html_of(client, '/collection/primary')
     if place == 'collection cards':
         return between(html, 'id="collection-cards"', 'id="collection-table"')
@@ -162,7 +169,8 @@ def test_each_place_shows_the_cached_price_its_old_mark_and_the_refresh_button(
     assert requests_made == []
 
 
-@pytest.mark.parametrize('place', PLACES)
+@pytest.mark.parametrize('place', ['market page', 'Market Watch', 'collection cards',
+                                   'collection table'])
 def test_an_old_price_without_a_market_slug_has_no_button(app, admin_client, admin_id,
                                                           requests_made, place):
     """Tradable without a slug: shown and marked old, but there is nothing to request."""
@@ -188,6 +196,21 @@ def test_the_cache_setting_of_the_user_decides_old(app, admin_client, admin_id, 
     for place in PLACES:
         text, old, button = shown(price_elements(section(admin_client, place), iid)[0])
         assert old.startswith('old (') and button is not None, place
+
+
+def test_the_dashboard_shows_one_item_twice_with_the_same_hook(app, admin_client, admin_id,
+                                                               requests_made):
+    """Watched and unowned: Market Watch and Farm next both show it, both under its id, so one
+    refresh updates both."""
+    with app.app_context():
+        iid = add_item(NAME)
+        watch(admin_id, iid)
+        cache(iid, 95, OLD_AT)
+    elements = price_elements(html_of(admin_client, '/dashboard'), iid)
+    assert len(elements) == 2
+    assert [shown(e) for e in elements] == [('95p', f'old ({OLD_LABEL})',
+                                             (iid, f'Refresh the price of {NAME} from warframe.market'))] * 2
+    assert requests_made == []
 
 
 def test_the_market_page_shows_each_fetch_time_under_the_items_hook(app, admin_client, admin_id,
@@ -218,6 +241,8 @@ def test_a_hostile_item_name_is_drawn_as_text_in_the_buttons_name(app, admin_cli
 
 def test_an_empty_watchlist_and_an_empty_collection_show_no_price(app, admin_client,
                                                                   requests_made):
+    assert 'class="wf-price' not in between(html_of(admin_client, '/dashboard'),
+                                            'id="market-watch"', '<script')
     assert 'class="wf-price' not in html_of(admin_client, '/market/')
     assert 'class="wf-price"' not in html_of(admin_client, '/collection/primary')
 
@@ -257,7 +282,7 @@ def test_a_fresh_price_written_by_a_failed_requests_kept_row_is_still_old():
     assert view['stale'] and view['refresh'] and view['platinum'] == 0
 
 
-# ── The refresh answer ────────────────────────────────────────────────────────
+# ── The goal plan: one get_price() per open, its answer shown with the same view ──
 
 class Answer:
     def __init__(self, platinum):
@@ -270,6 +295,96 @@ class Answer:
         return {'data': [{'type': 'sell', 'platinum': self.platinum, 'visible': True,
                           'user': {'status': 'ingame'}}], 'error': None}
 
+
+# (case id, cache row, market: a price or 'fail' or None for not asked,
+#  want (platinum, stale, failed, refresh, fetched_label or True for any))
+PLAN_CASES = [
+    ('fresh: not asked', (120, ago(FRESH)), None, (120, False, False, False, True)),
+    ('fresh 0p: not asked', (0, ago(FRESH)), None, (0, False, False, False, True)),
+    ('fresh NULL: not asked', (None, ago(FRESH)), None, (None, False, False, False, True)),
+    ('old, answered', (95, OLD_AT), 77, (77, False, False, False, True)),
+    ('old, failed: kept', (95, OLD_AT), 'fail', (95, True, True, True, OLD_LABEL)),
+    ('old 0p, failed: kept', (0, OLD_AT), 'fail', (0, True, True, True, OLD_LABEL)),
+    ('none, failed', None, 'fail', (None, False, True, True, None)),
+    ('unreadable, failed', (75, 'not a time'), 'fail', (75, True, True, True, 'not a time')),
+]
+
+
+@pytest.mark.parametrize('case', PLAN_CASES, ids=[c[0] for c in PLAN_CASES])
+def test_the_goal_plan_carries_the_price_view_of_its_one_request(
+        app, admin_client, admin_id, monkeypatch, case):
+    _, row, market, (platinum, stale, failed, refresh, label) = case
+    calls = []
+
+    def fake_get(url, *args, **kwargs):
+        calls.append(url)
+        if market == 'fail':
+            raise requests.ConnectionError('refused')
+        return Answer(market)
+
+    monkeypatch.setattr(market_api.requests, 'get', fake_get)
+    with app.app_context():
+        iid = add_item(NAME)
+        if row is not None:
+            cache(iid, *row)
+        goal_id = add_farming_goal(admin_id, iid)['goal_id']
+    plan = admin_client.get(f'/farming/goals/{goal_id}/plan').get_json()['plan']
+    view = plan['market']
+    assert plan['market_item_id'] == iid
+    assert (view['platinum'], view['stale'], view['failed'], view['refresh']) == (
+        platinum, stale, failed, refresh)
+    assert plan['market_price'] == platinum
+    if label is True:
+        assert view['fetched_label']
+    else:
+        assert view['fetched_label'] == label
+    if failed:
+        assert view['error'] == ('warframe.market gave no price (no answer); '
+                                 'the last price is kept.')
+    assert len(calls) == (0 if market is None else 1)
+
+
+def test_a_goal_without_a_market_slug_has_no_price_view(app, admin_client, admin_id,
+                                                        requests_made):
+    with app.app_context():
+        iid = add_item(NAME, slug=None)
+        goal_id = add_farming_goal(admin_id, iid)['goal_id']
+    plan = admin_client.get(f'/farming/goals/{goal_id}/plan').get_json()['plan']
+    assert plan['market'] is None and plan['market_price'] is None
+    assert requests_made == []
+
+
+def test_a_hostile_goal_name_reaches_the_plan_script_only_through_the_escaping_markup(
+        app, admin_client, admin_id, requests_made):
+    """The plan's JSON carries the name as data; its script draws it only as the button's
+    name inside wfPriceMarkup, which escapes it (pinned by the page-script tests above)."""
+    hostile = '<b>&Co" x'
+    with app.app_context():
+        iid = add_item(hostile, slug='hostile')
+        cache(iid, 95, OLD_AT)
+        goal_id = add_farming_goal(admin_id, iid)['goal_id']
+    plan = admin_client.get(f'/farming/goals/{goal_id}/plan').get_json()['plan']
+    assert plan['item_name'] == hostile
+    assert plan['market']['refresh'] and plan['market_item_id'] == iid
+    html = html_of(admin_client, '/farming/')
+    uses = [m.start() for m in re.finditer(r'plan\.item_name', html)]
+    assert len(uses) == 2
+    for at in uses:
+        assert html[at - len('wfPriceMarkup(plan.market_item_id, plan.market, '):at] == \
+            'wfPriceMarkup(plan.market_item_id, plan.market, '
+
+
+@pytest.mark.parametrize('spot', ["'Market price: ' + wfPriceMarkup(plan.market_item_id, "
+                                  "plan.market, plan.item_name, true)",
+                                  "'Market: ' + wfPriceMarkup(plan.market_item_id, plan.market, "
+                                  "plan.item_name, true)"])
+def test_both_goal_plan_spots_draw_the_price_through_the_shared_markup(admin_client, spot):
+    html = html_of(admin_client, '/farming/')
+    assert spot in html
+    assert 'if (plan.market) {' in html and 'if (plan.market_price)' not in html
+
+
+# ── The refresh answer ────────────────────────────────────────────────────────
 
 def test_a_failed_refresh_answers_502_with_the_kept_price_and_its_label(app, admin_client,
                                                                         monkeypatch):
@@ -369,7 +484,7 @@ def test_the_shared_escape_covers_markup_and_both_quotes():
         assert pair in escape, pair
 
 
-@pytest.mark.parametrize('path', ['/market/', '/collection/primary'])
+@pytest.mark.parametrize('path', ['/dashboard', '/market/', '/collection/primary', '/farming/'])
 def test_every_page_with_prices_has_the_route_and_no_handler_of_its_own(admin_client, path):
     html = html_of(admin_client, path)
     assert '<meta name="market-price-url" content="/market/price/0">' in html

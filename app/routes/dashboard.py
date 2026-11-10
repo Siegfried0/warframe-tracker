@@ -47,7 +47,8 @@ def index():
     farm_next = []
     if not pinned_goals:
         farm_next = farm_next_items(uid, get_setting_int(uid, 'buy_threshold_plat'),
-                                    get_setting_int(uid, 'plat_per_hour'), FARM_NEXT_ROWS)
+                                    get_setting_int(uid, 'plat_per_hour'), FARM_NEXT_ROWS,
+                                    cache_hours)
 
     # Market watch panel: cached prices only, never a request
     market_watch = watchlist_prices(uid, cache_hours, limit=MARKET_WATCH_ROWS)

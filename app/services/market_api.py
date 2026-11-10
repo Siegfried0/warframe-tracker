@@ -171,23 +171,6 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
             'from_cache': False}
 
 
-def cached_prices(item_ids: list[int]) -> dict[int, int | None]:
-    """The cached price of each listed item that has a cache row, of any age.
-
-    Reads only the cache, in one query, and writes nothing: never requests a price. An item
-    without a cache row is absent from the result; a row without a price maps to None.
-    """
-    ids = list(dict.fromkeys(item_ids))
-    if not ids:
-        return {}
-    placeholders = ','.join('?' for _ in ids)
-    rows = get_db().execute(
-        f'SELECT item_id, platinum_price FROM market_cache WHERE item_id IN ({placeholders})',
-        ids,
-    ).fetchall()
-    return {row['item_id']: row['platinum_price'] for row in rows}
-
-
 def cached_price_rows(item_ids: list[int]) -> dict[int, dict]:
     """The cache row of each listed item that has one, of any age: `{item id: {'platinum',
     'fetched_at'}}` (`platinum` None for a row without a price).

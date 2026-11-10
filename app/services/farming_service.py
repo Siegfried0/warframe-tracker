@@ -11,7 +11,7 @@ from flask import current_app
 from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
-from services.market_api import cached_prices, get_price, market_url_for
+from services.market_api import cached_price_rows, get_price, market_url_for, price_view
 from services.relic_sources import is_relic_source, relics_by_part
 from services.relic_sync import is_relic_name
 from services.resurgence_sync import resurgence_status, vaulted_note
@@ -221,32 +221,34 @@ def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict
 
 
 def farm_next_items(user_id: int, buy_threshold_plat: int | None,
-                    plat_per_hour: int | None, limit: int) -> list[dict]:
+                    plat_per_hour: int | None, limit: int, cache_hours: int = 6) -> list[dict]:
     """The caller's first `limit` unowned, unmastered items, priced from the cache.
 
     The dashboard's "Farm next" list. Never requests a price (see `enrich_with_cached_market`).
     """
     items = Progress.get_unowned_items(user_id)[:limit]
-    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour)
+    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour, cache_hours)
 
 
 def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
-                              plat_per_hour: int | None) -> list[dict]:
+                              plat_per_hour: int | None, cache_hours: int = 6) -> list[dict]:
     """
     Annotate each item dict with a market slug with its cached market price and a buy
     recommendation (the slug alone decides: an item the market sells only as a set is not
     tradable, yet priced).
     Mutates items in-place and returns them.
 
-    The price is the cached one of any age, read for all items in one query; nothing is
-    requested or written. An item without a cached price gets `market_price` None and no
-    recommendation.
+    The price is the cached one of any age, read with its fetch time for all items in one
+    query; nothing is requested or written. Each priced item also gets `price`, its
+    `price_view` (old mark, fetch time, refresh button) under the user's `cache_hours`. An
+    item without a cached price gets `market_price` None and no recommendation.
     """
     priced = [item for item in items
               if item.get('market_url_name')]
-    prices = cached_prices([item['id'] for item in priced])
+    rows = cached_price_rows([item['id'] for item in priced])
     for item in priced:
-        plat = prices.get(item['id'])
+        item['price'] = price_view(rows.get(item['id']), cache_hours, item['market_url_name'])
+        plat = item['price']['platinum']
         item['market_price'] = plat
         item['market_url'] = market_url_for(item['market_url_name'])
         item['recommend_buy'] = False
@@ -810,9 +812,19 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         price_data = get_price(item_id, item_row['market_url_name'], cache_hours)
         plan['market_price'] = price_data.get('platinum')
         plan['market_url'] = market_url_for(item_row['market_url_name'])
+        # How the page shows it: a fresh answer or row is fresh; a kept row after a failed
+        # request is old; no row is a missing price. All with a refresh button but the fresh.
+        row = ({'platinum': price_data['platinum'], 'fetched_at': price_data['fetched_at']}
+               if price_data.get('fetched_at') is not None else None)
+        plan['market'] = price_view(row, cache_hours, item_row['market_url_name'],
+                                    failed=bool(price_data.get('failed')))
+        plan['market_item_id'] = item_id
+        if price_data.get('failed'):
+            plan['market']['error'] = price_data['error']
     else:
         plan['market_price'] = None
         plan['market_url'] = None
+        plan['market'] = None
 
     return plan
 
