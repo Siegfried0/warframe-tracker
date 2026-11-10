@@ -185,7 +185,7 @@
         </p>
         {% if farm_next %}
         <table class="wf-table">
-          <thead><tr><th>Name</th><th>Category</th><th>Market</th></tr></thead>
+          <thead><tr><th>Name</th><th>Category</th><th class="farm-next-hours" title="Estimated farming time of all the item's parts; the list is ranked by it, quickest first">Farming time</th><th>Market</th></tr></thead>
           <tbody>
             {% for item in farm_next %}
             <tr class="farm-next-row" data-item="{{ item.id }}">
@@ -198,6 +198,7 @@
                 {% endif %}
               </td>
               <td class="grey-text">{{ item.category }}</td>
+              <td class="farm-next-hours" style="white-space:nowrap">{{ item.farm_time }}</td>
               <td class="farm-next-price">
                 {% if item.price %}
                 {% if item.recommend_buy %}

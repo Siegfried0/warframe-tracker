@@ -10,6 +10,7 @@ Only catalogue data is written; user progress rows are never touched.
 """
 
 import logging
+import math
 from datetime import datetime
 from urllib.parse import unquote
 
@@ -1648,6 +1649,54 @@ def _match_drop_to_item(drop_name: str,
     return None
 
 
+def _wfcd_chance_percent(value) -> float | None:
+    """A WFCD drop chance in percent, or None.
+
+    WFCD's warframe-items gives each ``drops[].chance`` as a fraction from 0 to 1 (0.2533),
+    while ``drop_sources.drop_chance`` holds percent (25.33), as the warframestat drop tables
+    give it. Only a number above 0 and at most 1 is read; anything else (0, a negative, a
+    value above 1 such as a percent, a bool, a string, None, NaN, infinity, an integer too
+    large for a float) is None, and the caller skips the drop rather than guess its scale. A
+    fraction so small that its percent rounds to 0 at 4 decimals (below 5e-7) is None too.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        value = float(value)
+    except OverflowError:       # an integer too large for a float
+        return None
+    if not math.isfinite(value) or value <= 0 or value > 1:
+        return None
+    percent = round(value * 100, 4)
+    # A fraction below 5e-7 rounds to 0 percent; the row's avg_runs (100 / chance) has no
+    # value then, so the drop is skipped like any other unusable chance.
+    return percent if percent > 0 else None
+
+
+def _insert_wfcd_drop(db, item_id, drop, source_type, notes) -> bool:
+    """Insert one WFCD drop as a drop_sources row, its chance converted to percent; False
+    (nothing written) when the drop names no location or its chance is not a fraction."""
+    location = drop.get('location', '').strip()
+    chance   = _wfcd_chance_percent(drop.get('chance'))
+    if not location or chance is None:
+        return False
+    db.execute(
+        '''INSERT INTO drop_sources
+               (item_id, mission_type, location, drop_chance,
+                avg_runs, source_type, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (item_id, drop.get('type', 'Unknown'), location,
+         chance, round(100.0 / chance, 1), source_type, notes),
+    )
+    return True
+
+
+def _log_skipped_wfcd_drops(filename: str, skipped: int) -> None:
+    if skipped:
+        log.warning('%s: skipped %d drop(s) without a location or a chance between 0 and 1',
+                    filename, skipped)
+
+
 def _sync_resource_drops(db) -> int:
     """Insert drop_sources for resource items from WFCD Resources.json."""
     try:
@@ -1656,7 +1705,7 @@ def _sync_resource_drops(db) -> int:
         log.warning('Could not fetch Resources.json for drop sync: %s', exc)
         return 0
 
-    count = 0
+    count = skipped = 0
     for item_data in items_data:
         name = item_data.get('name', '').strip()
         if not name:
@@ -1669,20 +1718,11 @@ def _sync_resource_drops(db) -> int:
             continue
         item_id = row['id']
         for drop in item_data.get('drops', []):
-            location = drop.get('location', '').strip()
-            chance   = drop.get('chance')
-            if not location or not chance:
-                continue
-            avg_runs = round(100.0 / chance, 1) if chance > 0 else None
-            db.execute(
-                '''INSERT INTO drop_sources
-                       (item_id, mission_type, location, drop_chance,
-                        avg_runs, source_type, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                (item_id, drop.get('type', 'Unknown'), location,
-                 round(chance, 4), avg_runs, 'resource', name),
-            )
-            count += 1
+            if _insert_wfcd_drop(db, item_id, drop, 'resource', name):
+                count += 1
+            else:
+                skipped += 1
+    _log_skipped_wfcd_drops('Resources.json', skipped)
     return count
 
 
@@ -1707,6 +1747,7 @@ def _sync_wfcd_component_drops(db) -> int:
             log.warning('Skipping %s for drop sync: %s', filename, exc)
             continue
 
+        skipped = 0
         for item_data in items_data:
             name = item_data.get('name', '').strip()
             if not name or not item_data.get('masterable'):
@@ -1725,20 +1766,11 @@ def _sync_wfcd_component_drops(db) -> int:
             for comp in item_data.get('components', []):
                 comp_name = comp.get('name', '')
                 for drop in comp.get('drops', []):
-                    location = drop.get('location', '').strip()
-                    chance   = drop.get('chance')
-                    if not location or not chance:
-                        continue
-                    avg_runs = round(100.0 / chance, 1) if chance > 0 else None
-                    db.execute(
-                        '''INSERT INTO drop_sources
-                               (item_id, mission_type, location, drop_chance,
-                                avg_runs, source_type, notes)
-                           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                        (item_id, drop.get('type', 'Unknown'), location,
-                         round(chance, 4), avg_runs, 'component', comp_name),
-                    )
-                    count += 1
+                    if _insert_wfcd_drop(db, item_id, drop, 'component', comp_name):
+                        count += 1
+                    else:
+                        skipped += 1
+        _log_skipped_wfcd_drops(filename, skipped)
     return count
 
 

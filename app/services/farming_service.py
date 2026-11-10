@@ -13,8 +13,9 @@ from models.db import get_db
 from models.item import Item
 from models.progress import Progress
 from services.auth_service import get_setting_int
-from services.buy_vs_farm import (expected_hours, item_sources, part_hours, recommend,
-                                  user_thresholds, vaulted_parts)
+from services.buy_vs_farm import (expected_hours, hours_label, item_sources,
+                                  item_sources_many, part_hours, recommend, user_thresholds,
+                                  vaulted_parts)
 from services.component_prices import component_price_rows
 from services.market_api import cached_price_rows, get_price, market_url_for, price_view
 from services.relic_sources import is_relic_source, relics_by_part
@@ -228,13 +229,26 @@ def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict
 def farm_next_items(user_id: int, buy_threshold_plat: int | None,
                     plat_per_hour: int | None, limit: int, cache_hours: int = 6,
                     farm_hour_cap: int | None = None) -> list[dict]:
-    """The caller's first `limit` unowned, unmastered items, priced from the cache.
+    """The caller's `limit` quickest unowned, unmastered items to farm, priced from the cache.
 
-    The dashboard's "Farm next" list. Never requests a price (see `enrich_with_cached_market`).
+    The dashboard's "Farm next" list. Every unowned item is ranked by its expected farming
+    time, every part counted (`buy_vs_farm.expected_hours()` over `item_sources_many()`):
+    fewest hours first, items with an unknown time (a vaulted part included) after all
+    the others; equal times keep the category and name order. Each listed item gets its
+    `farm_hours` and their label `farm_time` (`~2.0h`, `—` when unknown). Never requests a
+    price (see `enrich_with_cached_market`).
     """
-    items = Progress.get_unowned_items(user_id)[:limit]
-    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour, cache_hours,
-                                     farm_hour_cap)
+    items = Progress.get_unowned_items(user_id)
+    sources = item_sources_many([item['id'] for item in items])
+    for item in items:
+        item['farm_hours'] = expected_hours(sources[item['id']])
+    # stable: equal times stay in the category and name order of get_unowned_items()
+    items.sort(key=lambda item: (item['farm_hours'] is None, item['farm_hours'] or 0.0))
+    listed = items[:limit]
+    for item in listed:
+        item['farm_time'] = hours_label(item['farm_hours'])
+    return enrich_with_cached_market(listed, buy_threshold_plat, plat_per_hour, cache_hours,
+                                     farm_hour_cap, sources=sources)
 
 
 def farm_next_answer(item_id: int, buy_threshold_plat: int | None,
@@ -257,7 +271,8 @@ def farm_next_answer(item_id: int, buy_threshold_plat: int | None,
 
 def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
                               plat_per_hour: int | None, cache_hours: int = 6,
-                              farm_hour_cap: int | None = None) -> list[dict]:
+                              farm_hour_cap: int | None = None,
+                              sources: dict | None = None) -> list[dict]:
     """
     Annotate each item dict with a market slug with its cached market price and the
     buy-or-farm answer of `services.buy_vs_farm` (the slug alone decides: an item the
@@ -269,7 +284,8 @@ def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
     `price_view` (old mark, fetch time, refresh button) under the user's `cache_hours`. An
     item without a cached price gets `market_price` None; only the hour cap can then
     recommend buying it. The farming time counts every part of the item (no goal says
-    which are done): `recommend_buy`, `recommend_reason`, `expected_hours`.
+    which are done): `recommend_buy`, `recommend_reason`, `expected_hours`. `sources`, when
+    given, holds the items' `item_sources()` already read ({item id: sources}).
     """
     priced = [item for item in items
               if item.get('market_url_name')]
@@ -279,10 +295,11 @@ def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
         plat = item['price']['platinum']
         item['market_price'] = plat
         item['market_url'] = market_url_for(item['market_url_name'])
-        sources = item_sources(item['id'])
-        answer = recommend(plat, expected_hours(sources),
+        found = sources.get(item['id']) if sources is not None else None
+        found = found if found is not None else item_sources(item['id'])
+        answer = recommend(plat, expected_hours(found),
                            buy_threshold_plat, farm_hour_cap, plat_per_hour,
-                           vaulted=vaulted_parts(sources))
+                           vaulted=vaulted_parts(found))
         item['recommend_buy'] = answer['recommend']
         item['recommend_reason'] = answer['reason']
         item['expected_hours'] = answer['expected_hours']

@@ -96,14 +96,18 @@ def _positive(value):
 def source_minutes(row, nowhere=frozenset()) -> float | None:
     """Minutes to get one drop from a drop source row (``mission_type``, ``location``,
     ``drop_chance``, ``avg_runs``, ``source_type``), or None when the row gives no number or
-    is a relic whose name key is in ``nowhere`` (it drops from no mission)."""
+    is a relic whose name key is in ``nowhere`` (it drops from no mission), or when the
+    minutes overflow to infinity."""
     if is_relic_source(row['source_type'], row['location']):
         if name_key(row['location']) in nowhere:
             return None
         chance = _positive(row['drop_chance'])
-        return 100.0 / chance * RELIC_OPENING_MINUTES if chance else None
-    runs = _positive(row['avg_runs'])
-    return runs * minutes_per_run(row['mission_type'], row['location']) if runs else None
+        minutes = 100.0 / chance * RELIC_OPENING_MINUTES if chance else None
+    else:
+        runs = _positive(row['avg_runs'])
+        minutes = runs * minutes_per_run(row['mission_type'], row['location']) if runs else None
+    # a tiny chance or a huge run count overflows to infinity: no number either
+    return minutes if minutes is not None and math.isfinite(minutes) else None
 
 
 def _best(current, minutes):
@@ -112,22 +116,24 @@ def _best(current, minutes):
     return minutes if current is None else min(current, minutes)
 
 
-def item_sources(item_id: int, db=None) -> dict:
-    """The farming time of an item's parts and of the item itself, from its drop rows.
+# Item ids a query of the batched read takes: under SQLite's default limit of 999 bound
+# parameters and MSSQL's 2,100
+SOURCES_CHUNK = 500
 
-    ``parts``: {part name key: best minutes, None when the part has no source}, over the
-    parts the Farming Planner lists (those with a drop row, a relic or a recipe);
-    ``own``: the best minutes of the item's own sources (none of a part), or None;
-    ``vaulted``: {part name key: part name} of the parts whose every source is a relic that
-    drops from no mission (the name as its first drop row spells it, blanks cleaned)."""
-    db = db or get_db()
-    rows = db.execute(
-        '''SELECT mission_type, location, drop_chance, avg_runs, source_type, notes
-             FROM drop_sources WHERE item_id = ?''',
-        (item_id,),
-    ).fetchall()
-    nowhere = relics_dropping_nowhere(
-        [r['location'] for r in rows if is_relic_source(r['source_type'], r['location'])], db)
+
+def _ids_in_chunks(db, sql: str, item_ids: list[int]) -> list:
+    """Rows of ``sql`` (one ``{}`` for the placeholders) for every id, SOURCES_CHUNK ids a
+    query."""
+    rows = []
+    for start in range(0, len(item_ids), SOURCES_CHUNK):
+        chunk = item_ids[start:start + SOURCES_CHUNK]
+        rows += db.execute(sql.format(','.join('?' for _ in chunk)), chunk).fetchall()
+    return rows
+
+
+def _sources(rows, components, nowhere) -> dict:
+    """``item_sources()``' answer for one item from its drop rows (in ``id`` order), its
+    ``component_ingredients`` component names and the relic name keys dropping nowhere."""
     parts: dict = defaultdict(lambda: None)
     names: dict = {}
     farmable: set = set()
@@ -144,21 +150,57 @@ def item_sources(item_id: int, db=None) -> dict:
                     farmable.add(key)
         else:
             own = _best(own, minutes)
-    for r in db.execute(
-            'SELECT DISTINCT component_name FROM component_ingredients WHERE item_id = ?',
-            (item_id,)).fetchall():
-        key = name_key(r['component_name'])
+    for component in components:
+        key = name_key(component)
         if key and key not in parts:
             parts[key] = None
     vaulted = {key: name for key, name in names.items() if key not in farmable}
     return {'parts': dict(parts), 'own': own, 'vaulted': vaulted}
 
 
+def item_sources_many(item_ids, db=None) -> dict[int, dict]:
+    """``item_sources()`` for every id of ``item_ids``: {item id: its answer}.
+
+    The drop rows and the components are read SOURCES_CHUNK items a query, and the relics
+    dropping nowhere are looked up once for all the items, so the number of queries does not
+    grow with each item."""
+    db = db or get_db()
+    ids = sorted({int(i) for i in item_ids})
+    if not ids:
+        return {}
+    rows: dict = defaultdict(list)
+    for r in _ids_in_chunks(db, '''SELECT item_id, mission_type, location, drop_chance, avg_runs,
+                                         source_type, notes
+                                    FROM drop_sources WHERE item_id IN ({})
+                                   ORDER BY item_id, id''', ids):
+        rows[r['item_id']].append(r)
+    components: dict = defaultdict(list)
+    for r in _ids_in_chunks(db, '''SELECT DISTINCT item_id, component_name
+                                    FROM component_ingredients WHERE item_id IN ({})''', ids):
+        components[r['item_id']].append(r['component_name'])
+    nowhere = relics_dropping_nowhere(
+        [r['location'] for item_rows in rows.values() for r in item_rows
+         if is_relic_source(r['source_type'], r['location'])], db)
+    return {item_id: _sources(rows[item_id], components[item_id], nowhere) for item_id in ids}
+
+
+def item_sources(item_id: int, db=None) -> dict:
+    """The farming time of an item's parts and of the item itself, from its drop rows.
+
+    ``parts``: {part name key: best minutes, None when the part has no source}, over the
+    parts the Farming Planner lists (those with a drop row, a relic or a recipe);
+    ``own``: the best minutes of the item's own sources (none of a part), or None;
+    ``vaulted``: {part name key: part name} of the parts whose every source is a relic that
+    drops from no mission (the name as its first drop row spells it, blanks cleaned).
+    The one-item case of ``item_sources_many()``."""
+    return item_sources_many([item_id], db)[int(item_id)]
+
+
 def expected_hours(sources: dict, needed=None) -> float | None:
     """Expected hours of farming from ``item_sources()``: the sum over the needed parts of
     each part's best minutes, or the item's own best source when it has no parts. ``needed``
     names the parts still needed (any spelling of case and blanks); None means all of them.
-    None when a needed part (or a part-less item) has no source."""
+    None when a needed part (or a part-less item) has no source, or the sum overflows."""
     parts = sources['parts']
     if not parts:
         return None if sources['own'] is None else sources['own'] / 60
@@ -169,7 +211,12 @@ def expected_hours(sources: dict, needed=None) -> float | None:
         if minutes is None:
             return None
         total += minutes
-    return total / 60
+    return total / 60 if math.isfinite(total) else None
+
+
+def hours_label(hours) -> str:
+    """Expected hours as the rule's reasons write them (``~2.0h``), ``—`` when unknown."""
+    return '—' if hours is None else f'~{hours:.1f}h'
 
 
 def part_hours(sources: dict, part) -> float | None:
@@ -206,11 +253,11 @@ def recommend(price, hours, buy_threshold_plat=None, farm_hour_cap=None,
     if hours is None:
         return answer(None, 'farming time unknown')
     if farm_hour_cap and hours > farm_hour_cap:
-        return answer('hour_cap', f'~{hours:.1f}h farming > hour cap {farm_hour_cap}h')
+        return answer('hour_cap', f'{hours_label(hours)} farming > hour cap {farm_hour_cap}h')
     if price is not None and plat_per_hour and hours * plat_per_hour > price:
         return answer('time_value',
-                      f'~{hours:.1f}h farming × {plat_per_hour}p/h > market {price}p')
-    return answer(None, f'~{hours:.1f}h farming')
+                      f'{hours_label(hours)} farming × {plat_per_hour}p/h > market {price}p')
+    return answer(None, f'{hours_label(hours)} farming')
 
 
 def user_thresholds(user_id) -> dict:
