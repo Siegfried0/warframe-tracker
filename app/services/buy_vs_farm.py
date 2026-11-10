@@ -1,12 +1,14 @@
 """Buy or farm: whether buying an item on warframe.market beats farming it.
 
-One rule for the dashboard's Farm next list and the Farming Planner. Three checks, in
+One rule for the dashboard's Farm next list and the Farming Planner. Four checks, in
 order; the first that fires wins:
 
 1. the price threshold: the price is at most the user's ``buy_threshold_plat``;
-2. the hour cap: the expected farming time is over the user's ``farm_hour_cap`` (needs no
+2. vaulted: a part still needed drops only from relics no mission drops (whatever the
+   settings, no price needed: buying is the only way);
+3. the hour cap: the expected farming time is over the user's ``farm_hour_cap`` (needs no
    price, only that the item is on the market);
-3. the time value: expected hours x the user's ``plat_per_hour`` is over the price.
+4. the time value: expected hours x the user's ``plat_per_hour`` is over the price.
 
 An unset setting switches its check off: no value for the threshold, no value or 0 for the
 cap and the rate. A check that needs a price or a known farming time does not fire without
@@ -15,8 +17,10 @@ one.
 The farming time is an estimate: each part still needed counts its best (fewest minutes)
 source, runs x the typical minutes of a run of that mission type (the row's type, or the game
 mode in brackets in its location), and the parts are added up. A relic counts one Void
-Fissure run per opening (``100 / chance`` openings); the relic's own farming is not counted. A needed
-part without any source makes the time unknown.
+Fissure run per opening (``100 / chance`` openings); the relic's own farming is not counted. A
+relic that drops from no mission gives no time; a part held only by such relics is vaulted.
+That needs drop data: while ``relic_drops`` is empty no relic counts as dropping nowhere. A
+needed part without any source makes the time unknown.
 """
 
 import math
@@ -25,8 +29,8 @@ from collections import defaultdict
 
 from models.db import get_db
 from services.auth_service import get_setting_int
-from services.relic_sources import is_relic_source
-from services.relic_sync import name_key
+from services.relic_sources import is_relic_source, relics_dropping_nowhere
+from services.relic_sync import clean, name_key
 
 # Typical minutes for one run of a mission type, as the drop tables name the game mode
 # (compared apart from case and surrounding blanks). A rotation mission counts one rotation
@@ -89,10 +93,13 @@ def _positive(value):
     return number if math.isfinite(number) and number > 0 else None
 
 
-def source_minutes(row) -> float | None:
+def source_minutes(row, nowhere=frozenset()) -> float | None:
     """Minutes to get one drop from a drop source row (``mission_type``, ``location``,
-    ``drop_chance``, ``avg_runs``, ``source_type``), or None when the row gives no number."""
+    ``drop_chance``, ``avg_runs``, ``source_type``), or None when the row gives no number or
+    is a relic whose name key is in ``nowhere`` (it drops from no mission)."""
     if is_relic_source(row['source_type'], row['location']):
+        if name_key(row['location']) in nowhere:
+            return None
         chance = _positive(row['drop_chance'])
         return 100.0 / chance * RELIC_OPENING_MINUTES if chance else None
     runs = _positive(row['avg_runs'])
@@ -110,21 +117,31 @@ def item_sources(item_id: int, db=None) -> dict:
 
     ``parts``: {part name key: best minutes, None when the part has no source}, over the
     parts the Farming Planner lists (those with a drop row, a relic or a recipe);
-    ``own``: the best minutes of the item's own sources (none of a part), or None."""
+    ``own``: the best minutes of the item's own sources (none of a part), or None;
+    ``vaulted``: {part name key: part name} of the parts whose every source is a relic that
+    drops from no mission (the name as its first drop row spells it, blanks cleaned)."""
     db = db or get_db()
     rows = db.execute(
         '''SELECT mission_type, location, drop_chance, avg_runs, source_type, notes
              FROM drop_sources WHERE item_id = ?''',
         (item_id,),
     ).fetchall()
+    nowhere = relics_dropping_nowhere(
+        [r['location'] for r in rows if is_relic_source(r['source_type'], r['location'])], db)
     parts: dict = defaultdict(lambda: None)
+    names: dict = {}
+    farmable: set = set()
     own = None
     for r in rows:
-        minutes = source_minutes(r)
+        minutes = source_minutes(r, nowhere)
         if r['source_type'] in ('component', 'relic'):
             key = name_key(r['notes'])
             if key:
                 parts[key] = _best(parts[key], minutes)
+                names.setdefault(key, clean(r['notes']))
+                if not (is_relic_source(r['source_type'], r['location'])
+                        and name_key(r['location']) in nowhere):
+                    farmable.add(key)
         else:
             own = _best(own, minutes)
     for r in db.execute(
@@ -133,7 +150,8 @@ def item_sources(item_id: int, db=None) -> dict:
         key = name_key(r['component_name'])
         if key and key not in parts:
             parts[key] = None
-    return {'parts': dict(parts), 'own': own}
+    vaulted = {key: name for key, name in names.items() if key not in farmable}
+    return {'parts': dict(parts), 'own': own, 'vaulted': vaulted}
 
 
 def expected_hours(sources: dict, needed=None) -> float | None:
@@ -154,19 +172,30 @@ def expected_hours(sources: dict, needed=None) -> float | None:
     return total / 60
 
 
+def vaulted_parts(sources: dict, needed=None) -> list[str]:
+    """The needed parts (``needed`` as in ``expected_hours()``) that are vaulted, by their
+    names from ``item_sources()``, in the order of their name keys."""
+    vaulted = sources.get('vaulted', {})
+    keys = vaulted.keys() if needed is None else {name_key(n) for n in needed}
+    return [vaulted[key] for key in sorted(keys) if key in vaulted]
+
+
 def recommend(price, hours, buy_threshold_plat=None, farm_hour_cap=None,
-              plat_per_hour=None) -> dict:
+              plat_per_hour=None, vaulted=()) -> dict:
     """The buy-or-farm answer for an item on the market.
 
-    ``price``: its platinum price or None; ``hours``: its expected farming hours or None.
-    Returns ``recommend`` (bool), ``check`` (``'threshold'``, ``'hour_cap'``,
-    ``'time_value'`` or None), ``reason`` (text) and ``expected_hours``."""
+    ``price``: its platinum price or None; ``hours``: its expected farming hours or None;
+    ``vaulted``: the names of its needed parts no mission drops (``vaulted_parts()``).
+    Returns ``recommend`` (bool), ``check`` (``'threshold'``, ``'vaulted'``, ``'hour_cap'``,
+    ``'time_value'`` or None), ``reason`` (text) and ``expected_hours`` (None when vaulted)."""
     def answer(check, reason):
         return {'recommend': check is not None, 'check': check, 'reason': reason,
-                'expected_hours': hours}
+                'expected_hours': None if check == 'vaulted' else hours}
 
     if price is not None and buy_threshold_plat is not None and price <= buy_threshold_plat:
         return answer('threshold', f'{price}p ≤ threshold {buy_threshold_plat}p')
+    if vaulted:
+        return answer('vaulted', f'{", ".join(vaulted)} vaulted: no mission drops it')
     if hours is None:
         return answer(None, 'farming time unknown')
     if farm_hour_cap and hours > farm_hour_cap:

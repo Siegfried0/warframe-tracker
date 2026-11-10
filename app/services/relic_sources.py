@@ -69,6 +69,18 @@ def _locations(db, relic_names: list[str]) -> dict[str, list[dict]]:
     return found
 
 
+def relics_dropping_nowhere(relic_names, db=None) -> set[str]:
+    """The name keys of those of ``relic_names`` that drop from no mission (no relic_drops
+    row, names compared apart from case and blanks). Empty while relic_drops holds no row at
+    all: drop data not synced yet says nothing about a relic being vaulted."""
+    db = db or get_db()
+    names = sorted({clean(n) for n in relic_names if clean(n)})
+    if not names or db.execute(
+            'SELECT 1 WHERE EXISTS (SELECT 1 FROM relic_drops)').fetchone() is None:
+        return set()
+    return {name_key(n) for n in names} - set(_locations(db, names))
+
+
 def _sort_key(relic: dict):
     """Relics by their easiest location (a vaulted relic, without one, last), then by
     the higher Intact chance, then by name."""

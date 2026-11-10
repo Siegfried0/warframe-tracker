@@ -11,7 +11,8 @@ from flask import current_app
 from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
-from services.buy_vs_farm import expected_hours, item_sources, recommend, user_thresholds
+from services.buy_vs_farm import (expected_hours, item_sources, recommend, user_thresholds,
+                                  vaulted_parts)
 from services.market_api import cached_price_rows, get_price, market_url_for, price_view
 from services.relic_sources import is_relic_source, relics_by_part
 from services.relic_sync import is_relic_name
@@ -257,8 +258,10 @@ def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
         plat = item['price']['platinum']
         item['market_price'] = plat
         item['market_url'] = market_url_for(item['market_url_name'])
-        answer = recommend(plat, expected_hours(item_sources(item['id'])),
-                           buy_threshold_plat, farm_hour_cap, plat_per_hour)
+        sources = item_sources(item['id'])
+        answer = recommend(plat, expected_hours(sources),
+                           buy_threshold_plat, farm_hour_cap, plat_per_hour,
+                           vaulted=vaulted_parts(sources))
         item['recommend_buy'] = answer['recommend']
         item['recommend_reason'] = answer['reason']
         item['expected_hours'] = answer['expected_hours']
@@ -813,9 +816,10 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         # Buy or farm: the parts not yet crafted and not held as a blueprint still need farming
         needed = [c['component_name'] for c in plan.get('components', [])
                   if c['goal_comp_state'] == 'pending']
-        answer = recommend(plan['market_price'],
-                           expected_hours(item_sources(item_id, db), needed),
-                           **user_thresholds(user_id))
+        sources = item_sources(item_id, db)
+        answer = recommend(plan['market_price'], expected_hours(sources, needed),
+                           **user_thresholds(user_id),
+                           vaulted=vaulted_parts(sources, needed))
         plan['recommend_buy'] = answer['recommend']
         plan['recommend_reason'] = answer['reason']
         plan['expected_hours'] = answer['expected_hours']
