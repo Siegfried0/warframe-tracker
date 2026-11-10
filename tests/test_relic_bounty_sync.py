@@ -386,11 +386,28 @@ def test_the_sync_logs_how_many_relic_locations_each_bounty_section_gave(ctx, so
 # ── The write path (axis 7) ──────────────────────────────────────────────────
 
 def _tables(db):
+    """Every table's rows, without any ``updated_at`` column: a rebuild stamps a fresh time
+    (one-second resolution), so two syncs a second apart would differ in it alone."""
     names = [r[0] for r in db.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
         "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-    return {name: sorted(tuple(r) for r in db.execute(f'SELECT * FROM "{name}"'))
-            for name in names}
+    snapshot = {}
+    for name in names:
+        columns = [r[1] for r in db.execute(f'PRAGMA table_info("{name}")')
+                   if r[1] != 'updated_at']
+        select = ', '.join(f'"{c}"' for c in columns)
+        snapshot[name] = sorted(tuple(r) for r in db.execute(f'SELECT {select} FROM "{name}"'))
+    return snapshot
+
+
+def test_the_table_snapshot_ignores_updated_at_but_sees_every_other_change(ctx, source):
+    wiki_sync._sync_drop_sources()
+    before = _tables(ctx)
+    assert before['drop_sources']
+    ctx.execute("UPDATE drop_sources SET updated_at = '2000-01-01 00:00:00'")
+    assert _tables(ctx) == before
+    ctx.execute("UPDATE drop_sources SET location = COALESCE(location, '') || 'x'")
+    assert _tables(ctx)['drop_sources'] != before['drop_sources']
 
 
 def test_the_bounty_sections_write_only_relic_drops(ctx, source, admin_client):
