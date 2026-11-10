@@ -20,37 +20,37 @@
       {{ icon('shield') }} WF Tracker
     </a>
     <a href="#" data-target="mobile-nav" class="sidenav-trigger">{{ icon('menu', label='Menu') }}</a>
-    <ul class="right hide-on-med-and-down">
+    <ul class="right hide-on-med-and-down top-nav">
       <li{% if request.endpoint and request.endpoint.startswith('dashboard') %} class="active"{% endif %}>
-        <a href="{{ url_for('dashboard.index') }}">{{ icon('dashboard', 'left') }}Dashboard</a>
+        <a href="{{ url_for('dashboard.index') }}" title="Dashboard">{{ icon('dashboard', 'left') }}<span class="nav-label">Dashboard</span></a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('collection') %} class="active"{% endif %}>
-        <a href="{{ url_for('collection.index') }}">{{ icon('list', 'left') }}Collection</a>
+        <a href="{{ url_for('collection.index') }}" title="Collection">{{ icon('list', 'left') }}<span class="nav-label">Collection</span></a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('farming') %} class="active"{% endif %}>
-        <a href="{{ url_for('farming.index') }}">{{ icon('agriculture', 'left') }}Farming</a>
+        <a href="{{ url_for('farming.index') }}" title="Farming">{{ icon('agriculture', 'left') }}<span class="nav-label">Farming</span></a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('market') %} class="active"{% endif %}>
-        <a href="{{ url_for('market.index') }}">{{ icon('store', 'left') }}Market</a>
+        <a href="{{ url_for('market.index') }}" title="Market">{{ icon('store', 'left') }}<span class="nav-label">Market</span></a>
       </li>
       {% if current_user.is_admin %}
       <li{% if request.endpoint and request.endpoint.startswith('admin') %} class="active"{% endif %}>
-        <a href="{{ url_for('admin.index') }}">{{ icon('admin_panel_settings', 'left') }}Admin</a>
+        <a href="{{ url_for('admin.index') }}" title="Admin">{{ icon('admin_panel_settings', 'left') }}<span class="nav-label">Admin</span></a>
       </li>
       <li{% if request.endpoint and request.endpoint.startswith('sync') %} class="active"{% endif %}>
-        <a href="{{ url_for('sync.index') }}">{{ icon('sync', 'left') }}Sync</a>
+        <a href="{{ url_for('sync.index') }}" title="Sync">{{ icon('sync', 'left') }}<span class="nav-label">Sync</span></a>
       </li>
       {% endif %}
       <li{% if request.endpoint and request.endpoint.startswith('settings') %} class="active"{% endif %}>
-        <a href="{{ url_for('settings.index') }}">{{ icon('settings', 'left') }}Settings</a>
+        <a href="{{ url_for('settings.index') }}" title="Settings">{{ icon('settings', 'left') }}<span class="nav-label">Settings</span></a>
       </li>
       <li>
         {% if easyauth_enabled %}
-        <a href="/.auth/logout">{{ icon('logout', 'left') }}{{ current_user.username }}</a>
+        <a href="/.auth/logout" title="Log out {{ current_user.username }}">{{ icon('logout', 'left') }}<span class="nav-label nav-user">{{ current_user.username }}</span></a>
         {% else %}
         <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
           {{ csrf_field() }}
-          <button type="submit" title="Log out">{{ icon('logout', 'left') }}{{ current_user.username }}</button>
+          <button type="submit" title="Log out {{ current_user.username }}">{{ icon('logout', 'left') }}<span class="nav-label nav-user">{{ current_user.username }}</span></button>
         </form>
         {% endif %}
       </li>

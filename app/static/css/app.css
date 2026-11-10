@@ -107,6 +107,59 @@ nav ul .logout-form button:hover { background-color: rgba(0, 0, 0, 0.1); }
 }
 .logout-form button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 
+/* The top nav from 993 px (below, the menu button and the side nav take its place). The brand
+   logo and the item list share one flex row, the logo in flow instead of absolutely placed,
+   so the items can never run under it and stay on one line. The username is cut with an
+   ellipsis at 10em (the full name is in the control's title). Below 1800 px the items show
+   their icons only: each label stays in the page, visually hidden, as the control's
+   accessible name, and the control's title shows it as a tooltip. Measured with the longest
+   nav (an admin's eight items, a username as wide as the cut allows) beside the logo in the
+   70 % container: with labels it needs about 1170 px, which the container gives from about
+   1675 px (85 px to spare at 1800); icon-only it needs about 590 px, 100 px to spare at 993. */
+.nav-user {
+  display: inline-block;
+  max-width: 10em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+nav ul.top-nav a:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+@media only screen and (min-width: 993px) {
+  nav .nav-wrapper { display: flex; }
+  nav .nav-wrapper .brand-logo {
+    position: static;
+    flex: none;
+    white-space: nowrap;
+  }
+  nav ul.top-nav {
+    float: none;
+    display: flex;
+    flex: none;
+    margin-left: auto;
+    padding-left: 16px;
+    white-space: nowrap;
+  }
+  nav ul.top-nav > li { float: none; flex: none; }
+  nav ul.top-nav a,
+  nav ul.top-nav .logout-form button { padding: 0 12px; }
+  nav ul.top-nav .wf-icon.left { margin-right: 8px; }
+}
+@media only screen and (min-width: 993px) and (max-width: 1799.98px) {
+  nav ul.top-nav .nav-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  nav ul.top-nav .wf-icon.left { margin-right: 0; }
+}
+
 /* ── Icons: the app's own SVG sprite, drawn by the icon() macro ─────────────
    An icon is 1em square at 24px, sitting on the text's baseline as the icon font's glyphs
    did. Its size follows font-size, so the size classes and the contexts below mirror the
