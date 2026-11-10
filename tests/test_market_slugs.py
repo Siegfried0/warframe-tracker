@@ -137,7 +137,7 @@ def seed(db, slug='seeded_slug'):
 def test_a_good_read_gives_each_item_the_slug_its_name_matches(ctx, market, case, name,
                                                               category, want):
     seed(ctx)                                   # an unmatched row is cleared, not kept
-    assert ms.sync_market_slugs() == {'ok': True, 'matched': MATCHED}
+    assert ms.sync_market_slugs() == {'ok': True, 'matched': MATCHED, 'components_matched': 0}
     assert slugs(ctx)[(name, category)] == want
 
 
@@ -157,7 +157,7 @@ def test_the_list_is_read_once_from_v2_under_the_apps_own_client_name(ctx, marke
 def test_an_empty_error_field_and_unknown_fields_do_not_refuse_the_list(ctx, market, error):
     market.response = FakeResponse(payload={'apiVersion': '9.9.9', 'error': error, 'extra': 1,
                                             'data': [{**e, 'ducats': 45} for e in ITEMS]})
-    assert ms.sync_market_slugs() == {'ok': True, 'matched': MATCHED}
+    assert ms.sync_market_slugs() == {'ok': True, 'matched': MATCHED, 'components_matched': 0}
 
 
 def test_a_new_item_starts_without_a_slug_and_a_catalogue_upsert_keeps_it(ctx, market):
@@ -181,7 +181,7 @@ def test_a_slug_of_the_longest_length_the_column_holds_is_stored(ctx, market):
     long_slug = 'a' * 255
     market.response = FakeResponse(payload=item_list(
         [listed('Excalibur Umbra', long_slug)]))
-    assert ms.sync_market_slugs() == {'ok': True, 'matched': 1}
+    assert ms.sync_market_slugs() == {'ok': True, 'matched': 1, 'components_matched': 0}
     assert slugs(ctx)[('Excalibur Umbra', 'warframe')] == long_slug
 
 
@@ -346,7 +346,7 @@ def quick_sync(monkeypatch):
 def test_the_full_sync_reports_the_slug_step_and_a_failed_read_is_no_failed_sync(
         app, ctx, market, quick_sync):
     result = wiki_sync.run_sync(app)
-    assert result['ok'] is True and result['market_slugs'] == {'ok': True, 'matched': MATCHED}
+    assert result['ok'] is True and result['market_slugs'] == {'ok': True, 'matched': MATCHED, 'components_matched': 0}
     market.response = requests.Timeout('slow')
     result = wiki_sync.run_sync(app)
     assert result['ok'] is True and result['total'] == 12

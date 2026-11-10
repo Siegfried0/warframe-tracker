@@ -146,7 +146,7 @@ def test_sqlite_v10_from_version_9_changes_no_table_and_no_row(db):
 
     db_module._apply_migrations(db)
 
-    assert db.execute('SELECT version FROM schema_version').fetchone()[0] == 10
+    assert db.execute('SELECT version FROM schema_version').fetchone()[0] == db_module.CURRENT_SCHEMA_VERSION
     assert _schema(db) == schema
     assert [tuple(r) for r in db.execute('SELECT * FROM users ORDER BY id')] == [tuple(r) for r in users]
 

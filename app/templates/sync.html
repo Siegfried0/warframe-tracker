@@ -14,7 +14,7 @@
           Fetches the latest item lists from the Warframe wiki using the Cargo API.
           New items are added; vaulted status is updated, and Prime Resurgence's current
           stock is read from the wiki's Prime Resurgence page. Each item's warframe.market
-          listing is looked up in warframe.market's item list, for prices and links.
+          listing, and each component's, is looked up in warframe.market's item list, for prices and links.
           Your existing progress data is never modified.
         </p>
         <p class="grey-text">
@@ -196,6 +196,9 @@ function runSync(confirmed) {
         var ms = r.market_slugs || {};
         if (ms.ok) {
           msg += ' · Market listings: ' + ms.matched + ' items matched';
+          if (typeof ms.components_matched === 'number') {
+            msg += ', ' + ms.components_matched + ' components';
+          }
         } else {
           msg += ' · Market listings not updated (' + (ms.error || 'not read') +
                  '); the last ones are kept.';

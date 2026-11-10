@@ -7,7 +7,7 @@ try:
 except ImportError:
     _pyodbc = None
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 # What each backend raises for a violated constraint (UNIQUE, FOREIGN KEY, NOT NULL).
 INTEGRITY_ERRORS = (sqlite3.IntegrityError,) + (
@@ -137,7 +137,7 @@ def _apply_migrations(db):
     current = row['version'] if row else 0
 
     migrations = [_migrate_v1, _migrate_v2, _migrate_v3, _migrate_v4, _migrate_v5, _migrate_v6, _migrate_v7, _migrate_v8,
-                  _migrate_v9, _migrate_v10]
+                  _migrate_v9, _migrate_v10, _migrate_v11]
     for i, migrate in enumerate(migrations, start=1):
         if current < i:
             migrate(db, backend)
@@ -147,6 +147,66 @@ def _apply_migrations(db):
                 db.execute('UPDATE schema_version SET version = ?', (i,))
             db.commit()
             current = i
+
+
+def _migrate_v11(db, backend='sqlite'):
+    """Add component_market_slugs and market_slug_cache: market slugs and prices of components.
+
+    Expand only (two new tables, no row of another table changes). component_market_slugs maps a
+    component of an item (`item_id`, `component_name`, as item_component_meta names it) to the
+    warframe.market slug its listing has; market_slug_cache holds the last price fetched for a
+    slug. Both hold catalogue and cache data only, so neither is exported or imported.
+
+    Filled by: the sync's market step (Run Sync Now on the Wiki Sync page; the scheduled sync)
+    writes the component slugs; a refresh click beside a component's price in the Farming
+    Planner writes that slug's price.
+    """
+    if backend == 'mssql':
+        _migrate_v11_mssql(db)
+    else:
+        _migrate_v11_sqlite(db)
+
+
+def _migrate_v11_sqlite(db):
+    db.executescript('''
+        CREATE TABLE IF NOT EXISTS component_market_slugs (
+            item_id         INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            component_name  TEXT    NOT NULL,
+            market_url_name TEXT    NOT NULL,
+            PRIMARY KEY (item_id, component_name)
+        );
+        CREATE TABLE IF NOT EXISTS market_slug_cache (
+            market_url_name TEXT PRIMARY KEY,
+            platinum_price  INTEGER,
+            fetched_at      TEXT NOT NULL
+        );
+    ''')
+    db.commit()
+
+
+def _migrate_v11_mssql(db):
+    stmts = [
+        """
+        IF OBJECT_ID('component_market_slugs', 'U') IS NULL
+        CREATE TABLE component_market_slugs (
+            item_id         INT           NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            component_name  NVARCHAR(500) NOT NULL,
+            market_url_name NVARCHAR(255) NOT NULL,
+            PRIMARY KEY (item_id, component_name)
+        )
+        """,
+        """
+        IF OBJECT_ID('market_slug_cache', 'U') IS NULL
+        CREATE TABLE market_slug_cache (
+            market_url_name NVARCHAR(255) PRIMARY KEY,
+            platinum_price  INT,
+            fetched_at      NVARCHAR(50)  NOT NULL
+        )
+        """,
+    ]
+    for stmt in stmts:
+        db.execute(stmt.strip())
+    db.commit()
 
 
 # The users columns that are unique when not NULL, and the filtered unique index that says so on MSSQL.

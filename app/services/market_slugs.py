@@ -10,11 +10,18 @@ case-insensitively after trimming the outer blanks; failing that, the listed nam
 ``<name> Set`` (prime warframes and weapons trade as sets). Nothing else is tried: an item
 without a match has no slug. ``tradable`` is neither read nor changed.
 
-Sync writes catalogue rows only: ``items.market_url_name``, and only here (``Item.upsert``
-inserts NULL and keeps the stored slug). After a good read every matched row gets its slug
-and every other row NULL, in one transaction. A failed request, an answer that is not the
-expected shape (one malformed entry is enough), an empty list or a failed write changes
-nothing: the last known slugs stay, and the result says why.
+Components (a part of an item, as ``item_component_meta`` names it) are matched from the same
+list, no other request: the listed name equal (compared the same way) to ``<item name>
+<component name>``, failing that to ``<item name> <component name> Blueprint``. Nothing else is
+tried. Their slugs live in ``component_market_slugs``, a table of their own: the component sync
+rebuilds ``item_component_meta``, which would lose them whenever this read fails.
+
+Sync writes catalogue rows only: ``items.market_url_name`` and ``component_market_slugs``, and
+only here (``Item.upsert`` inserts NULL and keeps the stored slug). After a good read every
+matched row gets its slug and every other row NULL, and the component slugs become exactly the
+matched components, in one transaction. A failed request, an answer that is not the expected
+shape (one malformed entry is enough), an empty list or a failed write changes nothing: the
+last known slugs stay, and the result says why.
 """
 import logging
 import re
@@ -29,6 +36,7 @@ log = logging.getLogger(__name__)
 # listing link, so nothing that could change either (a "/", "?", "." or blank) is accepted.
 _SLUG = re.compile(r'[A-Za-z0-9_-]{1,255}')
 _SET_SUFFIX = ' set'
+_BLUEPRINT_SUFFIX = ' blueprint'
 
 
 class ListUnreadable(Exception):
@@ -78,11 +86,46 @@ def slug_for(name: str, slugs: dict[str, str]) -> str | None:
     return slugs.get(key) or slugs.get(key + _SET_SUFFIX)
 
 
+def component_slug_for(item_name: str, component_name: str, slugs: dict[str, str]) -> str | None:
+    """The slug of the listed name equal to `<item name> <component name>`, else of
+    `<item name> <component name> Blueprint`, else None. Each name is trimmed and the two are
+    joined by one blank; nothing else is changed."""
+    key = _key(item_name) + ' ' + _key(component_name)
+    return slugs.get(key) or slugs.get(key + _BLUEPRINT_SUFFIX)
+
+
+def _write_component_slugs(db, slugs: dict[str, str]) -> int:
+    """Make `component_market_slugs` exactly the matched components of `item_component_meta`,
+    writing only the rows that change; no commit. Returns the number matched."""
+    wanted = {}
+    for row in db.execute(
+            'SELECT m.item_id, m.component_name, i.name FROM item_component_meta m '
+            'JOIN items i ON i.id = m.item_id ORDER BY m.item_id, m.component_name').fetchall():
+        slug = component_slug_for(row['name'], row['component_name'], slugs)
+        if slug is not None:
+            wanted[(row['item_id'], row['component_name'])] = slug
+    stored = {(r['item_id'], r['component_name']): r['market_url_name'] for r in db.execute(
+        'SELECT item_id, component_name, market_url_name FROM component_market_slugs').fetchall()}
+    for key, slug in stored.items():
+        if key not in wanted:
+            db.execute('DELETE FROM component_market_slugs WHERE item_id = ? AND component_name = ?',
+                       key)
+        elif wanted[key] != slug:
+            db.execute('UPDATE component_market_slugs SET market_url_name = ? '
+                       'WHERE item_id = ? AND component_name = ?', (wanted[key], *key))
+    for key, slug in wanted.items():
+        if key not in stored:
+            db.execute('INSERT INTO component_market_slugs (item_id, component_name, '
+                       'market_url_name) VALUES (?, ?, ?)', (*key, slug))
+    return len(wanted)
+
+
 def sync_market_slugs() -> dict:
     """Read the market's item list and store every catalogue row's slug; never raises.
 
-    Returns ``{'ok': True, 'matched': n}`` (the rows that have a slug now) or
-    ``{'ok': False, 'error': ...}``, in which case no slug changed.
+    Returns ``{'ok': True, 'matched': n, 'components_matched': m}`` (the items and the
+    components that have a slug now) or ``{'ok': False, 'error': ...}``, in which case no slug
+    changed.
     """
     try:
         data = market_api.fetch_item_list()
@@ -106,10 +149,12 @@ def sync_market_slugs() -> dict:
             if row['market_url_name'] != slug:
                 db.execute('UPDATE items SET market_url_name = ? WHERE id = ?',
                            (slug, row['id']))
+        components = _write_component_slugs(db, slugs)
         db.commit()
     except Exception as exc:
         db.rollback()
         log.warning('Market slug write failed: %s', exc)
         return {'ok': False, 'error': f'write failed: {exc}'}
-    log.info('Market slugs: %d of %d items listed', matched, len(rows))
-    return {'ok': True, 'matched': matched}
+    log.info('Market slugs: %d of %d items listed, %d components', matched, len(rows),
+             components)
+    return {'ok': True, 'matched': matched, 'components_matched': components}
