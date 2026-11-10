@@ -31,7 +31,8 @@ def price(item_id):
     if data.get('failed'):
         # The market failed, not the request: 502, with the price and fetch time kept.
         return jsonify({'ok': False, 'error': data['error'], 'platinum': data['platinum'],
-                        'fetched_at': data['fetched_at']}), 502
+                        'fetched_at': data['fetched_at'],
+                        'fetched_label': data['fetched_label']}), 502
     return jsonify({'ok': True, **data})
 
 

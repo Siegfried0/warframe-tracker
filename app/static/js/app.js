@@ -18,13 +18,16 @@ window.wfIconHref = function (name) {
   return (meta ? meta.getAttribute('content') : '') + '#i-' + name;
 };
 
+// Text made safe to put into markup, an attribute value included.
+window.wfEscape = function (s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+};
+
 // The markup of one icon, as the template macro writes it. `classes` are extra class names
 // (tiny, small, left, ...); `label`, when given, is the icon's accessible name.
 window.wfIcon = function (name, classes, label) {
-  var esc = function (s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  };
+  var esc = window.wfEscape;
   var cls = 'wf-icon' + (classes ? ' ' + esc(classes) : '');
   var a11y = label ? ' role="img" aria-label="' + esc(label) + '"' : ' aria-hidden="true"';
   return '<svg class="' + cls + '" width="24" height="24" focusable="false"' + a11y + '>' +
@@ -39,6 +42,113 @@ window.wfSetIcon = function (el, name) {
   var use = svg.querySelector('use');
   if (use) use.setAttribute('href', window.wfIconHref(name));
 };
+
+// Market prices. Every display of an item's price is a .wf-price[data-item=<id>] (the template
+// macro in _prices.html, or wfPriceMarkup below for a page script): its value, an "old" mark
+// with the fetch time, and a refresh button (.wf-price-refresh) beside an old or missing price.
+// A click asks GET /market/price/<id> (the URL for item 0 is in <meta name="market-price-url">)
+// for that one item and updates every display of it on the page. A click while that item's
+// request runs is ignored. A refresh that fails (ok false: 502 with the kept price, a 404, any
+// error) keeps the shown price, marked old with the kept fetch time, and says so beside it and
+// in a toast. Values from an answer are inserted as text, never as markup.
+var WF_ITEM_ID = /^[1-9][0-9]*$/;
+var wfPriceBusy = {};
+
+window.wfPriceText = function (platinum) {
+  return (typeof platinum === 'number' && isFinite(platinum)) ? platinum + 'p' : '—';
+};
+
+window.wfPriceUrl = function (itemId) {
+  var meta = document.querySelector('meta[name="market-price-url"]');
+  return (meta ? meta.getAttribute('content') : '').replace(/\/0$/, '/') + itemId;
+};
+
+// The markup of one item's price, as the template macro writes it, from a price view
+// (`platinum`, `stale`, `fetched_label`, `failed`, `error`, `refresh`, `market_url`); `name`
+// names the button, `link` adds the warframe.market link.
+window.wfPriceMarkup = function (itemId, p, name, link) {
+  var esc = window.wfEscape, id = String(itemId);
+  if (!WF_ITEM_ID.test(id) || !p) return '';
+  var html = '<span class="wf-price" data-item="' + id + '"><span class="wf-price-value">' +
+             esc(window.wfPriceText(p.platinum)) + '</span>';
+  if (p.stale) {
+    html += ' <span class="wf-price-old orange-text" title="Fetched ' + esc(p.fetched_label) + '">' +
+            'old (' + esc(p.fetched_label) + ')</span>';
+  }
+  if (p.failed) {
+    html += ' <span class="wf-price-failed red-text" title="' + esc(p.error || '') + '">not refreshed</span>';
+  }
+  if (p.refresh) {
+    html += ' <button type="button" class="wf-price-refresh" data-item="' + id + '"' +
+            ' title="Ask warframe.market for this item&#39;s current price"' +
+            ' aria-label="Refresh the price' + (name ? ' of ' + esc(name) : '') + ' from warframe.market">' +
+            wfIcon('sync', 'tiny') + '</button>';
+  }
+  if (link && p.market_url) {
+    html += ' <a href="' + esc(p.market_url) + '" target="_blank" rel="noopener" class="wf-price-link grey-text"' +
+            ' title="Open on warframe.market">' + wfIcon('open_in_new', 'tiny', 'Open on warframe.market') + '</a>';
+  }
+  return html + '</span>';
+};
+
+// Show one refresh answer in every display of the item: `ok` the fresh price (mark and button
+// gone), otherwise the kept price and fetch time when the answer has them, marked old, and
+// a "not refreshed" note whose title is the error.
+function wfPriceShow(itemId, answer, ok, error) {
+  var hasPrice = !!answer && Object.prototype.hasOwnProperty.call(answer, 'platinum');
+  var label = answer && typeof answer.fetched_label === 'string' ? answer.fetched_label : null;
+  $('.wf-price[data-item="' + itemId + '"]').each(function () {
+    var $p = $(this), $value = $p.find('.wf-price-value');
+    if (ok || hasPrice) $value.text(window.wfPriceText(answer.platinum));
+    $p.find('.wf-price-failed').remove();
+    if (ok) {
+      var focused = $p.find('.wf-price-refresh').is(':focus');
+      $p.find('.wf-price-old, .wf-price-refresh').remove();
+      if (focused) $value.attr('tabindex', '-1').trigger('focus');
+      return;
+    }
+    var $old = $p.find('.wf-price-old');
+    if (label) {
+      if (!$old.length) {
+        $old = $('<span class="wf-price-old orange-text"></span>');
+        $value.after($old).after(' ');
+      }
+      $old.text('old (' + label + ')').attr('title', 'Fetched ' + label);
+    }
+    var $note = $('<span class="wf-price-failed red-text">not refreshed</span>').attr('title', error);
+    ($old.length ? $old : $value).after($note).after(' ');
+  });
+  if (label) $('.wf-price-fetched[data-item="' + itemId + '"]').text(label);
+}
+
+$(document).on('click', '.wf-price-refresh', function (e) {
+  e.preventDefault();
+  var itemId = String($(this).attr('data-item') || '');
+  if (!WF_ITEM_ID.test(itemId) || wfPriceBusy[itemId]) return;
+  wfPriceBusy[itemId] = true;
+  var $prices = $('.wf-price[data-item="' + itemId + '"]').attr('aria-busy', 'true');
+  var failed = function (answer, fallback) {
+    var error = (answer && typeof answer.error === 'string' && answer.error) || fallback;
+    wfPriceShow(itemId, answer, false, error);
+    var note = document.createElement('span');
+    note.textContent = 'The price was not refreshed: ' + error;
+    M.toast({html: note});
+  };
+  $.ajax({
+    url: window.wfPriceUrl(itemId),
+    method: 'GET',
+    dataType: 'json',
+    success: function (r) {
+      if (r && r.ok === true) wfPriceShow(itemId, r, true, null);
+      else failed(r, 'no answer.');
+    },
+    error: function (xhr) { failed(xhr.responseJSON, 'the request failed.'); },
+    complete: function () {
+      delete wfPriceBusy[itemId];
+      $prices.removeAttr('aria-busy');
+    }
+  });
+});
 
 // Every unsafe jQuery request sends the token in the X-CSRF-Token header (registered before
 // any page script runs; a fetch() call adds the header itself with window.csrfToken()).

@@ -233,8 +233,10 @@ def test_a_failed_request_keeps_the_cached_price_and_the_refresh_answers_502(
         assert 'failed' not in result
         return
     kept_price, kept_at = row if row else (None, None)
+    kept_label = market_api._fetch_label(kept_at)
     assert result == {
-        'platinum': kept_price, 'fetched_at': kept_at, 'from_cache': row is not None,
+        'platinum': kept_price, 'fetched_at': kept_at, 'fetched_label': kept_label,
+        'from_cache': row is not None,
         'failed': True,
         'error': f'warframe.market gave no price ({reason}); the last price is kept.'}
     assert '<' not in result['error'] and 'Deprecated' not in result['error']
@@ -242,7 +244,8 @@ def test_a_failed_request_keeps_the_cached_price_and_the_refresh_answers_502(
     response = admin_client.get(f'/market/price/{item_id}')
     assert response.status_code == 502
     assert response.get_json() == {'ok': False, 'error': result['error'],
-                                   'platinum': kept_price, 'fetched_at': kept_at}
+                                   'platinum': kept_price, 'fetched_at': kept_at,
+                                   'fetched_label': kept_label}
     with app.app_context():
         assert cache_row(item_id) == row
         assert not market_api.is_fresh(cache_row(item_id) and cache_row(item_id)[1], 6)
@@ -266,11 +269,14 @@ def test_a_successful_answer_writes_the_price_and_the_current_time(
         stored = cache_row(item_id)
     if fresh:
         assert stored == row and market.calls == []
-        assert body == {'ok': True, 'platinum': row[0], 'fetched_at': row[1], 'from_cache': True}
+        assert body == {'ok': True, 'platinum': row[0], 'fetched_at': row[1],
+                        'fetched_label': market_api._fetch_label(row[1]), 'from_cache': True}
         return
     assert stored[0] == want
     assert datetime.fromisoformat(stored[1]) >= before
-    assert body == {'ok': True, 'platinum': want, 'fetched_at': stored[1], 'from_cache': False}
+    assert body == {'ok': True, 'platinum': want, 'fetched_at': stored[1],
+                    'fetched_label': datetime.fromisoformat(stored[1]).strftime('%Y-%m-%d %H:%M') + ' UTC',
+                    'from_cache': False}
 
 
 # ── Two refreshes of one item (axis 6: concurrency) ──────────────────────────

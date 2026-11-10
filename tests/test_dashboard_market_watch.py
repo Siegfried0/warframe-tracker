@@ -305,7 +305,9 @@ def test_the_market_page_still_lists_every_watched_item_with_its_cache(app, admi
     html = response.get_data(as_text=True)
     found = re.findall(r'<td class="white-text">\s*(.*?)\s*</td>', html, re.S)
     assert found == names
-    assert html.count('2026-11-01T08:00:00') == 11
+    assert html.count('data-item="') >= 11
+    assert len(re.findall(r'class="grey-text wf-price-fetched" data-item="\d+"[^>]*>'
+                          r'2026-11-01 08:00 UTC<', html)) == 11
     assert 'Kronen' not in html
     assert 'href="https://warframe.market/items/item_01"' in html
     assert requests_made == []

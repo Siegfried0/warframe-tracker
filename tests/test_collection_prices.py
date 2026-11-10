@@ -2,11 +2,11 @@
 
 Every item on the market (tradable, or with a market slug) shows its price in both views (the
 table's "Price" column and a line on its card) on every category tab: the cached price or `—`
-when none is cached, a stale mark with the fetch time when the cache row is older than the
-user's `market_cache_hours` (an unreadable fetch time counts as stale), and a warframe.market
-link (new tab, `rel="noopener"`) when the item has a market slug. With a slug the price is a
-control that refreshes it through `GET /market/price/<id>`; without one it is plain text, since
-there is nothing to request. An item not on the market shows no price.
+when none is cached, an "old" mark with the fetch time when the cache row is older than the
+user's `market_cache_hours` (an unreadable fetch time counts as old), and a warframe.market
+link (new tab, `rel="noopener"`) when the item has a market slug. With a slug an old or missing
+price has a refresh button (`GET /market/price/<id>`), a fresh one none; without a slug there is
+nothing to request, so no button. An item not on the market shows no price.
 
 Loading a page requests no price: one cache-only query over the page's on-market items reads
 their prices, whatever the page size, and nothing is written. Network refused
@@ -39,7 +39,7 @@ def ago(age):
 
 # name: (tradable, slug, cache row as (price, fetched_at) or None,
 #        expected (on market, shown text, stale mark text or None, has slug))
-STALE_TEXT = 'stale (' + STALE_AT.strftime('%Y-%m-%d %H:%M') + ' UTC)'
+STALE_TEXT = 'old (' + STALE_AT.strftime('%Y-%m-%d %H:%M') + ' UTC)'
 CASES = {
     'Off Market':        (False, None, None, (False, None, None, False)),
     'Off Market Cached': (False, None, (50, ago(FRESH)), (False, None, None, False)),
@@ -53,7 +53,7 @@ CASES = {
     'Stale Null':        (True, 'stale_null', (None, STALE_AT.isoformat()), (True, '—', STALE_TEXT, True)),
     'Zero':              (True, 'zero', (0, ago(FRESH)), (True, '0p', None, True)),
     'Large':             (True, 'large', (2147483647, ago(FRESH)), (True, '2147483647p', None, True)),
-    'Unreadable Time':   (True, 'unreadable', (75, 'not a time'), (True, '75p', 'stale (not a time)', True)),
+    'Unreadable Time':   (True, 'unreadable', (75, 'not a time'), (True, '75p', 'old (not a time)', True)),
 }
 
 
@@ -136,7 +136,7 @@ def page(client, category, **params):
 def test_each_item_shows_its_cached_price_stale_mark_and_link(
         admin_client, catalogue, requests_made, category, view):
     chunks = view_chunks(page(admin_client, category), view)
-    for name, (_tradable, slug, _row, expected) in CASES.items():
+    for name, (_tradable, slug, row, expected) in CASES.items():
         listed, shown, stale, has_slug = expected
         iid = catalogue[category, name]
         markup = price_markup(chunks[iid], view)
@@ -151,15 +151,19 @@ def test_each_item_shows_its_cached_price_stale_mark_and_link(
         assert markup is not None, where
         assert f'data-item="{iid}"' in markup, where
         assert text_of(markup, 'wf-price-value') == shown, where
-        assert text_of(markup, 'wf-price-stale') == stale, where
+        assert text_of(markup, 'wf-price-old') == stale, where
         link = re.search(r'<a href="([^"]*)" target="_blank" rel="noopener" class="wf-price-link', markup)
-        refresh = re.search(r'<a href="#" class="wf-price-refresh[^"]*" data-item="(\d+)" role="button"'
+        refresh = re.search(r'<button type="button" class="wf-price-refresh" data-item="(\d+)"'
                             r'[^>]*aria-label="([^"]*)"', markup)
+        cached = row is not None
         if has_slug:
             assert link.group(1) == f'https://warframe.market/items/{slug}_{category}', where
-            assert int(refresh.group(1)) == iid, where
-            assert refresh.group(2) == (f'Price {shown}{", stale" if stale else ""}: '
-                                        'refresh from warframe.market'), where
+            if cached and stale is None:            # fresh: no button
+                assert refresh is None, where
+            else:
+                assert int(refresh.group(1)) == iid, where
+                assert refresh.group(2) == (f'Refresh the price of {name} {category} '
+                                            'from warframe.market'), where
         else:
             assert link is None and refresh is None, where
     assert requests_made == []
@@ -176,7 +180,7 @@ def test_another_users_cache_setting_does_not_decide_stale(app, admin_client, ca
                          "VALUES (?, 'market_cache_hours', '1')", (admin,))
         get_db().commit()
     markup = price_markup(view_chunks(page(admin_client, 'warframe'), view)[iid], view)
-    assert text_of(markup, 'wf-price-stale').startswith('stale (')
+    assert text_of(markup, 'wf-price-old').startswith('old (')
 
 
 def test_the_table_has_a_price_column_on_every_tab(admin_client, catalogue):
@@ -199,7 +203,7 @@ def test_a_hostile_fetch_time_renders_as_text(app, admin_client):
         cache(iid, 10, '<b>&"x')
     html = page(admin_client, 'warframe')
     assert '<b>&"x' not in html
-    assert 'stale (&lt;b&gt;&amp;&#34;x)' in html
+    assert 'old (&lt;b&gt;&amp;&#34;x)' in html
 
 
 # ── Page load: no market request, one cache query, no write ──────────────────
@@ -276,7 +280,8 @@ def test_the_cache_read_binds_every_id_as_a_parameter(monkeypatch):
     assert params == [1000 + n for n in range(200)]
     assert 9999 not in prices and len(prices) == 200
     assert prices[1000] == {'platinum': None, 'cached': False, 'stale': False,
-                            'fetched_label': None, 'market_slug': '', 'market_url': None}
+                            'fetched_label': None, 'failed': False, 'market_slug': '',
+                            'market_url': None, 'refresh': False}
 
 
 def test_no_item_on_the_market_means_no_query(monkeypatch):
@@ -287,33 +292,7 @@ def test_no_item_on_the_market_means_no_query(monkeypatch):
     assert recorder.calls == []
 
 
-# ── The refresh control and its route ─────────────────────────────────────────
-
-SCRIPT_HOOKS = [
-    "var PRICE_BASE = '/market/price/0'.replace(/\\/0$/, '/');",
-    "$(document).on('click', '.wf-price-refresh', function(e) {",
-    "if (!itemId || priceBusy[itemId]) return;",
-    "priceBusy[itemId] = true;",
-    "delete priceBusy[itemId];",
-    "$('.wf-price[data-item=\"' + itemId + '\"]')",
-    "$p.find('.wf-price-value').text(shown);",
-    "$p.find('.wf-price-stale').remove();",
-    "return (typeof platinum === 'number' && isFinite(platinum)) ? platinum + 'p' : '—';",
-]
-
-
-@pytest.mark.parametrize('hook', SCRIPT_HOOKS)
-def test_the_page_script_refreshes_one_items_prices_as_text(admin_client, hook):
-    assert hook in page(admin_client, 'warframe').replace('\r\n', '\n')
-
-
-def test_the_refresh_script_never_draws_the_answer_as_html(admin_client):
-    html = page(admin_client, 'warframe').replace('\r\n', '\n')
-    start = html.index("var PRICE_BASE")
-    script = html[start:html.index('// Farm it', start)]
-    assert '.html(' not in script
-    assert 'r.platinum' in script and '.text(' in script
-
+# ── The refresh route ─────────────────────────────────────────────────────────
 
 def test_a_refresh_writes_the_cache_and_the_next_load_shows_it_fresh(app, admin_client, monkeypatch):
     with app.app_context():
@@ -325,7 +304,8 @@ def test_a_refresh_writes_the_cache_and_the_next_load_shows_it_fresh(app, admin_
     for view in VIEWS:
         markup = price_markup(view_chunks(page(admin_client, 'warframe'), view)[iid], view)
         assert text_of(markup, 'wf-price-value') == '77p'
-        assert text_of(markup, 'wf-price-stale') is None
+        assert text_of(markup, 'wf-price-old') is None
+        assert 'wf-price-refresh' not in markup
 
 
 def test_refreshing_an_item_without_a_slug_answers_404_and_writes_nothing(app, admin_client,

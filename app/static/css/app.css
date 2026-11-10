@@ -305,8 +305,34 @@ tr.resurgence-row {
   gap: .25rem;
 }
 
-.wf-price-stale {
+.wf-price-old,
+.wf-price-failed {
   font-size: .7rem;
+}
+
+/* The refresh button beside an old or missing price: the icon alone, focusable, without
+   button chrome (Materialize paints a focused button teal). */
+.wf-price-refresh {
+  background: none;
+  border: 0;
+  padding: 0;
+  line-height: 1;
+  color: #4db6ac;
+  cursor: pointer;
+}
+
+.wf-price-refresh:focus {
+  background-color: transparent;
+}
+
+.wf-price-refresh:focus-visible {
+  outline: 2px solid #4db6ac;
+  outline-offset: 1px;
+}
+
+.wf-price[aria-busy="true"] .wf-price-refresh {
+  opacity: .5;
+  cursor: progress;
 }
 
 .wf-price[aria-busy="true"] .wf-price-value {

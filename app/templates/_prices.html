@@ -1,0 +1,38 @@
+{#- The one way a template shows an item's market price; the page script wfPriceMarkup in
+    static/js/app.js writes the same markup, and the refresh handler there updates it.
+
+    market_price(item_id, p, name='', link=False, classes='')
+      item_id  the item's id: every display of one item carries it in data-item, so a
+               refresh updates them all
+      p        the item's price view (services/market_api.price_view): the cached price of
+               any age, `—` when none is cached or the market had no sell order in game
+               (0 is a price), an "old" mark with the fetch time when it is older than the
+               user's cache setting, and a refresh button beside an old or missing price of
+               an item with a market slug (none beside a fresh one)
+      name     the item's name, for the button's accessible name
+      link     also draw the warframe.market link (pages without a column of their own)
+      classes  extra classes on the price's element
+
+    Import it in each template that shows one:
+      {% from '_prices.html' import market_price %}
+-#}
+{% from '_icons.html' import icon %}
+{% macro market_price(item_id, p, name='', link=False, classes='') -%}
+<span class="wf-price{% if classes %} {{ classes }}{% endif %}" data-item="{{ item_id }}"><span class="wf-price-value">{{ (p.platinum ~ 'p') if p.platinum is not none else '—' }}</span>
+  {%- if p.stale %}
+  <span class="wf-price-old orange-text" title="Fetched {{ p.fetched_label }}">old ({{ p.fetched_label }})</span>
+  {%- endif %}
+  {%- if p.refresh %}
+  <button type="button" class="wf-price-refresh" data-item="{{ item_id }}"
+          title="Ask warframe.market for this item's current price"
+          aria-label="Refresh the price{{ ' of ' ~ name if name else '' }} from warframe.market">
+    {{- icon('sync', 'tiny') -}}
+  </button>
+  {%- endif %}
+  {%- if link and p.market_url %}
+  <a href="{{ p.market_url }}" target="_blank" rel="noopener" class="wf-price-link grey-text" title="Open on warframe.market">
+    {{- icon('open_in_new', 'tiny', label='Open on warframe.market') -}}
+  </a>
+  {%- endif -%}
+</span>
+{%- endmacro %}

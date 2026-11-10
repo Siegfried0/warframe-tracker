@@ -175,6 +175,6 @@ def test_every_collection_toast_draws_server_values_only_through_its_escape(admi
     assert ESC_HTML in page
     scripts = _scripts(page)
     calls = _toast_calls(scripts)
-    assert len(calls) == 10
+    assert len(calls) == 8
     assert [c for c in calls if SERVER_VALUE.search(_outside_escapes(c))] == []
     assert COLLECTION_TOAST_OPENING_BARE.findall(scripts) == []

@@ -121,7 +121,8 @@ def fetch_lowest_price(market_url_name: str) -> int | None:
 def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
     """The item's price: the cached one while it is fresh, otherwise asked of the market.
 
-    Returns `{'platinum': int|None, 'fetched_at': str|None, 'from_cache': bool}`. A successful
+    Returns `{'platinum': int|None, 'fetched_at': str|None, 'fetched_label': str|None,
+    'from_cache': bool}` (`fetched_label` is the fetch time as shown to the user). A successful
     answer is written to the cache: the price, or NULL for no sell order in game, with the
     current time. A failed request writes nothing: the cache row keeps its price and fetch
     time, and the result holds those kept values (None without a row; `from_cache` True when a
@@ -141,6 +142,7 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
             return {
                 'platinum': row['platinum_price'],
                 'fetched_at': row['fetched_at'],
+                'fetched_label': _fetch_label(row['fetched_at']),
                 'from_cache': True,
             }
 
@@ -150,6 +152,7 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
         return {
             'platinum': row['platinum_price'] if row else None,
             'fetched_at': row['fetched_at'] if row else None,
+            'fetched_label': _fetch_label(row['fetched_at']) if row else None,
             'from_cache': row is not None,
             'failed': True,
             'error': f'warframe.market gave no price ({exc}); the last price is kept.',
@@ -164,7 +167,8 @@ def get_price(item_id: int, market_url_name: str, cache_hours: int = 6) -> dict:
         (item_id, price, now),
     )
     db.commit()
-    return {'platinum': price, 'fetched_at': now, 'from_cache': False}
+    return {'platinum': price, 'fetched_at': now, 'fetched_label': _fetch_label(now),
+            'from_cache': False}
 
 
 def cached_prices(item_ids: list[int]) -> dict[int, int | None]:
@@ -184,41 +188,68 @@ def cached_prices(item_ids: list[int]) -> dict[int, int | None]:
     return {row['item_id']: row['platinum_price'] for row in rows}
 
 
+def cached_price_rows(item_ids: list[int]) -> dict[int, dict]:
+    """The cache row of each listed item that has one, of any age: `{item id: {'platinum',
+    'fetched_at'}}` (`platinum` None for a row without a price).
+
+    Reads only the cache, in one query (none for an empty list), and writes nothing: never
+    requests a price. An item without a cache row is absent from the result.
+    """
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return {}
+    placeholders = ','.join('?' for _ in ids)
+    rows = get_db().execute(
+        'SELECT item_id, platinum_price, fetched_at FROM market_cache '
+        f'WHERE item_id IN ({placeholders})',
+        ids,
+    ).fetchall()
+    return {row['item_id']: {'platinum': row['platinum_price'], 'fetched_at': row['fetched_at']}
+            for row in rows}
+
+
+def price_view(cache_row: dict | None, cache_hours: int, market_slug: str | None,
+               now: datetime | None = None, failed: bool = False) -> dict:
+    """How one item's price is shown, wherever a page shows it.
+
+    `cache_row` is the item's cache row (`platinum`, `fetched_at`) or None without one;
+    `failed` says a request for it has just failed (the row was kept). The dict holds
+    `platinum` (None when none is cached or the market had no sell order in game; 0 is a
+    price), `cached` (a row exists), `stale` (a row exists and is not younger than
+    `cache_hours`, an unreadable fetch time included, or it was kept after a failed request),
+    `fetched_label` (None without a row), `failed`, `market_slug` (empty without one),
+    `market_url` (None without a slug) and `refresh`: a refresh button is offered for an old
+    or missing price of an item with a slug, never beside a fresh one.
+    """
+    cached = cache_row is not None
+    fetched_at = cache_row['fetched_at'] if cached else None
+    stale = cached and (failed or not is_fresh(fetched_at, cache_hours, now))
+    slug = market_slug or ''
+    return {
+        'platinum': cache_row['platinum'] if cached else None,
+        'cached': cached,
+        'stale': stale,
+        'fetched_label': (_fetch_label(fetched_at) or 'at an unknown time') if cached else None,
+        'failed': failed,
+        'market_slug': slug,
+        'market_url': market_url_for(slug) if slug else None,
+        'refresh': bool(slug) and (not cached or stale),
+    }
+
+
 def page_prices(rows: list[dict], cache_hours: int) -> dict[int, dict]:
     """The price shown for each item on the market among a collection page's rows.
 
     Reads only the cache, in one query over the page's on-market items (none when the page
-    has none), and writes nothing: never requests a price. Keyed by item id, each dict holds
-    `platinum` (None when no price is cached), `cached` (a cache row exists), `stale` (a cache
-    row exists and is not younger than `cache_hours`; an unreadable fetch time counts as
-    stale), `fetched_label`, `market_slug` (the item's market slug, empty when it has none)
-    and `market_url` (None without a slug). A row not on the market (`on_market` 0) has no
-    entry.
+    has none), and writes nothing: never requests a price. Keyed by item id, each value is
+    the item's `price_view`. A row not on the market (`on_market` 0) has no entry.
     """
     listed = [row for row in rows if row.get('on_market')]
-    ids = list(dict.fromkeys(row['id'] for row in listed))
-    cache = {}
-    if ids:
-        placeholders = ','.join('?' for _ in ids)
-        cache = {r['item_id']: r for r in get_db().execute(
-            'SELECT item_id, platinum_price, fetched_at FROM market_cache '
-            f'WHERE item_id IN ({placeholders})',
-            ids,
-        ).fetchall()}
+    cache = cached_price_rows([row['id'] for row in listed])
     now = datetime.utcnow()
-    prices = {}
-    for row in listed:
-        cached = cache.get(row['id'])
-        slug = row.get('market_url_name') or ''
-        prices[row['id']] = {
-            'platinum': cached['platinum_price'] if cached else None,
-            'cached': cached is not None,
-            'stale': cached is not None and not is_fresh(cached['fetched_at'], cache_hours, now),
-            'fetched_label': _fetch_label(cached['fetched_at']) if cached else None,
-            'market_slug': slug,
-            'market_url': market_url_for(slug) if slug else None,
-        }
-    return prices
+    return {row['id']: price_view(cache.get(row['id']), cache_hours,
+                                  row.get('market_url_name'), now)
+            for row in listed}
 
 
 def market_url_for(market_url_name: str) -> str:
@@ -300,8 +331,8 @@ def watchlist_prices(user_id: int, cache_hours: int, limit: int | None = None) -
     Reads only the cache: never requests a price. Each dict holds the item's columns plus
     `platinum_price` and `fetched_at` (None without a cache row), `fresh` (the cached price
     is younger than `cache_hours`), `stale` (a cache row exists and is not fresh),
-    `fetched_label` and, for an item with a listing, `market_url`. `limit` keeps the first
-    rows only.
+    `fetched_label`, `price` (its `price_view`) and, for an item with a listing,
+    `market_url`. `limit` keeps the first rows only.
     """
     rows = get_db().execute('''
         SELECT i.*, mc.platinum_price, mc.fetched_at
@@ -321,4 +352,7 @@ def watchlist_prices(user_id: int, cache_hours: int, limit: int | None = None) -
         item['fresh'] = is_fresh(item['fetched_at'], cache_hours, now)
         item['stale'] = bool(item['fetched_at']) and not item['fresh']
         item['fetched_label'] = _fetch_label(item['fetched_at'])
+        row = ({'platinum': item['platinum_price'], 'fetched_at': item['fetched_at']}
+               if item['fetched_at'] is not None else None)
+        item['price'] = price_view(row, cache_hours, item.get('market_url_name'), now)
     return watched

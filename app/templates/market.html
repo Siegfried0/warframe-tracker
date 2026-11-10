@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from '_icons.html' import icon %}
+{% from '_prices.html' import market_price %}
 {% block title %}Market Watch — Warframe Tracker{% endblock %}
 {% block content %}
 
@@ -12,7 +13,8 @@
         <span class="card-title">Watched Items</span>
         <p class="grey-text" style="font-size:.85rem">
           Prices sourced from <a href="https://warframe.market" target="_blank" class="teal-text">warframe.market</a>.
-          Cached for {{ prefs.get('market_cache_hours', 6) }} hour(s). Click a price to refresh.
+          Cached for {{ prefs.get('market_cache_hours', 6) }} hour(s); an older price stays shown, marked
+          old, with a refresh button beside it that asks warframe.market for that item alone.
         </p>
         {% if watched %}
         <table class="wf-table striped">
@@ -27,12 +29,8 @@
                 {% else %}{{ item.name }}{% endif %}
               </td>
               <td class="grey-text">{{ item.category }}</td>
-              <td>
-                <a href="#" class="refresh-price teal-text" data-item="{{ item.id }}" id="price-{{ item.id }}">
-                  {% if item.platinum_price %}{{ item.platinum_price }}p{% else %}—{% endif %}
-                </a>
-              </td>
-              <td class="grey-text" style="font-size:.8rem">{{ item.fetched_at or '—' }}</td>
+              <td class="market-price-cell">{{ market_price(item.id, item.price, name=item.name) }}</td>
+              <td class="grey-text wf-price-fetched" data-item="{{ item.id }}" style="font-size:.8rem">{{ item.fetched_label or '—' }}</td>
               <td>
                 {% if item.market_url %}
                 <a href="{{ item.market_url }}" target="_blank" class="grey-text" title="warframe.market">
@@ -64,15 +62,6 @@
 {% block scripts %}
 <script>
 $(function() {
-  $(document).on('click', '.refresh-price', function(e) {
-    e.preventDefault();
-    var id = $(this).data('item'), $el = $(this);
-    $el.text('…');
-    $.get('{{ url_for("market.price", item_id=0) }}'.replace('/0', '/' + id), function(r) {
-      $el.text(r.platinum ? r.platinum + 'p' : '—');
-    });
-  });
-
   $(document).on('click', '.unwatch-btn', function(e) {
     e.preventDefault();
     var id = $(this).data('item'), $row = $(this).closest('tr');
