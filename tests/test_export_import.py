@@ -309,6 +309,41 @@ def test_setting_values_and_keys_import_as_the_format_says(sapp, users, text, ex
         assert read_user(alice)['settings'] == expected
 
 
+def test_the_farming_hour_cap_goes_out_and_comes_back_with_the_other_settings(sapp, users):
+    with sapp.app_context():
+        set_setting(users['alice'], 'farm_hour_cap', '40')
+        data = export_user_data(users['alice'])
+        import_user_data(users['bob'], io.BytesIO(data))
+        bob = read_user(users['bob'])['settings']
+    assert 'farm_hour_cap,40\r\n' in read_zip(data)['settings.csv']
+    assert bob == {'market_cache_hours': '12', 'plat_per_hour': '30',
+                   'buy_threshold_plat': None, 'farm_hour_cap': '40'}
+
+
+@pytest.mark.parametrize('text, expected', [
+    ('key,value\nfarm_hour_cap,12\n', '12'),
+    ('key,value\nfarm_hour_cap, 007 \n', '7'),
+    ('key,value\nfarm_hour_cap,\n', None),
+    ('key,value\nplat_per_hour,45\n', '40'),
+], ids=['a value', 'blanks and leading zeros', 'empty is null',
+        'an older export without the key keeps it'])
+def test_the_farming_hour_cap_imports_like_the_other_settings(sapp, users, text, expected):
+    alice = users['alice']
+    with sapp.app_context():
+        set_setting(alice, 'farm_hour_cap', '40')
+        run_import(alice, {'settings.csv': text})
+        assert read_user(alice)['settings']['farm_hour_cap'] == expected
+
+
+def test_an_older_export_without_the_hour_cap_adds_no_hour_cap(sapp, users):
+    with sapp.app_context():
+        run_import(users['bob'], {'settings.csv':
+                                  'key,value\nmarket_cache_hours,12\nplat_per_hour,30\n'
+                                  'buy_threshold_plat,\n'})
+        assert read_user(users['bob'])['settings'] == {
+            'market_cache_hours': '12', 'plat_per_hour': '30', 'buy_threshold_plat': None}
+
+
 def test_a_setting_without_a_value_column_is_added_empty(sapp, users):
     bob = users['bob']
     with sapp.app_context():

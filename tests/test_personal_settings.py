@@ -66,8 +66,8 @@ def capture(monkeypatch):
         seen['dashboard_hours'] = cache_hours
         return []
 
-    def fake_farm_next(uid, buy_threshold, plat_per_hour, limit, cache_hours):
-        seen['dashboard_thresholds'] = (buy_threshold, plat_per_hour)
+    def fake_farm_next(uid, buy_threshold, plat_per_hour, limit, cache_hours, farm_hour_cap):
+        seen['dashboard_thresholds'] = (buy_threshold, plat_per_hour, farm_hour_cap)
         seen['farm_next_hours'] = cache_hours
         return []
 
@@ -128,15 +128,16 @@ def test_thresholds_read_as_a_whole_number_or_unset_on_the_dashboard(
     uid = _uid(app)
     _store(app, uid, 'buy_threshold_plat', stored)
     _store(app, uid, 'plat_per_hour', stored)
+    _store(app, uid, 'farm_hour_cap', stored)
 
     assert admin_client.get('/dashboard').status_code == 200
-    assert capture['dashboard_thresholds'] == (number, number)
+    assert capture['dashboard_thresholds'] == (number, number, number)
 
 
 def test_no_settings_rows_read_as_the_defaults(app, admin_client, capture):
     assert admin_client.get('/dashboard').status_code == 200
     assert (capture['dashboard_hours'], capture['farm_next_hours'],
-            *capture['dashboard_thresholds']) == (6, 6, None, None)
+            *capture['dashboard_thresholds']) == (6, 6, None, None, None)
 
 
 def _save(client, **fields):
@@ -168,7 +169,8 @@ SAVE_CASES = [
 def test_preferences_save_accepts_only_empty_or_a_whole_number_in_range(
         app, admin_client, capture, key, submitted, outcome):
     uid = _uid(app)
-    before = {'market_cache_hours': '12', 'buy_threshold_plat': '30', 'plat_per_hour': '9'}
+    before = {'market_cache_hours': '12', 'buy_threshold_plat': '30', 'plat_per_hour': '9',
+              'farm_hour_cap': '40'}
     for k, v in before.items():
         _store(app, uid, k, v)
     others = {k: '5' for k in KEYS if k != key}
@@ -180,7 +182,7 @@ def test_preferences_save_accepts_only_empty_or_a_whole_number_in_range(
     if outcome == 'refused':
         assert (f'Preferences not saved: {LABELS[key]} must be empty or a whole number '
                 f'from 0 to {SETTING_VALUE_MAX}.').encode() in page.data
-        assert stored == before                      # none of the three keys written
+        assert stored == before                      # none of the four keys written
     else:
         assert b'Preferences saved.' in page.data
         assert stored == {key: outcome, **others}
@@ -207,7 +209,8 @@ def test_a_save_interrupted_after_the_first_field_writes_nothing(app, admin_clie
                                                                   monkeypatch):
     from services import auth_service
     uid = _uid(app)
-    before = {'market_cache_hours': '12', 'buy_threshold_plat': '30', 'plat_per_hour': '9'}
+    before = {'market_cache_hours': '12', 'buy_threshold_plat': '30', 'plat_per_hour': '9',
+              'farm_hour_cap': '40'}
     for k, v in before.items():
         _store(app, uid, k, v)
     real, calls = auth_service._upsert_setting, []
@@ -221,7 +224,7 @@ def test_a_save_interrupted_after_the_first_field_writes_nothing(app, admin_clie
     monkeypatch.setattr(auth_service, '_upsert_setting', failing_after_first)
     app.config['PROPAGATE_EXCEPTIONS'] = False
     page = _save(admin_client, market_cache_hours='1', buy_threshold_plat='2',
-                 plat_per_hour='3')
+                 plat_per_hour='3', farm_hour_cap='4')
     assert page.status_code == 500
     assert len(calls) == 2                       # the first field was written, then it broke
     assert _stored(app, uid) == before           # and the write was rolled back

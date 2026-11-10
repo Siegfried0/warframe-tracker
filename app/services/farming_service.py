@@ -11,6 +11,7 @@ from flask import current_app
 from models.db import get_db
 from models.progress import Progress
 from services.auth_service import get_setting_int
+from services.buy_vs_farm import expected_hours, item_sources, recommend, user_thresholds
 from services.market_api import cached_price_rows, get_price, market_url_for, price_view
 from services.relic_sources import is_relic_source, relics_by_part
 from services.relic_sync import is_relic_name
@@ -221,27 +222,32 @@ def compute_farming_route(user_id: int, target_item_ids: list[int]) -> list[dict
 
 
 def farm_next_items(user_id: int, buy_threshold_plat: int | None,
-                    plat_per_hour: int | None, limit: int, cache_hours: int = 6) -> list[dict]:
+                    plat_per_hour: int | None, limit: int, cache_hours: int = 6,
+                    farm_hour_cap: int | None = None) -> list[dict]:
     """The caller's first `limit` unowned, unmastered items, priced from the cache.
 
     The dashboard's "Farm next" list. Never requests a price (see `enrich_with_cached_market`).
     """
     items = Progress.get_unowned_items(user_id)[:limit]
-    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour, cache_hours)
+    return enrich_with_cached_market(items, buy_threshold_plat, plat_per_hour, cache_hours,
+                                     farm_hour_cap)
 
 
 def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
-                              plat_per_hour: int | None, cache_hours: int = 6) -> list[dict]:
+                              plat_per_hour: int | None, cache_hours: int = 6,
+                              farm_hour_cap: int | None = None) -> list[dict]:
     """
-    Annotate each item dict with a market slug with its cached market price and a buy
-    recommendation (the slug alone decides: an item the market sells only as a set is not
-    tradable, yet priced).
+    Annotate each item dict with a market slug with its cached market price and the
+    buy-or-farm answer of `services.buy_vs_farm` (the slug alone decides: an item the
+    market sells only as a set is not tradable, yet priced).
     Mutates items in-place and returns them.
 
     The price is the cached one of any age, read with its fetch time for all items in one
     query; nothing is requested or written. Each priced item also gets `price`, its
     `price_view` (old mark, fetch time, refresh button) under the user's `cache_hours`. An
-    item without a cached price gets `market_price` None and no recommendation.
+    item without a cached price gets `market_price` None; only the hour cap can then
+    recommend buying it. The farming time counts every part of the item (no goal says
+    which are done): `recommend_buy`, `recommend_reason`, `expected_hours`.
     """
     priced = [item for item in items
               if item.get('market_url_name')]
@@ -251,28 +257,11 @@ def enrich_with_cached_market(items: list[dict], buy_threshold_plat: int | None,
         plat = item['price']['platinum']
         item['market_price'] = plat
         item['market_url'] = market_url_for(item['market_url_name'])
-        item['recommend_buy'] = False
-
-        if plat is None:
-            continue
-
-        if buy_threshold_plat and plat <= buy_threshold_plat:
-            item['recommend_buy'] = True
-            item['recommend_reason'] = f'{plat}p ≤ threshold {buy_threshold_plat}p'
-            continue
-
-        # Time-value check: if expected farming time × rate > price, suggest buying
-        sources = get_drop_sources(item['id'])
-        if sources and plat_per_hour:
-            avg_runs = sources[0].get('avg_runs') or 0
-            # Assume ~5 min/run → runs × 5 min → hours
-            expected_hours = (avg_runs * 5) / 60
-            if expected_hours * plat_per_hour > plat:
-                item['recommend_buy'] = True
-                item['recommend_reason'] = (
-                    f'~{expected_hours:.1f}h farming × {plat_per_hour}p/h '
-                    f'> market {plat}p'
-                )
+        answer = recommend(plat, expected_hours(item_sources(item['id'])),
+                           buy_threshold_plat, farm_hour_cap, plat_per_hour)
+        item['recommend_buy'] = answer['recommend']
+        item['recommend_reason'] = answer['reason']
+        item['expected_hours'] = answer['expected_hours']
     return items
 
 
@@ -821,10 +810,22 @@ def get_goal_plan_with_progress(goal_id: int, user_id: int) -> dict:
         plan['market_item_id'] = item_id
         if price_data.get('failed'):
             plan['market']['error'] = price_data['error']
+        # Buy or farm: the parts not yet crafted and not held as a blueprint still need farming
+        needed = [c['component_name'] for c in plan.get('components', [])
+                  if c['goal_comp_state'] == 'pending']
+        answer = recommend(plan['market_price'],
+                           expected_hours(item_sources(item_id, db), needed),
+                           **user_thresholds(user_id))
+        plan['recommend_buy'] = answer['recommend']
+        plan['recommend_reason'] = answer['reason']
+        plan['expected_hours'] = answer['expected_hours']
     else:
         plan['market_price'] = None
         plan['market_url'] = None
         plan['market'] = None
+        plan['recommend_buy'] = False
+        plan['recommend_reason'] = None
+        plan['expected_hours'] = None
 
     return plan
 

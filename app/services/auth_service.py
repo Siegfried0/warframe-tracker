@@ -10,6 +10,7 @@ USER_SETTINGS = [
     ('market_cache_hours', 'Market cache duration (hours)', '6'),
     ('buy_threshold_plat', 'Buy threshold (platinum)', ''),
     ('plat_per_hour',      'Platinum per hour (time-value)', ''),
+    ('farm_hour_cap',      'Farming hour cap (hours)', ''),
 ]
 
 # A personal setting is a whole number from 0 to this bound (SQLite's signed 64-bit range),

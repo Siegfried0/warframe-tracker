@@ -275,6 +275,19 @@ function escText(s) {
                   .replace(/"/g, '&quot;');
 }
 
+// Buy or farm, beside the goal item's price: the reason names the check that fired, or the
+// estimated farming time of the parts still needed
+function buyVsFarmNote(plan) {
+  if (!plan.recommend_reason) return '';
+  var title = ' title="Estimate: the best source of each part still needed, runs x typical minutes of its mission type">';
+  if (plan.recommend_buy) {
+    return ' <span class="green-text wf-plan-buy-farm"' + title + wfIcon('thumb_up', 'tiny') +
+           ' Buy: ' + escText(plan.recommend_reason) + '</span>';
+  }
+  return ' <span class="grey-text wf-plan-buy-farm"' + title +
+         (plan.expected_hours === null ? '' : 'Farm: ') + escText(plan.recommend_reason) + '</span>';
+}
+
 function vaultedPlanNote(plan) {
   if (!plan.vaulted) return '';
   var html = '<div class="orange-text wf-vaulted-note" style="font-size:.78rem;margin-bottom:.5rem">' +
@@ -362,7 +375,7 @@ function renderTreeView(plan, goalId) {
   if (plan.market) {
     html += '<div class="grey-text wf-plan-market-row" style="font-size:.82rem;margin-bottom:.5rem">' +
             'Market price: ' + wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true) +
-            '</div>';
+            buyVsFarmNote(plan) + '</div>';
   }
   plan.components.forEach(function(comp) {
     var cbId = 'gc-' + goalId + '-' + comp.component_name.replace(/[^a-z0-9]/gi, '-');
@@ -467,7 +480,7 @@ function renderVisualPlanBody(plan, goalId) {
   if (plan.market) {
     html += '<div class="wf-plan-market-row" style="margin-bottom:.6rem">' +
             'Market: ' + wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true) +
-            '</div>';
+            buyVsFarmNote(plan) + '</div>';
   }
 
   // ── Progress bars block ─────────────────────────────────────────────────────

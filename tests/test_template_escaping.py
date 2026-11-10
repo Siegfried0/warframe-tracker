@@ -16,6 +16,9 @@ ESCAPED_SITES = [
     ('/farming/', "escText((opp.goal_labels || []).join(', '))"),
     ('/farming/', 'escText(h.name)'),
     ('/farming/', 'wfPriceMarkup(plan.market_item_id, plan.market, plan.item_name, true)'),
+    ('/farming/', "' Buy: ' + escText(plan.recommend_reason) + '</span>'"),
+    ('/farming/', "(plan.expected_hours === null ? '' : 'Farm: ') + escText(plan.recommend_reason)"),
+    ('/farming/', "buyVsFarmNote(plan) + '</div>'"),
     ('/farming/', 'escText(comp.image_url)'),
     ('/farming/', 'escText(ing.image_url)'),
     ('/farming/', 'escText(ing.ingredient_name)'),
@@ -50,7 +53,7 @@ ESCAPED_SITES = [
 # checkbox id that keeps only [a-z0-9] of a name is safe as it is.
 BARE_STRING_FIELD = re.compile(
     r"\+\s*\w+\.(?:name|ingredient_name|node|category|location|image_url|market_url"
-    r"|goal_labels|item_name)\b(?!\s*\()(?!\.replace\(/\[\^a-z0-9\]/gi, '-'\))")
+    r"|goal_labels|item_name|recommend_reason)\b(?!\s*\()(?!\.replace\(/\[\^a-z0-9\]/gi, '-'\))")
 # A list of goal labels joined into the markup, unless the join is inside escText.
 BARE_JOINED_LABELS = re.compile(r"(?<!escText\()\(\w+\.goal_labels \|\| \[\]\)\.join")
 # An escape of the double quote alone (it leaves <, > and & as markup).
@@ -110,7 +113,8 @@ def test_the_farming_page_keeps_its_numbers_and_encoded_keys_as_they_are(admin_c
 SAFE_BARE_VARIABLES = {
     '/farming/': {'barFill', 'barPct', 'cbId', 'circleClass', 'color', 'compCrafted', 'compPct',
                   'compTotal', 'dotStyle', 'dotTitle', 'dots', 'gid', 'goalId', 'ingCbId',
-                  'ingId', 'locSafe', 'pct', 'qtyLabel', 'resPct', 'safeKey', 'stateTitle'},
+                  'ingId', 'locSafe', 'pct', 'qtyLabel', 'resPct', 'safeKey', 'stateTitle',
+                  'title'},
     '/sync/': {'bar', 'cls', 'color', 'details', 'listHtml', 'pct'},
 }
 BARE_VARIABLE = re.compile(r"'\s*\+\s*([A-Za-z_]\w*)\s*(?=[+;)}\n])")
