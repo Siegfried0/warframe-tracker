@@ -9,7 +9,8 @@ The flow, in two requests to the provider:
    the callback's ``state``, exchanges the code at the token endpoint and accepts the ID token
    from that response by its claims. The signature is not verified: the token comes straight
    from the provider's token endpoint over TLS (OpenID Connect Core 1.0, 3.1.3.7), so it must
-   never be accepted from the browser.
+   never be accepted from the browser. Then the allow lists (``OIDC_ALLOWED_EMAIL_DOMAINS``,
+   ``OIDC_ALLOWED_GROUPS``) are checked, before the account is looked up or created.
 
 Every failure raises ``SignInRefused`` with a reason for the log. The reason is fixed text
 (and at most an HTTP status or the names of missing fields): never a token, a code, the client
@@ -61,16 +62,22 @@ def missing_settings(config) -> list:
 
 
 def is_enabled(config) -> bool:
-    """OIDC is on when all four settings are set and EasyAuth is off."""
-    return not config.get('EASYAUTH_ENABLED') and not missing_settings(config)
+    """OIDC is on when all four settings are set, no allow list is set without an entry,
+    and EasyAuth is off."""
+    from services.oidc_allowed import empty_allow_lists
+    return not config.get('EASYAUTH_ENABLED') and not missing_settings(config) \
+        and not empty_allow_lists(config)
 
 
 def warn_if_partial(app) -> None:
-    """At startup: a partial OIDC configuration leaves OIDC off; say which names are missing
-    (never a value)."""
+    """At startup: a partial OIDC configuration, or an allow list set without an entry,
+    leaves OIDC off; say which names (never a value)."""
+    from services.oidc_allowed import empty_allow_lists
     missing = missing_settings(app.config)
     if 0 < len(missing) < len(SETTING_NAMES):
         app.logger.warning('OIDC sign-in is off: %s not set.', ', '.join(missing))
+    for name in empty_allow_lists(app.config):
+        app.logger.warning('OIDC sign-in is off: %s is set but holds no entry.', name)
 
 
 def _setting(config, name) -> str:
@@ -226,8 +233,11 @@ def finish_sign_in(config, session, args):
     id_token = _exchange_code(config, document, code, pending['verifier'])
     claims = decode_id_token(id_token)
     sub = check_claims(config, document, claims, pending['nonce'])
-    # Imported here: the accounts module takes SignInRefused and the messages from this one.
+    # Imported here: both modules take SignInRefused and the messages from this one.
     from services.oidc_accounts import account_for
+    from services.oidc_allowed import check_allowed
+    # Before the account is looked up or created, on every sign-in (a returning one too).
+    check_allowed(config, claims)
     return account_for(sub, claims), pending['next']
 
 

@@ -97,6 +97,10 @@ class Config:
     OIDC_CLIENT_SECRET = os.environ.get('OIDC_CLIENT_SECRET')
     OIDC_ISSUER_URL = os.environ.get('OIDC_ISSUER_URL')
     OIDC_REDIRECT_URI = os.environ.get('OIDC_REDIRECT_URI')
+    # Who may sign in through OIDC (comma-separated; unset = anyone the provider signs in;
+    # set but without an entry = OIDC sign-in off)
+    OIDC_ALLOWED_EMAIL_DOMAINS = os.environ.get('OIDC_ALLOWED_EMAIL_DOMAINS')
+    OIDC_ALLOWED_GROUPS = os.environ.get('OIDC_ALLOWED_GROUPS')
 
     # Backup — local
     BACKUP_LOCAL_PATH = os.environ.get('BACKUP_LOCAL_PATH')

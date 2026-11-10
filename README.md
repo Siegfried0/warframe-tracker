@@ -100,6 +100,8 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `OIDC_CLIENT_SECRET` | — | The client secret the provider issued; kept out of the database |
 | `OIDC_ISSUER_URL` | — | The provider's issuer URL (`https`) |
 | `OIDC_REDIRECT_URI` | — | `https://<your host>/auth/oidc/callback` |
+| `OIDC_ALLOWED_EMAIL_DOMAINS` | — | Optional: only emails of these domains may sign in through OIDC (comma-separated, for example `example.com, example.org`) |
+| `OIDC_ALLOWED_GROUPS` | — | Optional: only members of these provider groups may sign in through OIDC (comma-separated, exact names) |
 | `BACKUP_LOCAL_PATH` | — | Local backup directory |
 | `BACKUP_S3_ENDPOINT` | — | S3-compatible endpoint URL |
 | `BACKUP_S3_BUCKET` | — | S3 bucket name |
@@ -128,10 +130,23 @@ Notes:
   same machine (`localhost`, `127.0.0.1`, `::1`). The app trusts the ID token because it comes
   straight from the provider's token endpoint over TLS, so `OIDC_ISSUER_URL` must name a provider
   you trust.
-- **Who can sign up:** anyone your provider signs in gets a `user` account on their first sign-in,
-  as with self-registration. With a public provider (Google, GitHub) that is anyone with an
-  account there, so prefer a provider or client limited to your own users. An admin can
-  deactivate or delete such accounts.
+- **Who can sign up:** without the two `OIDC_ALLOWED_*` variables, anyone your provider signs
+  in gets a `user` account on their first sign-in, as with self-registration. With a public
+  provider (Google, GitHub) that is anyone with an account there. To restrict it, set one or
+  both (with both, a user must pass both):
+  - `OIDC_ALLOWED_EMAIL_DOMAINS=example.com, example.org`: the email the provider gives must end
+    in `@` and one of these domains exactly (case does not matter; `sub.example.com` is not
+    `example.com`, list it on its own). The provider must vouch for the email: one it marks as
+    not verified is refused; use a provider that only gives addresses it has checked.
+  - `OIDC_ALLOWED_GROUPS=tracker-users`: the user must be in one of these groups, spelled
+    exactly as the provider sends them (case matters; some send ids or paths such as
+    `/tracker-users`). The provider must be set up to put a `groups` claim into the ID token.
+  The check runs at every sign-in: tightening a list, or removing someone from the group at the
+  provider, refuses their existing account at its next sign-in (the account and its data are
+  kept; a session already signed in runs on until it ends). A refused user sees "Your account
+  at the identity provider is not allowed to sign in to this app." A variable that is set but
+  empty (or only commas and blanks) turns OIDC sign-in off and the startup log names it. An
+  admin can also deactivate or delete accounts.
 - On an empty database the first account, local or OIDC, becomes the admin.
 - An OIDC account is never linked to another account, not even one with the same name or
   email. On the first sign-in the username is the provider's `preferred_username` (else the
