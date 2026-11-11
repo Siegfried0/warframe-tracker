@@ -1117,6 +1117,11 @@ def get_all_nodes() -> list[str]:
     return [r['location'] for r in rows if r['location'] and not is_relic_name(r['location'])]
 
 
+# drop_sources.drop_chance is a percentage: a node whose highest drop chance is at least
+# this many percent counts as a guaranteed drop, and its opportunities as essentially free.
+GUARANTEED_DROP_PERCENT = 95.0
+
+
 def get_advisor_opportunities(user_id: int, node_location: str) -> dict:
     """Cross-reference user's still-needed items against drops at the selected node.
     A relic is no node: its name finds no opportunities."""
@@ -1142,7 +1147,7 @@ def get_advisor_opportunities(user_id: int, node_location: str) -> dict:
         }
 
     max_chance = node_drops[0]['drop_chance'] or 0
-    guaranteed_free = bool(max_chance >= 0.95)
+    guaranteed_free = bool(max_chance >= GUARANTEED_DROP_PERCENT)
 
     # Build needed sets from active goals
     goals = db.execute(
