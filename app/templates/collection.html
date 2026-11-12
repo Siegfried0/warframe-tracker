@@ -361,13 +361,18 @@
           {% if row.on_market %}<div class="coll-card-market">{{ item_price(row) }}</div>{% endif %}
         </div>
         {% if current_cat == 'arcane' %}
-          <!-- Arcane rank progress bar -->
+          {#- The rank bar: owned rank against the target rank, or against the max rank when
+              no target is set; capped at 100 %, empty when it measures against 0. The page's
+              script repaints it the same way (arcaneBar) after a rank or target change. -#}
+          {% set bar_of    = arc_target_rank if arc_target_rank > 0 else arc_max_rank %}
+          {% set bar_pct   = [[arc_owned_rank * 100 // bar_of, 100]|min, 0]|max if bar_of > 0 else 0 %}
+          {% set bar_title = ('Rank %d of target %d'|format(arc_owned_rank, arc_target_rank)) if arc_target_rank > 0
+                             else ('Rank %d of max %d'|format(arc_owned_rank, arc_max_rank)) %}
           <div style="margin:.3rem 0 .2rem">
-            <div style="background:#37474f;border-radius:2px;height:4px">
-              {% if arc_max_rank > 0 %}
-              {% set bar_pct = [(arc_owned_rank / arc_max_rank * 100)|int, 100]|min %}
+            <div class="arc-rank-track" style="background:#37474f;border-radius:2px;height:4px"
+                 role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ bar_pct }}"
+                 title="{{ bar_title }}" aria-label="{{ bar_title }}">
               <div class="arc-rank-bar" style="width:{{ bar_pct }}%;height:4px;background:#26a69a;border-radius:2px"></div>
-              {% endif %}
             </div>
             <div style="display:flex;align-items:center;gap:.25rem;margin-top:.25rem">
               <button class="arc-rank-btn btn-flat waves-effect" data-item="{{ row.id }}"
@@ -784,6 +789,27 @@ function setView(view) {
 
 // ── Arcane rank helpers ───────────────────────────────────────────────────────
 
+// The rank bar's width and label: owned rank against the target rank, or against the max
+// rank when no target is set; capped at 100 %, 0 when it measures against 0. The server
+// render computes the same (the card markup's bar_pct and bar_title).
+function arcaneBar(owned, target, max) {
+  var of  = target > 0 ? target : max;
+  var pct = of > 0 ? Math.max(0, Math.min(Math.floor(owned * 100 / of), 100)) : 0;
+  var title = target > 0 ? 'Rank ' + owned + ' of target ' + target
+                         : 'Rank ' + owned + ' of max ' + max;
+  return {pct: pct, title: title};
+}
+
+// Repaints the rank bar of one card from its data-f-* rank attributes.
+function paintArcaneBar($el) {
+  var bar = arcaneBar(parseInt($el.attr('data-f-owned-rank')) || 0,
+                      parseInt($el.attr('data-f-target-rank')) || 0,
+                      parseInt($el.attr('data-f-max-rank')) || 0);
+  $el.find('.arc-rank-track').attr({'title': bar.title, 'aria-label': bar.title,
+                                    'aria-valuenow': bar.pct});
+  $el.find('.arc-rank-bar').css('width', bar.pct + '%');
+}
+
 function updateArcaneRank(itemId, newRank, maxRank) {
   $.ajax({
     url: '{{ url_for("collection.update_rank") }}',
@@ -806,9 +832,7 @@ function updateArcaneRank(itemId, newRank, maxRank) {
            .attr('data-f-targetmet',  targetMet);
 
         $el.find('.arc-owned-rank').text(confirmed + '/' + maxRank);
-
-        var barPct = maxRank > 0 ? Math.min(Math.round(confirmed / maxRank * 100), 100) : 0;
-        $el.find('.arc-rank-bar').css('width', barPct + '%');
+        paintArcaneBar($el);
       });
     }
   });
@@ -906,6 +930,7 @@ $(function() {
           var ownedRank = parseInt($el.first().attr('data-f-owned-rank')) || 0;
           var targetMet = (val > 0 && ownedRank >= val) ? '1' : '0';
           $el.attr('data-f-target-rank', val).attr('data-f-targetmet', targetMet);
+          $el.each(function() { paintArcaneBar($(this)); });
         }
       });
     }, 600);
