@@ -16,15 +16,17 @@ import requests
 
 from models.db import get_db
 from models.item import Item
-from services import (resurgence_sync, wiki_sync, wiki_sync_amps, wiki_sync_catalogue,
-                      wiki_sync_gear, wiki_sync_ingredients, wiki_sync_kitguns, wiki_sync_mods,
+from services import (image_cache, resurgence_sync, wiki_sync, wiki_sync_amps,
+                      wiki_sync_catalogue, wiki_sync_gear, wiki_sync_images,
+                      wiki_sync_ingredients, wiki_sync_kitguns, wiki_sync_mods,
                       wiki_sync_requests)
 
 SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
-                wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods, wiki_sync_ingredients]
+                wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods, wiki_sync_ingredients,
+                wiki_sync_images]
 # The modules that call a request without being the requests module.
 CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_gear, wiki_sync_kitguns, wiki_sync_amps,
-           wiki_sync_mods, wiki_sync_ingredients, resurgence_sync]
+           wiki_sync_mods, wiki_sync_ingredients, wiki_sync_images, resurgence_sync]
 FETCHES = sorted(name for name, obj in vars(wiki_sync_requests).items()
                  if inspect.isfunction(obj) and obj.__module__ == wiki_sync_requests.__name__)
 
@@ -67,7 +69,7 @@ def test_every_sync_module_logs_as_the_sync(module):
 
 @pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
                                     wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
-                                    wiki_sync_ingredients, resurgence_sync],
+                                    wiki_sync_ingredients, wiki_sync_images, resurgence_sync],
                          ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
     imported = _imports(module)
@@ -99,7 +101,7 @@ def test_every_fetch_is_called_through_the_requests_module(module):
 
 @pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
                                     wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
-                                    wiki_sync_ingredients],
+                                    wiki_sync_ingredients, wiki_sync_images],
                          ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
     assert ('requests', '') not in _imports(module)
@@ -197,6 +199,11 @@ MOVED_STEPS = [
     (wiki_sync_amps, '_sync_amps'), (wiki_sync_mods, '_sync_mods'),
     (wiki_sync_mods, '_sync_arcanes'), (wiki_sync_mods, '_sync_resources'),
     (wiki_sync_ingredients, '_sync_component_ingredients'),
+    (wiki_sync_images, '_backfill_null_item_images'),
+    (wiki_sync_images, '_sync_wiki_images_for_missing'),
+    (wiki_sync_images, '_sync_item_images'),
+    (wiki_sync_images, '_sync_component_wiki_images'),
+    (wiki_sync_images, '_sync_component_images'),
 ]
 
 
@@ -428,6 +435,137 @@ def test_a_row_write_that_raises_in_the_ingredient_step_ends_the_sync_as_a_faile
     monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: files.get(f, []))
     monkeypatch.setattr(wiki_sync_requests, '_fetch_wiki_module', lambda title: module)
     monkeypatch.setattr(wiki_sync_ingredients, 'Item', _BrokenItem)
+    with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
+        result = wiki_sync.run_sync(app)
+    assert result == {'ok': False, 'error': 'write refused'}
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno >= logging.ERROR] == [
+        ('services.wiki_sync', 'Sync failed: write refused')]
+
+
+# ── Images ───────────────────────────────────────────────────────────────────
+
+THUMB = 'https://wiki.example/thumb/{}.png'
+# The three wiki passes: how each is called, the table it writes, a title it asks for.
+WIKI_PASSES = {
+    '_backfill_null_item_images': (lambda db: wiki_sync._backfill_null_item_images(
+        db, ['primary']), 'items', 'Braton'),
+    '_sync_wiki_images_for_missing': (lambda db: wiki_sync._sync_wiki_images_for_missing(db),
+                                      'items', 'Braton'),
+    '_sync_component_wiki_images': (lambda db: wiki_sync._sync_component_wiki_images(db),
+                                    'item_component_meta', 'Excalibur Chassis Blueprint'),
+}
+# The two cache passes and the table each writes.
+CACHE_PASSES = {'_sync_item_images': 'items', '_sync_component_images': 'item_component_meta'}
+
+
+def _seed_image_rows(remote: bool):
+    """A weapon and a warframe with one component; each with a remote picture URL or none."""
+    db = get_db()
+    for name, category in (('Braton', 'primary'), ('Excalibur', 'warframe')):
+        Item.upsert(name=name, category=category, source='standard',
+                    image_url=THUMB.format(name) if remote else None)
+    frame = db.execute("SELECT id FROM items WHERE name = 'Excalibur'").fetchone()['id']
+    db.execute('INSERT INTO item_component_meta (item_id, component_name, image_url) '
+               'VALUES (?, ?, ?)', (frame, 'Chassis', THUMB.format('Chassis') if remote else None))
+    db.commit()
+    return db
+
+
+def _image_urls(db, table):
+    return sorted(r['image_url'] for r in db.execute(
+        f'SELECT image_url FROM {table} WHERE image_url IS NOT NULL'))
+
+
+def _save_picture(url, dest):
+    dest.write_bytes(b'picture')
+    return True
+
+
+@pytest.mark.parametrize('name, replacement, counts', [
+    ('_backfill_null_item_images', lambda db, cats: 201, {'weapon_images_backfilled': 201}),
+    ('_sync_wiki_images_for_missing', lambda db: 202, {'images_wiki_fetched': 202}),
+    ('_sync_item_images', lambda db: (203, 204),
+     {'images_downloaded': 203, 'images_already_cached': 204}),
+    ('_sync_component_wiki_images', lambda db: 205, {'comp_images_wiki_fetched': 205}),
+    ('_sync_component_images', lambda db: (206, 207),
+     {'comp_images_downloaded': 206, 'comp_images_already_cached': 207}),
+], ids=lambda v: v if isinstance(v, str) else '')
+def test_an_image_pass_replaced_on_the_entry_point_is_the_pass_the_sync_runs(
+        app, monkeypatch, name, replacement, counts):
+    _replace_every_step(monkeypatch)
+    monkeypatch.setattr(wiki_sync, name, replacement)
+    result = wiki_sync.run_sync(app)
+    assert result['ok'] is True
+    assert {key: result['counts'][key] for key in counts} == counts
+
+
+@pytest.mark.parametrize('name', WIKI_PASSES)
+def test_a_fetch_replaced_on_the_requests_module_reaches_each_wiki_image_pass(
+        app, monkeypatch, name):
+    run, table, title = WIKI_PASSES[name]
+    asked = []
+    monkeypatch.setattr(wiki_sync_requests, '_wiki_batch_images', lambda titles: asked.extend(
+        titles) or {t: THUMB.format(t) for t in titles})
+    with app.app_context():
+        db = _seed_image_rows(remote=False)
+        count = run(db)
+        urls = _image_urls(db, table)
+    assert title in asked
+    assert count == len(asked) == len(urls)
+    assert THUMB.format(title) in urls
+
+
+@pytest.mark.parametrize('name', WIKI_PASSES)
+def test_a_refused_request_in_a_wiki_image_pass_writes_nothing_and_warns(
+        app, monkeypatch, caplog, name):
+    run, table, _ = WIKI_PASSES[name]
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context(), caplog.at_level(logging.INFO, logger='services.wiki_sync'):
+        db = _seed_image_rows(remote=False)
+        count = run(db)
+        urls = _image_urls(db, table)
+    assert (count, urls) == (0, [])
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno == logging.WARNING] == [
+        ('services.wiki_sync', 'Wiki batch image fetch failed: refused')]
+
+
+@pytest.mark.parametrize('name', CACHE_PASSES)
+def test_a_download_replaced_on_the_cache_module_reaches_each_cache_pass(app, monkeypatch, name):
+    monkeypatch.setattr(image_cache, 'download', _save_picture)
+    with app.app_context():
+        db = _seed_image_rows(remote=True)
+        counts = getattr(wiki_sync, name)(db)
+        urls = _image_urls(db, CACHE_PASSES[name])
+    assert counts == (len(urls), 0)
+    assert urls and all(url.startswith('/static/images/') for url in urls)
+
+
+@pytest.mark.parametrize('name', CACHE_PASSES)
+def test_a_refused_download_in_a_cache_pass_keeps_the_remote_url(app, monkeypatch, name):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context():
+        db = _seed_image_rows(remote=True)
+        before = _image_urls(db, CACHE_PASSES[name])
+        counts = getattr(wiki_sync, name)(db)
+        after = _image_urls(db, CACHE_PASSES[name])
+    assert counts == (0, 0)
+    assert after == before != []
+
+
+@pytest.mark.parametrize('name, table', [*((n, v[1]) for n, v in WIKI_PASSES.items()),
+                                         *CACHE_PASSES.items()])
+def test_a_row_write_that_raises_in_an_image_pass_ends_the_sync_as_a_failed_result(
+        app, monkeypatch, caplog, name, table):
+    with app.app_context():
+        db = _seed_image_rows(remote=name in CACHE_PASSES)
+        db.execute(f'CREATE TRIGGER refuse_picture BEFORE UPDATE OF image_url ON {table} '
+                   "BEGIN SELECT RAISE(ABORT, 'write refused'); END")
+        db.commit()
+    _replace_every_step(monkeypatch)
+    monkeypatch.setattr(wiki_sync, name, getattr(wiki_sync_images, name))
+    monkeypatch.setattr(wiki_sync_requests, '_wiki_batch_images',
+                        lambda titles: {t: THUMB.format(t) for t in titles})
+    monkeypatch.setattr(image_cache, 'download', _save_picture)
     with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
         result = wiki_sync.run_sync(app)
     assert result == {'ok': False, 'error': 'write refused'}
