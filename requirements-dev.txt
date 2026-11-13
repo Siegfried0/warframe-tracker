@@ -2,3 +2,6 @@
 # Install both: python -m pip install -r app/requirements.txt -r requirements-dev.txt
 pytest==9.2.0
 psutil==7.2.2
+# run the test suite on parallel workers (pytest -n)
+pytest-xdist==3.8.0
+execnet==2.1.2

@@ -17,16 +17,17 @@ import requests
 from models.db import get_db
 from models.item import Item
 from services import (image_cache, resurgence_sync, wiki_sync, wiki_sync_amps,
-                      wiki_sync_catalogue, wiki_sync_gear, wiki_sync_images,
+                      wiki_sync_catalogue, wiki_sync_drops, wiki_sync_gear, wiki_sync_images,
                       wiki_sync_ingredients, wiki_sync_kitguns, wiki_sync_mods,
                       wiki_sync_requests)
 
 SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
                 wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods, wiki_sync_ingredients,
-                wiki_sync_images]
+                wiki_sync_images, wiki_sync_drops]
 # The modules that call a request without being the requests module.
 CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_gear, wiki_sync_kitguns, wiki_sync_amps,
-           wiki_sync_mods, wiki_sync_ingredients, wiki_sync_images, resurgence_sync]
+           wiki_sync_mods, wiki_sync_ingredients, wiki_sync_images, wiki_sync_drops,
+           resurgence_sync]
 FETCHES = sorted(name for name, obj in vars(wiki_sync_requests).items()
                  if inspect.isfunction(obj) and obj.__module__ == wiki_sync_requests.__name__)
 
@@ -69,7 +70,8 @@ def test_every_sync_module_logs_as_the_sync(module):
 
 @pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
                                     wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
-                                    wiki_sync_ingredients, wiki_sync_images, resurgence_sync],
+                                    wiki_sync_ingredients, wiki_sync_images, wiki_sync_drops,
+                                    resurgence_sync],
                          ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
     imported = _imports(module)
@@ -96,12 +98,13 @@ def test_every_fetch_is_called_through_the_requests_module(module):
                 and node.func.value.id == 'wiki_sync_requests'):
             qualified.append(node.func.attr)
     assert bare == []
-    assert bool(qualified) == (module is not wiki_sync_catalogue)   # the helpers request nothing
+    # The helpers and the entry point request nothing themselves.
+    assert bool(qualified) == (module not in (wiki_sync_catalogue, wiki_sync))
 
 
 @pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
                                     wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
-                                    wiki_sync_ingredients, wiki_sync_images],
+                                    wiki_sync_ingredients, wiki_sync_images, wiki_sync_drops],
                          ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
     assert ('requests', '') not in _imports(module)
@@ -204,6 +207,8 @@ MOVED_STEPS = [
     (wiki_sync_images, '_sync_item_images'),
     (wiki_sync_images, '_sync_component_wiki_images'),
     (wiki_sync_images, '_sync_component_images'),
+    (wiki_sync_drops, '_sync_drop_sources'), (wiki_sync_drops, '_sync_resource_drops'),
+    (wiki_sync_drops, '_sync_wfcd_component_drops'),
 ]
 
 
