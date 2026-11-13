@@ -15,14 +15,16 @@ import pytest
 import requests
 
 from models.db import get_db
+from models.item import Item
 from services import (resurgence_sync, wiki_sync, wiki_sync_amps, wiki_sync_catalogue,
-                      wiki_sync_gear, wiki_sync_kitguns, wiki_sync_mods, wiki_sync_requests)
+                      wiki_sync_gear, wiki_sync_ingredients, wiki_sync_kitguns, wiki_sync_mods,
+                      wiki_sync_requests)
 
 SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
-                wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods]
+                wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods, wiki_sync_ingredients]
 # The modules that call a request without being the requests module.
 CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_gear, wiki_sync_kitguns, wiki_sync_amps,
-           wiki_sync_mods, resurgence_sync]
+           wiki_sync_mods, wiki_sync_ingredients, resurgence_sync]
 FETCHES = sorted(name for name, obj in vars(wiki_sync_requests).items()
                  if inspect.isfunction(obj) and obj.__module__ == wiki_sync_requests.__name__)
 
@@ -65,7 +67,7 @@ def test_every_sync_module_logs_as_the_sync(module):
 
 @pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
                                     wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
-                                    resurgence_sync],
+                                    wiki_sync_ingredients, resurgence_sync],
                          ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
     imported = _imports(module)
@@ -96,7 +98,8 @@ def test_every_fetch_is_called_through_the_requests_module(module):
 
 
 @pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
-                                    wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods],
+                                    wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
+                                    wiki_sync_ingredients],
                          ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
     assert ('requests', '') not in _imports(module)
@@ -193,6 +196,7 @@ MOVED_STEPS = [
     (wiki_sync_gear, '_sync_k_drives'), (wiki_sync_kitguns, '_sync_kitgun_chambers'),
     (wiki_sync_amps, '_sync_amps'), (wiki_sync_mods, '_sync_mods'),
     (wiki_sync_mods, '_sync_arcanes'), (wiki_sync_mods, '_sync_resources'),
+    (wiki_sync_ingredients, '_sync_component_ingredients'),
 ]
 
 
@@ -337,6 +341,93 @@ def test_a_row_write_that_raises_in_a_mod_step_ends_the_sync_as_a_failed_result(
     monkeypatch.setattr(wiki_sync, step, getattr(wiki_sync_mods, step))
     monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: MOD_FILES.get(f, []))
     monkeypatch.setattr(wiki_sync_mods, 'Item', _BrokenItem)
+    with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
+        result = wiki_sync.run_sync(app)
+    assert result == {'ok': False, 'error': 'write refused'}
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno >= logging.ERROR] == [
+        ('services.wiki_sync', 'Sync failed: write refused')]
+
+
+# ── Component ingredients ────────────────────────────────────────────────────
+
+# A weapon whose component has a recipe (WFCD; its Forma is skipped) and a warframe part
+# whose recipe is in the wiki's blueprints module.
+INGREDIENT_FILES = {
+    'Primary.json': [{'name': 'Braton', 'masterable': True, 'components': [
+        {'name': 'Barrel', 'imageName': 'barrel.png',
+         'components': [{'name': 'Alloy Plate', 'itemCount': 50},
+                        {'name': 'Forma', 'itemCount': 1}]}]}],
+}
+BLUEPRINTS_MODULE = (
+    '["WispChassisBlueprint"] = { Result = "Wisp Chassis", '
+    'Parts = { { Count = 2, Name = "Morphics" } } },')
+
+
+def _seed_ingredient_owners():
+    for name, category in (('Braton', 'primary'), ('Wisp', 'warframe')):
+        Item.upsert(name=name, category=category, source='standard')
+    get_db().commit()
+
+
+def _ingredient_rows():
+    return sorted(tuple(r) for r in get_db().execute(
+        'SELECT i.name, c.component_name, c.ingredient_name, c.ingredient_qty '
+        'FROM component_ingredients c JOIN items i ON i.id = c.item_id'))
+
+
+def test_a_fetch_replaced_on_the_requests_module_reaches_the_ingredient_step(app, monkeypatch):
+    modules = []
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd',
+                        lambda f: INGREDIENT_FILES.get(f, []))
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wiki_module',
+                        lambda title: modules.append(title) or BLUEPRINTS_MODULE)
+    status = {'complete': True}
+    with app.app_context():
+        _seed_ingredient_owners()
+        count = wiki_sync._sync_component_ingredients(status)
+        rows = _ingredient_rows()
+        resources = {r['name'] for r in get_db().execute(
+            "SELECT name FROM items WHERE category = 'resource'")}
+        meta = [tuple(r) for r in get_db().execute(
+            'SELECT component_name, image_url FROM item_component_meta')]
+    assert count == 2
+    assert rows == [('Braton', 'Barrel', 'Alloy Plate', 50), ('Wisp', 'Chassis', 'Morphics', 2)]
+    assert resources == {'Alloy Plate', 'Morphics'}
+    assert meta == [('Barrel', 'https://cdn.warframestat.us/img/barrel.png')]
+    assert modules == ['Module:Blueprints/data']
+    assert status == {'complete': True}
+
+
+def test_a_refused_request_in_the_ingredient_step_skips_each_source_and_warns(
+        app, monkeypatch, caplog):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    status = {'complete': True}
+    with app.app_context(), caplog.at_level(logging.INFO, logger='services.wiki_sync'):
+        _seed_ingredient_owners()
+        count = wiki_sync._sync_component_ingredients(status)
+        rows = _ingredient_rows()
+    assert count == 0
+    assert rows == []
+    assert status == {'complete': False}
+    warnings = [(r.name, r.getMessage()) for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == [
+        ('services.wiki_sync', f'Skipping {filename} for ingredient sync: refused')
+        for filename, _ in wiki_sync_ingredients._INGREDIENT_SOURCES
+    ] + [('services.wiki_sync', 'Could not fetch wiki blueprints module (non-fatal): refused')]
+
+
+@pytest.mark.parametrize('files, module', [(INGREDIENT_FILES, ''), ({}, BLUEPRINTS_MODULE)],
+                         ids=['wfcd', 'wiki'])
+def test_a_row_write_that_raises_in_the_ingredient_step_ends_the_sync_as_a_failed_result(
+        app, monkeypatch, caplog, files, module):
+    with app.app_context():
+        _seed_ingredient_owners()
+    _replace_every_step(monkeypatch)
+    monkeypatch.setattr(wiki_sync, '_sync_component_ingredients',
+                        wiki_sync_ingredients._sync_component_ingredients)
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: files.get(f, []))
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wiki_module', lambda title: module)
+    monkeypatch.setattr(wiki_sync_ingredients, 'Item', _BrokenItem)
     with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
         result = wiki_sync.run_sync(app)
     assert result == {'ok': False, 'error': 'write refused'}
