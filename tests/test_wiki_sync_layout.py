@@ -15,12 +15,14 @@ import pytest
 import requests
 
 from models.db import get_db
-from services import (resurgence_sync, wiki_sync, wiki_sync_catalogue, wiki_sync_kitguns,
-                      wiki_sync_requests)
+from services import (resurgence_sync, wiki_sync, wiki_sync_amps, wiki_sync_catalogue,
+                      wiki_sync_gear, wiki_sync_kitguns, wiki_sync_requests)
 
-SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_kitguns]
+SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
+                wiki_sync_kitguns, wiki_sync_amps]
 # The modules that call a request without being the requests module.
-CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_kitguns, resurgence_sync]
+CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_gear, wiki_sync_kitguns, wiki_sync_amps,
+           resurgence_sync]
 FETCHES = sorted(name for name, obj in vars(wiki_sync_requests).items()
                  if inspect.isfunction(obj) and obj.__module__ == wiki_sync_requests.__name__)
 
@@ -61,8 +63,9 @@ def test_every_sync_module_logs_as_the_sync(module):
     assert module.log.name == 'services.wiki_sync'
 
 
-@pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_kitguns,
-                                    resurgence_sync], ids=lambda m: m.__name__)
+@pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
+                                    wiki_sync_kitguns, wiki_sync_amps, resurgence_sync],
+                         ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
     imported = _imports(module)
     assert [pair for pair in imported if pair[0] == 'services.wiki_sync'] == []
@@ -91,8 +94,8 @@ def test_every_fetch_is_called_through_the_requests_module(module):
     assert bool(qualified) == (module is not wiki_sync_catalogue)   # the helpers request nothing
 
 
-@pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_kitguns],
-                         ids=lambda m: m.__name__)
+@pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
+                                    wiki_sync_kitguns, wiki_sync_amps], ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
     assert ('requests', '') not in _imports(module)
     assert not hasattr(module, 'requests')
@@ -179,3 +182,83 @@ def test_a_fetch_replaced_on_the_requests_module_reaches_kitgun_chambers(app, mo
         ).fetchone()
     assert asked == ['Secondary.json', 'Misc.json']
     assert row['image_url'] == 'https://cdn.warframestat.us/img/catchmoon.png'
+
+
+# The steps that moved out of the entry point, each with the module that holds it.
+MOVED_STEPS = [
+    (wiki_sync_gear, '_sync_warframes'), (wiki_sync_gear, '_sync_weapons'),
+    (wiki_sync_gear, '_sync_companions'), (wiki_sync_gear, '_sync_archwings'),
+    (wiki_sync_gear, '_sync_k_drives'), (wiki_sync_kitguns, '_sync_kitgun_chambers'),
+    (wiki_sync_amps, '_sync_amps'),
+]
+
+
+@pytest.mark.parametrize('module, step', MOVED_STEPS, ids=lambda v: getattr(v, '__name__', v))
+def test_the_entry_point_binds_each_moved_step_from_the_module_that_holds_it(module, step):
+    assert getattr(wiki_sync, step) is getattr(module, step)
+    assert getattr(module, step).__module__ == module.__name__
+
+
+# One masterable entry per WFCD file the gear steps read; a Pets.json MOA goes to k-drive.
+GEAR_FILES = {
+    'Warframes.json': [{'name': 'Excalibur', 'masterable': True}],
+    'Primary.json': [{'name': 'Braton', 'masterable': True, 'type': 'Rifle'}],
+    'Secondary.json': [], 'Melee.json': [], 'Arch-Gun.json': [], 'Arch-Melee.json': [],
+    'Pets.json': [{'name': 'Kavasa Kubrow', 'type': 'Pets'}, {'name': 'Oloro Moa', 'type': 'Pets'}],
+    'Sentinels.json': [{'name': 'Carrier', 'masterable': True}],
+    'Archwing.json': [{'name': 'Odonata', 'masterable': True}],
+    'Amps.json': [{'name': 'Raplak Prism', 'masterable': True}],
+}
+
+
+@pytest.mark.parametrize('step, category, name', [
+    ('_sync_warframes', 'warframe', 'Excalibur'), ('_sync_weapons', 'primary', 'Braton'),
+    ('_sync_companions', 'companion', 'Carrier'), ('_sync_archwings', 'archwing', 'Odonata'),
+    ('_sync_k_drives', 'k-drive', 'Oloro Moa'), ('_sync_amps', 'amp', 'Raplak'),
+])
+def test_a_fetch_replaced_on_the_requests_module_reaches_each_gear_step(
+        app, monkeypatch, step, category, name):
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: GEAR_FILES.get(f, []))
+    monkeypatch.setattr(wiki_sync_requests, '_wiki_category_members', lambda category: [])
+    monkeypatch.setattr(wiki_sync_requests, '_wiki_batch_images', lambda titles: {})
+    with app.app_context():
+        count = getattr(wiki_sync, step)()
+        row = get_db().execute(
+            'SELECT 1 FROM items WHERE name = ? AND category = ?', (name, category)).fetchone()
+    assert count >= 1
+    assert row is not None
+
+
+@pytest.mark.parametrize('step', ['_sync_warframes', '_sync_weapons', '_sync_companions',
+                                  '_sync_archwings', '_sync_k_drives'])
+def test_a_refused_request_in_a_gear_step_reaches_the_caller(app, monkeypatch, step):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context(), pytest.raises(requests.ConnectionError, match='refused'):
+        getattr(wiki_sync, step)()
+
+
+def test_a_row_write_that_raises_in_a_gear_step_ends_the_sync_as_a_failed_result(
+        app, monkeypatch, caplog):
+    def broken(*args, **kwargs):
+        raise RuntimeError('write refused')
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: GEAR_FILES.get(f, []))
+    monkeypatch.setattr(wiki_sync_gear, '_upsert_wfcd', broken)
+    with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
+        result = wiki_sync.run_sync(app)
+    assert result == {'ok': False, 'error': 'write refused'}
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno >= logging.ERROR] == [
+        ('services.wiki_sync', 'Sync failed: write refused')]
+
+
+def test_amps_fall_back_to_the_curated_list_when_every_request_fails(app, monkeypatch, caplog):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context(), caplog.at_level(logging.INFO, logger='services.wiki_sync'):
+        count = wiki_sync._sync_amps()
+        names = {r['name'] for r in get_db().execute(
+            "SELECT name FROM items WHERE category = 'amp'")}
+    assert count == len(wiki_sync_amps._KNOWN_AMPS) == len(names)
+    assert names == set(wiki_sync_amps._KNOWN_AMPS)
+    messages = [r.getMessage() for r in caplog.records if r.name == 'services.wiki_sync']
+    assert 'WFCD Amps.json not available (refused) — trying Misc.json' in messages
+    assert 'Could not fetch WFCD Misc.json (refused) — falling back to wiki' in messages
+    assert 'Wiki Category:Amps lookup failed (refused) — using hardcoded fallback' in messages
