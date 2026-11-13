@@ -909,16 +909,18 @@ $(function() {
     updateArcaneRank(itemId, newRank, maxRank);
   });
 
-  // Arcane target rank input (debounced)
-  var targetTimer = null;
+  // Arcane target rank input, debounced per item: an edit waits only for later edits of
+  // the same item (card or table input), never for another card's.
+  var targetTimer = {};
   $(document).on('change input', '.arc-target-input', function() {
     var $inp    = $(this);
     var itemId  = $inp.data('item');
     var maxRank = parseInt($inp.data('max')) || 0;
     var val     = Math.max(0, Math.min(maxRank, parseInt($inp.val()) || 0));
     $inp.val(val);
-    clearTimeout(targetTimer);
-    targetTimer = setTimeout(function() {
+    clearTimeout(targetTimer[itemId]);
+    targetTimer[itemId] = setTimeout(function() {
+      delete targetTimer[itemId];
       $.ajax({
         url: '{{ url_for("collection.update_target") }}',
         method: 'POST',
