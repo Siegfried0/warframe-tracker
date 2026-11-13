@@ -25,6 +25,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from flask import current_app
 
 from models.db import get_db
+from services import wiki_sync_requests
 from services.auth_service import get_global_setting, upsert_global_setting
 
 log = logging.getLogger(__name__)
@@ -281,8 +282,7 @@ def _fallback_days() -> int:
 
 
 def _fetch_wikitext() -> str:
-    from services.wiki_sync import _fetch_wiki_module  # the sync's MediaWiki page fetch
-    return _fetch_wiki_module(PAGE_TITLE)
+    return wiki_sync_requests._fetch_wiki_module(PAGE_TITLE)  # the sync's MediaWiki page fetch
 
 
 def sync_resurgence(now: datetime | None = None) -> dict:

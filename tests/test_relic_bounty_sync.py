@@ -16,7 +16,7 @@ import requests
 
 from models.db import get_db
 from models.item import Item
-from services import relic_sources, relic_sync, wiki_sync
+from services import relic_sources, relic_sync, wiki_sync, wiki_sync_requests
 
 CATALOGUE = [('Ash Prime', 'warframe'), ('Braton Prime', 'primary')]
 
@@ -121,12 +121,12 @@ def source(monkeypatch):
         calls = 0
 
     def fake_get(url, timeout=None, **kwargs):
-        assert url == wiki_sync._WARFRAMESTAT_DROPS
+        assert url == wiki_sync_requests._WARFRAMESTAT_DROPS
         Source.calls += 1
         return FakeResponse(copy.deepcopy(Source.tables))
 
     monkeypatch.setattr(requests, 'get', fake_get)
-    monkeypatch.setattr(wiki_sync, '_fetch_wfcd', lambda name: [])
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda name: [])
     return Source
 
 

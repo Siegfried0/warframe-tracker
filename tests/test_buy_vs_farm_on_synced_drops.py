@@ -11,7 +11,7 @@ import pytest
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync
+from services import wiki_sync, wiki_sync_requests
 from services.buy_vs_farm import expected_hours, item_sources
 
 
@@ -21,7 +21,7 @@ def _sync_one_part(app, monkeypatch, location, chance):
         'components': [{'name': 'Chassis', 'drops': [
             {'location': location, 'type': 'Rhino Chassis Blueprint', 'chance': chance}]}],
     }]}
-    monkeypatch.setattr(wiki_sync, '_fetch_wfcd',
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd',
                         lambda name: copy.deepcopy(wfcd.get(name, [])))
     with app.app_context():
         Item.upsert('Rhino', 'warframe', source='standard', tradable=True)

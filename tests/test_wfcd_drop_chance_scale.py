@@ -17,7 +17,7 @@ import requests
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync
+from services import wiki_sync, wiki_sync_requests
 from services.buy_vs_farm import RELIC_OPENING_MINUTES, expected_hours, item_sources
 
 # (id, WFCD chance, stored drop_chance, stored avg_runs); None: no row is stored
@@ -85,7 +85,7 @@ def _sync(app, monkeypatch, site, *chances):
     as {location: (drop_chance, avg_runs)}."""
     sync, files, name, category, source_type = SITES[site]
     wfcd = files(*chances)
-    monkeypatch.setattr(wiki_sync, '_fetch_wfcd',
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd',
                         lambda filename: copy.deepcopy(wfcd.get(filename, [])))
     with app.app_context():
         Item.upsert(name, category, source='standard')
@@ -177,11 +177,11 @@ class _Response:
 @pytest.fixture
 def synced(app, monkeypatch):
     """The whole drop sync over the files above; yields the db and Ash Prime's id."""
-    monkeypatch.setattr(wiki_sync, '_fetch_wfcd',
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd',
                         lambda name: copy.deepcopy(WFCD.get(name, [])))
 
     def fake_get(url, timeout=None, **kwargs):
-        if url != wiki_sync._WARFRAMESTAT_DROPS:
+        if url != wiki_sync_requests._WARFRAMESTAT_DROPS:
             raise requests.ConnectionError(f'unexpected request: {url}')
         return _Response()
 

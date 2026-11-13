@@ -7,6 +7,12 @@ Primary source: https://github.com/WFCD/warframe-items
 Wiki fallback:  https://wiki.warframe.com/api.php (standard query API, no Cargo extension needed)
 
 Only catalogue data is written; user progress rows are never touched.
+
+This module is the entry point (``run_sync``) and binds every step it runs as a name of its
+own, so replacing ``wiki_sync._sync_<step>`` replaces that step. Every HTTP request lives in
+``wiki_sync_requests`` and is called through that module's attribute; the helpers several
+category groups share live in ``wiki_sync_catalogue``; kitgun chambers in
+``wiki_sync_kitguns``.
 """
 
 import logging
@@ -14,139 +20,18 @@ import math
 from datetime import datetime
 from urllib.parse import unquote
 
-import requests
-
 from models.db import get_db
 from models.item import Item
-from services import image_cache, relic_sync, sync_schedule
+from services import image_cache, relic_sync, sync_schedule, wiki_sync_requests
 from services.market_slugs import sync_market_slugs
 from services.resurgence_sync import sync_resurgence
+from services.wiki_sync_catalogue import (
+    _NECRAMECHS, _WEAPON_CATEGORIES, _WIKI_BASE, _WIKI_SKIP_WORDS, _cleanup_source_components,
+    _detect_source, _upsert_wfcd, _upsert_wiki, _wfcd_image_url,
+)
+from services.wiki_sync_kitguns import _sync_kitgun_chambers
 
 log = logging.getLogger(__name__)
-
-_WFCD_BASE             = 'https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json'
-_WIKI_API              = 'https://wiki.warframe.com/api.php'
-_WIKI_BASE             = 'https://wiki.warframe.com/w/'
-_WARFRAMESTAT_DROPS    = 'https://drops.warframestat.us/data/all.json'
-
-_SOURCE_KEYWORDS = ('prime', 'wraith', 'vandal', 'kuva', 'tenet')
-_WFCD_CDN        = 'https://cdn.warframestat.us/img'
-
-# Weapon sub-categories whose wiki component pages omit the "Blueprint" suffix
-_WEAPON_CATEGORIES = frozenset({
-    'primary', 'secondary', 'melee', 'arch-gun', 'arch-melee',
-})
-
-# Necramechs appear in WFCD Warframes.json but are not Warframes.
-# They are synced under 'k-drive' by _sync_k_drives() instead.
-_NECRAMECHS = frozenset({'Bonewidow', 'Voidrig'})
-
-
-def _detect_source(name: str) -> str:
-    lower = name.lower()
-    for src in _SOURCE_KEYWORDS:
-        if src in lower:
-            return src
-    return 'standard'
-
-
-def _wfcd_image_url(obj: dict) -> str | None:
-    """Return the best available image URL from a WFCD item or component dict.
-
-    Priority: wikiaThumbnail → imageUrl → CDN URL constructed from imageName.
-    Returns None when no image information is present.
-    """
-    url = obj.get('wikiaThumbnail') or obj.get('imageUrl')
-    if not url:
-        name = obj.get('imageName', '')
-        if name:
-            url = f'{_WFCD_CDN}/{name}'
-    return url or None
-
-
-# ---------------------------------------------------------------------------
-# Fetch helpers
-# ---------------------------------------------------------------------------
-
-def _fetch_wfcd(filename: str) -> list[dict]:
-    """Fetch a single WFCD category JSON file and return the parsed array."""
-    resp = requests.get(f'{_WFCD_BASE}/{filename}', timeout=60)
-    resp.raise_for_status()
-    return resp.json()
-
-
-def _wiki_category_members(category: str) -> list[str]:
-    """Return all page titles in a wiki category using the standard MediaWiki query API.
-    Does not require any wiki extensions (no Cargo, no SMW).
-    """
-    params = {
-        'action':      'query',
-        'list':        'categorymembers',
-        'cmtitle':     f'Category:{category}',
-        'cmlimit':     500,
-        'cmnamespace': 0,       # main namespace only — no talk/module pages
-        'format':      'json',
-    }
-    results = []
-    while True:
-        resp = requests.get(_WIKI_API, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        if 'error' in data:
-            raise RuntimeError(
-                f"Wiki API error (category={category!r}): {data['error'].get('info', data['error'])}"
-            )
-        members = data.get('query', {}).get('categorymembers', [])
-        results.extend(m['title'] for m in members)
-        cont = data.get('continue', {})
-        if not cont.get('cmcontinue'):
-            break
-        params['cmcontinue'] = cont['cmcontinue']
-    return results
-
-
-# ---------------------------------------------------------------------------
-# Upsert helpers
-# ---------------------------------------------------------------------------
-
-def _upsert_wfcd(item: dict, category: str, tradable_override=None,
-                 source_override=None) -> bool:
-    """Upsert one item from a WFCD JSON entry. Returns True if written."""
-    name = item.get('name', '').strip()
-    if not name:
-        return False
-    tradable = tradable_override if tradable_override is not None else bool(item.get('tradable', False))
-    wiki_url = item.get('wikiaUrl') or (_WIKI_BASE + name.replace(' ', '_'))
-    image_url = _wfcd_image_url(item)
-    source = source_override if source_override is not None else _detect_source(name)
-    Item.upsert(
-        name=name,
-        category=category,
-        source=source,
-        wiki_url=wiki_url,
-        vaulted=bool(item.get('vaulted', False)),
-        tradable=tradable,
-        image_url=image_url,
-    )
-    return True
-
-
-def _upsert_wiki(name: str, category: str, tradable: bool = False,
-                 grants_mastery: bool = True) -> bool:
-    """Upsert one item from a wiki page title. Returns True if written."""
-    name = name.strip()
-    if not name:
-        return False
-    Item.upsert(
-        name=name,
-        category=category,
-        source=_detect_source(name),
-        wiki_url=_WIKI_BASE + name.replace(' ', '_'),
-        vaulted=False,
-        tradable=tradable,
-        grants_mastery=grants_mastery,
-    )
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -157,64 +42,11 @@ def _sync_warframes() -> int:
     log.info('Syncing warframes…')
     count = sum(
         _upsert_wfcd(item, 'warframe', tradable_override=False)
-        for item in _fetch_wfcd('Warframes.json')
+        for item in wiki_sync_requests._fetch_wfcd('Warframes.json')
         if item.get('masterable') and item.get('name', '').strip() not in _NECRAMECHS
     )
     log.info('Warframes synced: %d', count)
     return count
-
-
-def _cleanup_source_components(category: str, source: str,
-                               valid_names: set[str]) -> int:
-    """Remove items in a (category, source) slot that are not in valid_names.
-
-    Called after a weapons sync run with the full set of masterable item names
-    fetched from WFCD.  Any DB row not in that set is a stale component part
-    inserted by an earlier sync before the filtering was correct.
-
-    - Rows with no user progress are deleted outright.
-    - Rows with user progress are moved to category='resource' so the data is
-      preserved, and a warning is logged.
-
-    Returns the number of rows cleaned up.
-    """
-    if not valid_names:
-        # Nothing was synced this run — don't purge blindly.
-        return 0
-
-    db = get_db()
-    all_rows = db.execute(
-        'SELECT id, name FROM items WHERE category = ? AND source = ?',
-        (category, source),
-    ).fetchall()
-
-    cleaned = 0
-    for row in all_rows:
-        if row['name'] in valid_names:
-            continue
-        has_progress = db.execute(
-            'SELECT 1 FROM user_progress'
-            ' WHERE item_id = ? AND (mastered = 1 OR in_possession = 1) LIMIT 1',
-            (row['id'],),
-        ).fetchone()
-        if has_progress:
-            log.warning(
-                '%s component %r has user progress — moving to resource category to preserve data',
-                source, row['name'],
-            )
-            db.execute(
-                "UPDATE items SET category = 'resource', source = 'standard' WHERE id = ?",
-                (row['id'],),
-            )
-        else:
-            db.execute('DELETE FROM items WHERE id = ?', (row['id'],))
-        cleaned += 1
-
-    if cleaned:
-        db.commit()
-        log.info('%s/%s stale component rows cleaned up: %d', category, source, cleaned)
-
-    return cleaned
 
 
 def _sync_weapons() -> int:
@@ -233,7 +65,7 @@ def _sync_weapons() -> int:
     for filename, category in files:
         log.info('Syncing %s…', category)
         count = 0
-        for item in _fetch_wfcd(filename):
+        for item in wiki_sync_requests._fetch_wfcd(filename):
             if not item.get('masterable'):
                 continue
             item_type = item.get('type', '').lower()
@@ -257,199 +89,6 @@ def _sync_weapons() -> int:
     return total
 
 
-# ---------------------------------------------------------------------------
-# Kitgun chamber sync
-# ---------------------------------------------------------------------------
-
-# In WFCD / the wiki, kitgun chambers appear with a " Chamber" suffix
-# (e.g. "Catchmoon Chamber").  Stripping that suffix gives the canonical name
-# ("Catchmoon") which matches how the mastery screen labels the weapon.
-# The ONLY reliable positive signal for a chamber is this suffix — negative
-# word-lists ("not a grip/loader/…") are fragile because part names can be
-# arbitrary (e.g. "Haymaker" does not contain the word "Grip").
-_KITGUN_CHAMBER_SUFFIX = ' Chamber'
-
-# Comprehensive list of known kitgun chambers used as a guaranteed supplement.
-# This runs unconditionally so chambers absent from WFCD (e.g. newer Deimos entries)
-# are always inserted regardless of what live sources returned.
-# Source: https://wiki.warframe.com/w/Kitgun (verified 2026-06-06)
-_KNOWN_KITGUN_CHAMBERS = frozenset({
-    # Vox Solaris (Fortuna, Venus)
-    'Catchmoon', 'Tombfinger', 'Rattleguts', 'Gaze',
-    # Entrati (Deimos, Cambion Drift)
-    'Sporelacer', 'Vermisplicer',
-})
-
-
-def _sync_kitgun_chambers() -> int:
-    """Sync Kitgun chambers — the per-chamber masterable secondary weapons.
-
-    In Warframe, mastery XP is granted once per unique chamber type when a kitgun
-    built with that chamber is maxed.  Grip and Loader choices do not affect
-    mastery tracking.
-
-    The ONLY reliable way to identify a chamber entry in WFCD or the wiki is
-    the ' Chamber' name suffix.  Negative word-lists ('not a grip/loader') are
-    fragile because part names can be arbitrary strings with no shared pattern.
-
-    Source strategy:
-      Both WFCD passes (Secondary.json and Misc.json) always run so that chambers
-      from different factions/updates (e.g. Fortuna vs. Deimos) are each captured
-      from whichever file WFCD places them in.
-      The wiki and hardcoded seed are only used when WFCD found nothing at all.
-
-      1. WFCD Secondary.json — components[] arrays of all secondary weapon entries;
-         only sub-entries whose name ends in ' Chamber' are accepted.
-         Top-level entries are also checked when type == 'Kitgun Chamber' exactly.
-      2. WFCD Misc.json — entries with type == 'Kitgun Chamber' exactly.
-         (Always runs even if Secondary.json already found chambers.)
-      3. Wiki Category:Kitgun Chambers → Category:Kitguns (Chamber-suffix filter).
-      4. Hardcoded _KNOWN_KITGUN_CHAMBERS seed (last resort).
-
-    All entries are stored as category='secondary', source='kitgun', grants_mastery=True.
-    The canonical name has ' Chamber' stripped (e.g. "Catchmoon Chamber" → "Catchmoon").
-    """
-    log.info('Syncing Kitgun chambers…')
-    count = 0
-    synced_names: set[str] = set()
-
-    def _canonical(raw: str) -> str:
-        return raw[:-len(_KITGUN_CHAMBER_SUFFIX)] if raw.endswith(_KITGUN_CHAMBER_SUFFIX) else raw
-
-    def _upsert_chamber(raw_name: str, item: dict | None = None) -> bool:
-        """Strip ' Chamber' suffix, deduplicate, upsert.  No negative word-list gating —
-        callers are responsible for only passing valid chamber names."""
-        canon = _canonical(raw_name)
-        if not canon or canon in synced_names:
-            return False
-        # Point the wiki URL at the ' Chamber' page (e.g. "Catchmoon_Chamber")
-        # since that is the actual wiki article, not "Catchmoon".
-        wiki_name = raw_name if raw_name.endswith(_KITGUN_CHAMBER_SUFFIX) else canon + _KITGUN_CHAMBER_SUFFIX
-        wiki_url = (item.get('wikiaUrl') if item else None) or (
-            _WIKI_BASE + wiki_name.replace(' ', '_')
-        )
-        Item.upsert(
-            name=canon,
-            category='secondary',
-            source='kitgun',
-            wiki_url=wiki_url,
-            vaulted=False,
-            tradable=False,
-            image_url=_wfcd_image_url(item) if item else None,
-            grants_mastery=True,
-        )
-        synced_names.add(canon)
-        return True
-
-    # --- Pass 1: WFCD Secondary.json ---
-    # (a) Component sub-entries: name MUST end in ' Chamber' — definitive filter.
-    # (b) Top-level entries: type MUST be 'Kitgun Chamber' exactly AND name ends in ' Chamber'.
-    # No masterable-flag check; WFCD is inconsistent about this field for modular parts.
-    try:
-        sec_count = 0
-        for item in _fetch_wfcd('Secondary.json'):
-            item_type = item.get('type', '').strip().lower()
-            name = item.get('name', '').strip()
-            # (a) top-level with unambiguous type
-            if item_type == 'kitgun chamber' and name.endswith(_KITGUN_CHAMBER_SUFFIX):
-                if _upsert_chamber(name, item):
-                    sec_count += 1
-            # (b) component sub-entries — scan every secondary weapon's parts list
-            for comp in item.get('components', []):
-                cname = comp.get('name', '').strip()
-                if cname.endswith(_KITGUN_CHAMBER_SUFFIX):
-                    if _upsert_chamber(cname, comp):
-                        sec_count += 1
-        if sec_count:
-            log.info('Kitgun chambers from WFCD Secondary.json: %d', sec_count)
-        count += sec_count
-    except Exception as exc:
-        log.info('WFCD Secondary.json kitgun scan failed (%s)', exc)
-
-    # --- Pass 2: WFCD Misc.json (always runs — may carry chambers from different factions) ---
-    # Accept any entry whose type contains 'kitgun' AND whose name ends in ' Chamber'.
-    # The name suffix is the reliable positive filter; the type string is inconsistent
-    # across WFCD updates (may be 'Kitgun', 'Kitgun Chamber', 'Secondary Kitgun', etc.)
-    # Grips, Loaders, and Braces never have names ending in ' Chamber', so they are
-    # safely excluded by the suffix check alone.
-    try:
-        misc_count = 0
-        for item in _fetch_wfcd('Misc.json'):
-            if 'kitgun' not in item.get('type', '').strip().lower():
-                continue
-            name = item.get('name', '').strip()
-            if name.endswith(_KITGUN_CHAMBER_SUFFIX) and _upsert_chamber(name, item):
-                misc_count += 1
-        if misc_count:
-            log.info('Kitgun chambers from WFCD Misc.json: %d', misc_count)
-        count += misc_count
-    except Exception as exc:
-        log.info('WFCD Misc.json kitgun scan failed (%s)', exc)
-
-    # --- Pass 3: wiki category lookup (always runs — supplements WFCD, not a fallback) ---
-    # WFCD only covers items present in its dataset; chambers from newer factions
-    # (e.g. Deimos) may only exist on the wiki.  Running this pass unconditionally
-    # ensures full coverage.  _upsert_chamber deduplicates, so Fortuna chambers
-    # already found by WFCD are silently skipped here.
-    # Title MUST end in ' Chamber' — the only reliable positive signal.
-    raw_wiki_titles: list[str] = []
-    for cat_name in ('Kitgun Chambers', 'Kitguns'):
-        try:
-            for title in _wiki_category_members(cat_name):
-                if any(w in title for w in _WIKI_SKIP_WORDS):
-                    continue
-                if title.endswith(_KITGUN_CHAMBER_SUFFIX):
-                    raw_wiki_titles.append(title)
-            if raw_wiki_titles:
-                log.info('Wiki Category:%s — %d Chamber page(s) found', cat_name, len(raw_wiki_titles))
-                break   # found results; don't double-count from the other category
-        except Exception as exc:
-            log.warning('Wiki Category:%s lookup failed (%s)', cat_name, exc)
-
-    wiki_count = 0
-    canonical_wiki: list[str] = []
-    for title in raw_wiki_titles:
-        if _upsert_chamber(title):
-            canonical_wiki.append(_canonical(title))
-            wiki_count += 1
-
-    if canonical_wiki:
-        db = get_db()
-        title_images = _wiki_batch_images(canonical_wiki)
-        for title, thumb_url in title_images.items():
-            db.execute(
-                "UPDATE items SET image_url = ? WHERE name = ? AND category = 'secondary' AND source = 'kitgun'",
-                (thumb_url, title),
-            )
-        if title_images:
-            db.commit()
-        log.info('Kitgun chamber wiki images: %d / %d', len(title_images), len(canonical_wiki))
-
-    if wiki_count:
-        log.info('Kitgun chambers from wiki (new beyond WFCD): %d', wiki_count)
-    count += wiki_count
-
-    # --- Pass 4: hardcoded supplement (always runs) ---
-    # _KNOWN_KITGUN_CHAMBERS is a curated list that covers chambers absent from WFCD
-    # or not yet categorised on the wiki (e.g. recently added Deimos chambers).
-    # _upsert_chamber deduplicates, so chambers already found above are no-ops here.
-    seed_count = 0
-    for name in sorted(_KNOWN_KITGUN_CHAMBERS):
-        if _upsert_chamber(name):
-            seed_count += 1
-    if seed_count:
-        log.info('Kitgun chambers added from hardcoded supplement: %d', seed_count)
-        count += seed_count
-    elif not count:
-        log.warning('No kitgun chambers found from any source — hardcoded list also empty')
-
-    # Remove stale kitgun rows inserted by any previous incorrect sync run.
-    _cleanup_source_components('secondary', 'kitgun', synced_names)
-
-    log.info('Kitgun chambers total: %d', count)
-    return count
-
-
 def _sync_companions() -> int:
     """Sync Pets (Kavats, Kubrows, Hounds, Vulpaphylas, Predasites) and Sentinels.
     MOAs are excluded here — they go to the k-drive category alongside K-Drive boards
@@ -458,14 +97,14 @@ def _sync_companions() -> int:
     log.info('Syncing companions…')
     count = 0
 
-    for item in _fetch_wfcd('Pets.json'):
+    for item in wiki_sync_requests._fetch_wfcd('Pets.json'):
         if item.get('type') != 'Pets':
             continue
         if item.get('name', '').lower().endswith(' moa'):
             continue  # MOAs handled by _sync_k_drives
         count += _upsert_wfcd(item, 'companion')
 
-    for item in _fetch_wfcd('Sentinels.json'):
+    for item in wiki_sync_requests._fetch_wfcd('Sentinels.json'):
         if item.get('masterable'):
             count += _upsert_wfcd(item, 'companion')
 
@@ -477,15 +116,12 @@ def _sync_archwings() -> int:
     log.info('Syncing archwings…')
     count = sum(
         _upsert_wfcd(item, 'archwing', tradable_override=False)
-        for item in _fetch_wfcd('Archwing.json')
+        for item in wiki_sync_requests._fetch_wfcd('Archwing.json')
         if item.get('masterable')
     )
     log.info('Archwings synced: %d', count)
     return count
 
-
-# Words that identify non-item wiki pages (subpages, mod lists, skin articles, etc.)
-_WIKI_SKIP_WORDS = frozenset(['/', 'Mod', 'Race', 'Chart', 'Skin', 'SFX'])
 
 # K-Drive component parts that appear in Category:K-Drive but grant NO Mastery XP.
 # Source: wiki.warframe.com/w/K-Drive#Components (verified 2026-06-06).
@@ -514,7 +150,7 @@ def _sync_k_drives() -> int:
     wiki_titles: list[str] = []
 
     # --- MOAs: identified by name ending with " Moa" regardless of WFCD type field ---
-    for item in _fetch_wfcd('Pets.json'):
+    for item in wiki_sync_requests._fetch_wfcd('Pets.json'):
         if item.get('name', '').lower().endswith(' moa'):
             count += _upsert_wfcd(item, 'k-drive')
 
@@ -526,7 +162,7 @@ def _sync_k_drives() -> int:
     db.commit()
 
     # --- K-Drive boards: wiki Category:K-Drive, minus meta-pages and non-mastery parts ---
-    for title in _wiki_category_members('K-Drive'):
+    for title in wiki_sync_requests._wiki_category_members('K-Drive'):
         if title == 'K-Drive' or any(w in title for w in _WIKI_SKIP_WORDS):
             continue
         if title in _KDRIVE_NON_MASTERY:
@@ -535,7 +171,7 @@ def _sync_k_drives() -> int:
         wiki_titles.append(title)
 
     # --- Necramechs: wiki Category:Necramechs, minus meta-pages ---
-    for title in _wiki_category_members('Necramechs'):
+    for title in wiki_sync_requests._wiki_category_members('Necramechs'):
         if 'Necramech' in title or any(w in title for w in _WIKI_SKIP_WORDS):
             continue
         count += _upsert_wiki(title, 'k-drive')
@@ -575,7 +211,7 @@ def _sync_k_drives() -> int:
 
     # Populate image_url for wiki-sourced items (no WFCD thumbnail available)
     if wiki_titles:
-        title_images = _wiki_batch_images(wiki_titles)
+        title_images = wiki_sync_requests._wiki_batch_images(wiki_titles)
         for title, thumb_url in title_images.items():
             db.execute(
                 "UPDATE items SET image_url = ? WHERE name = ? AND category = 'k-drive'",
@@ -660,7 +296,7 @@ def _sync_amps() -> int:
 
     # --- Primary: WFCD dedicated Amps.json ---
     try:
-        for item in _fetch_wfcd('Amps.json'):
+        for item in wiki_sync_requests._fetch_wfcd('Amps.json'):
             name = item.get('name', '').strip()
             if name and item.get('masterable') and _upsert_amp(name, item):
                 count += 1
@@ -678,7 +314,7 @@ def _sync_amps() -> int:
     # the canonical name "Raplak" is stored.  The masterable flag is not required
     # here — it is often absent for amp entries in Misc.json.
     try:
-        for item in _fetch_wfcd('Misc.json'):
+        for item in wiki_sync_requests._fetch_wfcd('Misc.json'):
             if item.get('type', '').strip().lower() != 'amp':
                 continue
             name = item.get('name', '').strip()
@@ -697,7 +333,7 @@ def _sync_amps() -> int:
     # _upsert_amp() canonicalizes and skips non-masterable component entries.
     raw_wiki_titles: list[str] = []
     try:
-        for title in _wiki_category_members('Amps'):
+        for title in wiki_sync_requests._wiki_category_members('Amps'):
             if not any(w in title for w in _AMP_SKIP_WORDS):
                 raw_wiki_titles.append(title)
     except Exception as exc:
@@ -711,7 +347,7 @@ def _sync_amps() -> int:
 
     if canonical_wiki:
         db = get_db()
-        title_images = _wiki_batch_images(canonical_wiki)
+        title_images = wiki_sync_requests._wiki_batch_images(canonical_wiki)
         for title, thumb_url in title_images.items():
             db.execute(
                 "UPDATE items SET image_url = ? WHERE name = ? AND category = 'amp'",
@@ -758,7 +394,7 @@ def _sync_mods() -> int:
     """
     log.info('Syncing mods…')
     try:
-        mods_data = _fetch_wfcd('Mods.json')
+        mods_data = wiki_sync_requests._fetch_wfcd('Mods.json')
     except Exception as exc:
         log.warning('Could not fetch Mods.json: %s', exc)
         return 0
@@ -884,7 +520,7 @@ def _sync_arcanes() -> int:
 
     # --- Primary: WFCD dedicated Arcanes.json ---
     try:
-        arc_data = _fetch_wfcd('Arcanes.json')
+        arc_data = wiki_sync_requests._fetch_wfcd('Arcanes.json')
         for item in arc_data:
             count += _upsert_arcane(item)
         if count:
@@ -896,7 +532,7 @@ def _sync_arcanes() -> int:
 
     # --- Secondary: WFCD Misc.json filtered for arcane type ---
     try:
-        misc_data = _fetch_wfcd('Misc.json')
+        misc_data = wiki_sync_requests._fetch_wfcd('Misc.json')
         for item in misc_data:
             if item.get('type', '').strip().lower() in _ARCANE_TYPES:
                 count += _upsert_arcane(item)
@@ -910,7 +546,7 @@ def _sync_arcanes() -> int:
     # --- Fallback: wiki Category:Arcanes ---
     wiki_titles: list[str] = []
     try:
-        for title in _wiki_category_members('Arcanes'):
+        for title in wiki_sync_requests._wiki_category_members('Arcanes'):
             if any(w in title for w in _WIKI_SKIP_WORDS):
                 continue
             wiki_titles.append(title)
@@ -931,7 +567,7 @@ def _sync_arcanes() -> int:
 
     if wiki_titles:
         db = get_db()
-        title_images = _wiki_batch_images(wiki_titles)
+        title_images = wiki_sync_requests._wiki_batch_images(wiki_titles)
         for title, thumb_url in title_images.items():
             db.execute(
                 "UPDATE items SET image_url = ? WHERE name = ? AND category = 'arcane'",
@@ -977,7 +613,7 @@ def _sync_resources() -> int:
     log.info('Syncing resources…')
     count = 0
     try:
-        items_data = _fetch_wfcd('Resources.json')
+        items_data = wiki_sync_requests._fetch_wfcd('Resources.json')
     except Exception as exc:
         log.warning('Could not fetch Resources.json: %s', exc)
         return 0
@@ -1052,7 +688,7 @@ def _sync_component_ingredients(status: dict | None = None) -> int:
     count = 0
     for filename, category in _INGREDIENT_SOURCES:
         try:
-            items_data = _fetch_wfcd(filename)
+            items_data = wiki_sync_requests._fetch_wfcd(filename)
         except Exception as exc:
             log.warning('Skipping %s for ingredient sync: %s', filename, exc)
             if status is not None:
@@ -1148,33 +784,6 @@ _WARFRAME_COMPONENT_TYPES = frozenset({
 _MODULE_BLUEPRINTS = 'Module:Blueprints/data'
 
 
-def _fetch_wiki_module(title: str) -> str:
-    """Return the wikitext content of a MediaWiki module page."""
-    params = {
-        'action':   'query',
-        'prop':     'revisions',
-        'rvprop':   'content',
-        'rvslots':  'main',
-        'titles':   title,
-        'format':   'json',
-    }
-    resp = requests.get(_WIKI_API, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    pages = data.get('query', {}).get('pages', {})
-    for pid, page in pages.items():
-        if pid == '-1':
-            raise RuntimeError(f'Wiki module not found: {title}')
-        revs = page.get('revisions', [])
-        if not revs:
-            raise RuntimeError(f'No revisions for wiki module: {title}')
-        slots = revs[0].get('slots', {})
-        if slots:
-            return slots.get('main', {}).get('*', '')
-        return revs[0].get('*', '')
-    raise RuntimeError(f'Empty response for wiki module: {title}')
-
-
 def _parse_wiki_blueprints(content: str) -> list[dict]:
     """Parse the Lua table returned by Module:Blueprints/data.
 
@@ -1250,7 +859,7 @@ def _sync_warframe_component_ingredients_from_wiki(db) -> int:
     """
     log.info('Syncing warframe component ingredients from wiki…')
     try:
-        content = _fetch_wiki_module(_MODULE_BLUEPRINTS)
+        content = wiki_sync_requests._fetch_wiki_module(_MODULE_BLUEPRINTS)
     except Exception as exc:
         log.warning('Could not fetch wiki blueprints module (non-fatal): %s', exc)
         return 0
@@ -1323,35 +932,6 @@ def _sync_warframe_component_ingredients_from_wiki(db) -> int:
 # services/image_cache.py.
 
 
-def _wiki_batch_images(titles: list[str]) -> dict[str, str]:
-    """Batch-fetch thumbnail URLs from the wiki for a list of page titles.
-    Returns {title: thumbnail_url}. Uses up to 50 titles per API call.
-    """
-    if not titles:
-        return {}
-    result: dict[str, str] = {}
-    for i in range(0, len(titles), 50):
-        batch = titles[i:i + 50]
-        params = {
-            'action':      'query',
-            'titles':      '|'.join(batch),
-            'prop':        'pageimages',
-            'pithumbsize': 200,
-            'format':      'json',
-        }
-        try:
-            resp = requests.get(_WIKI_API, params=params, timeout=20)
-            resp.raise_for_status()
-            for page in resp.json().get('query', {}).get('pages', {}).values():
-                title = page.get('title', '')
-                thumb = page.get('thumbnail', {}).get('source')
-                if title and thumb:
-                    result[title] = thumb
-        except Exception as exc:
-            log.warning('Wiki batch image fetch failed: %s', exc)
-    return result
-
-
 def _title_from_wiki_url(wiki_url: str) -> str:
     """Extract the MediaWiki page title from a wiki URL.
 
@@ -1400,7 +980,7 @@ def _backfill_null_item_images(db, categories: list[str]) -> int:
     if not title_to_id:
         return 0
 
-    title_images = _wiki_batch_images(list(title_to_id.keys()))
+    title_images = wiki_sync_requests._wiki_batch_images(list(title_to_id.keys()))
     normalised = {t.replace('_', ' ').lower(): iid for t, iid in title_to_id.items()}
 
     updated = 0
@@ -1439,7 +1019,7 @@ def _sync_wiki_images_for_missing(db) -> int:
     if not title_to_id:
         return 0
 
-    title_images = _wiki_batch_images(list(title_to_id.keys()))
+    title_images = wiki_sync_requests._wiki_batch_images(list(title_to_id.keys()))
 
     # Build a normalised lookup (space↔underscore, case-insensitive) to handle
     # any title normalisation the wiki API may apply in its response.
@@ -1540,7 +1120,7 @@ def _sync_component_wiki_images(db) -> int:
         if title not in title_map:
             title_map[title] = (iid, cname)
 
-    title_images = _wiki_batch_images(list(title_map.keys()))
+    title_images = wiki_sync_requests._wiki_batch_images(list(title_map.keys()))
 
     # Normalised lookup for title casing/underscore differences
     normalised: dict[str, tuple[int, str]] = {
@@ -1700,7 +1280,7 @@ def _log_skipped_wfcd_drops(filename: str, skipped: int) -> None:
 def _sync_resource_drops(db) -> int:
     """Insert drop_sources for resource items from WFCD Resources.json."""
     try:
-        items_data = _fetch_wfcd('Resources.json')
+        items_data = wiki_sync_requests._fetch_wfcd('Resources.json')
     except Exception as exc:
         log.warning('Could not fetch Resources.json for drop sync: %s', exc)
         return 0
@@ -1742,7 +1322,7 @@ def _sync_wfcd_component_drops(db) -> int:
     count = 0
     for filename, category in targets:
         try:
-            items_data = _fetch_wfcd(filename)
+            items_data = wiki_sync_requests._fetch_wfcd(filename)
         except Exception as exc:
             log.warning('Skipping %s for drop sync: %s', filename, exc)
             continue
@@ -1772,22 +1352,6 @@ def _sync_wfcd_component_drops(db) -> int:
                         skipped += 1
         _log_skipped_wfcd_drops(filename, skipped)
     return count
-
-
-def _fetch_drop_tables() -> dict | None:
-    """The warframestat.us drop tables (``all.json``), fetched once per drop sync; None when
-    the request fails or the answer is not a JSON object (non-fatal)."""
-    try:
-        resp = requests.get(_WARFRAMESTAT_DROPS, timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as exc:
-        log.warning('Could not fetch warframestat drop tables (non-fatal): %s', exc)
-        return None
-    if not isinstance(data, dict):
-        log.warning('Warframestat drop tables are not a JSON object (non-fatal)')
-        return None
-    return data
 
 
 def _sync_mission_reward_drops(db, prefix_lookup: list[tuple[str, int]],
@@ -1868,7 +1432,7 @@ def _sync_drop_sources() -> int:
         count_res = _sync_resource_drops(db)
         log.info('Resource drops: %d', count_res)
 
-        tables         = _fetch_drop_tables()
+        tables         = wiki_sync_requests._fetch_drop_tables()
         prefix_lookup  = _build_item_prefix_lookup(db)
         count_missions = _sync_mission_reward_drops(db, prefix_lookup, tables)
         log.info('Mission reward drops: %d', count_missions)
