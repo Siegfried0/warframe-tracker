@@ -137,7 +137,8 @@ def _cleanup_source_components(category: str, source: str,
                 source, row['name'],
             )
             db.execute(
-                "UPDATE items SET category = 'resource', source = 'standard' WHERE id = ?",
+                "UPDATE items SET category = 'resource', source = 'standard', grants_mastery = 0"
+                " WHERE id = ?",
                 (row['id'],),
             )
         else:

@@ -16,7 +16,9 @@ class Progress:
     @classmethod
     def get_all_for_user(cls, user_id: int, category=None) -> list[dict]:
         db = get_db()
-        # Include MR-track items (grants_mastery=1) plus the non-MR mod/arcane collections.
+        # Include MR-track items (grants_mastery=1) plus the non-MR mod, arcane and resource
+        # rows. Resources grant no mastery, but the CSV export reads resource.csv through
+        # this filter, so a user's progress on a resource row must pass it.
         # This intentionally excludes K-Drive component parts (grants_mastery=0, category='k-drive').
         base = '''
             SELECT i.*,
@@ -30,7 +32,7 @@ class Progress:
                    p.updated_at AS progress_updated
             FROM items i
             LEFT JOIN user_progress p ON p.item_id = i.id AND p.user_id = ?
-            WHERE (i.grants_mastery = 1 OR i.category IN ('mod', 'arcane'))
+            WHERE (i.grants_mastery = 1 OR i.category IN ('mod', 'arcane', 'resource'))
         '''
         if category:
             rows = db.execute(base + 'AND i.category = ? ORDER BY i.name',
@@ -73,7 +75,9 @@ class Progress:
         by_cat = {r['category']: r['cnt'] for r in rows}
         total_mr = sum(MR_POINTS_PER_CATEGORY.get(cat, 0) * cnt for cat, cnt in by_cat.items())
         total_mastered = sum(by_cat.values())
-        total_items = db.execute('SELECT COUNT(*) FROM items').fetchone()[0]
+        # The denominator counts what the numerator can count: mastery items only.
+        total_items = db.execute(
+            'SELECT COUNT(*) FROM items WHERE grants_mastery = 1').fetchone()[0]
 
         mr_rank = rank_for_points(total_mr)
 

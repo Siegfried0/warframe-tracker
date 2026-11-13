@@ -267,6 +267,7 @@ def _sync_resources() -> int:
             vaulted=False,
             tradable=bool(item.get('tradable', False)),
             image_url=_wfcd_image_url(item),
+            grants_mastery=False,
         )
         count += 1
 

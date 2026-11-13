@@ -132,6 +132,7 @@ def _sync_component_ingredients(status: dict | None = None) -> int:
                             vaulted=False,
                             tradable=False,
                             image_url=ing_img,
+                            grants_mastery=False,
                         )
 
     # WFCD Warframes.json does not embed crafting ingredients for sub-components
@@ -290,6 +291,7 @@ def _sync_warframe_component_ingredients_from_wiki(db) -> int:
                     vaulted=False,
                     tradable=False,
                     image_url=None,
+                    grants_mastery=False,
                 )
 
     log.info('Warframe component ingredients from wiki: %d', count)
