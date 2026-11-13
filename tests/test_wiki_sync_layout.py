@@ -16,13 +16,13 @@ import requests
 
 from models.db import get_db
 from services import (resurgence_sync, wiki_sync, wiki_sync_amps, wiki_sync_catalogue,
-                      wiki_sync_gear, wiki_sync_kitguns, wiki_sync_requests)
+                      wiki_sync_gear, wiki_sync_kitguns, wiki_sync_mods, wiki_sync_requests)
 
 SYNC_MODULES = [wiki_sync, wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
-                wiki_sync_kitguns, wiki_sync_amps]
+                wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods]
 # The modules that call a request without being the requests module.
 CALLERS = [wiki_sync, wiki_sync_catalogue, wiki_sync_gear, wiki_sync_kitguns, wiki_sync_amps,
-           resurgence_sync]
+           wiki_sync_mods, resurgence_sync]
 FETCHES = sorted(name for name, obj in vars(wiki_sync_requests).items()
                  if inspect.isfunction(obj) and obj.__module__ == wiki_sync_requests.__name__)
 
@@ -64,7 +64,8 @@ def test_every_sync_module_logs_as_the_sync(module):
 
 
 @pytest.mark.parametrize('module', [wiki_sync_requests, wiki_sync_catalogue, wiki_sync_gear,
-                                    wiki_sync_kitguns, wiki_sync_amps, resurgence_sync],
+                                    wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods,
+                                    resurgence_sync],
                          ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
     imported = _imports(module)
@@ -95,7 +96,8 @@ def test_every_fetch_is_called_through_the_requests_module(module):
 
 
 @pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
-                                    wiki_sync_kitguns, wiki_sync_amps], ids=lambda m: m.__name__)
+                                    wiki_sync_kitguns, wiki_sync_amps, wiki_sync_mods],
+                         ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
     assert ('requests', '') not in _imports(module)
     assert not hasattr(module, 'requests')
@@ -189,7 +191,8 @@ MOVED_STEPS = [
     (wiki_sync_gear, '_sync_warframes'), (wiki_sync_gear, '_sync_weapons'),
     (wiki_sync_gear, '_sync_companions'), (wiki_sync_gear, '_sync_archwings'),
     (wiki_sync_gear, '_sync_k_drives'), (wiki_sync_kitguns, '_sync_kitgun_chambers'),
-    (wiki_sync_amps, '_sync_amps'),
+    (wiki_sync_amps, '_sync_amps'), (wiki_sync_mods, '_sync_mods'),
+    (wiki_sync_mods, '_sync_arcanes'), (wiki_sync_mods, '_sync_resources'),
 ]
 
 
@@ -262,3 +265,80 @@ def test_amps_fall_back_to_the_curated_list_when_every_request_fails(app, monkey
     assert 'WFCD Amps.json not available (refused) — trying Misc.json' in messages
     assert 'Could not fetch WFCD Misc.json (refused) — falling back to wiki' in messages
     assert 'Wiki Category:Amps lookup failed (refused) — using hardcoded fallback' in messages
+
+
+# ── Mods, arcanes and resources ──────────────────────────────────────────────
+
+# One entry per WFCD file the mod steps read; two rivens of one class collapse to one row.
+MOD_FILES = {
+    'Mods.json': [{'name': 'Serration', 'type': 'Rifle Mod', 'polarity': 'Madurai',
+                   'fusionLimit': 10, 'tradable': True},
+                  {'name': 'Rifle Riven Mod', 'type': 'Rifle Riven Mod'},
+                  {'name': 'Veiled Rifle Riven', 'type': 'Rifle Riven Mod'}],
+    'Arcanes.json': [{'name': 'Arcane Energize', 'fusionLimit': 5}],
+    'Resources.json': [{'name': 'Ferrite', 'tradable': False}],
+}
+
+
+@pytest.mark.parametrize('step, category, names', [
+    ('_sync_mods', 'mod', {'Serration', 'Rifle Riven Mod'}),
+    ('_sync_arcanes', 'arcane', {'Arcane Energize'}),
+    ('_sync_resources', 'resource', {'Ferrite'}),
+])
+def test_a_fetch_replaced_on_the_requests_module_reaches_each_mod_step(
+        app, monkeypatch, step, category, names):
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: MOD_FILES.get(f, []))
+    with app.app_context():
+        count = getattr(wiki_sync, step)()
+        found = {r['name'] for r in get_db().execute(
+            'SELECT name FROM items WHERE category = ?', (category,))}
+    assert count == len(names)
+    assert found == names
+
+
+@pytest.mark.parametrize('step, message', [
+    ('_sync_mods', 'Could not fetch Mods.json: refused'),
+    ('_sync_resources', 'Could not fetch Resources.json: refused'),
+])
+def test_a_refused_request_in_mods_or_resources_syncs_nothing_and_warns(
+        app, monkeypatch, caplog, step, message):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context(), caplog.at_level(logging.INFO, logger='services.wiki_sync'):
+        count = getattr(wiki_sync, step)()
+    assert count == 0
+    assert [(r.name, r.levelno) for r in caplog.records if r.getMessage() == message] == [
+        ('services.wiki_sync', logging.WARNING)]
+
+
+def test_arcanes_fall_back_to_the_curated_list_when_every_request_fails(app, monkeypatch, caplog):
+    monkeypatch.setattr(requests, 'get', _refuse)
+    with app.app_context(), caplog.at_level(logging.INFO, logger='services.wiki_sync'):
+        count = wiki_sync._sync_arcanes()
+        names = {r['name'] for r in get_db().execute(
+            "SELECT name FROM items WHERE category = 'arcane'")}
+    assert count == len(wiki_sync_mods._KNOWN_ARCANES) == len(names)
+    assert names == set(wiki_sync_mods._KNOWN_ARCANES)
+    messages = [r.getMessage() for r in caplog.records if r.name == 'services.wiki_sync']
+    assert 'WFCD Arcanes.json not available (refused) — trying Misc.json' in messages
+    assert 'Could not fetch WFCD Misc.json (refused) — falling back to wiki' in messages
+    assert 'Wiki Category:Arcanes lookup failed (refused) — using hardcoded fallback' in messages
+
+
+class _BrokenItem:
+    @staticmethod
+    def upsert(**kwargs):
+        raise RuntimeError('write refused')
+
+
+@pytest.mark.parametrize('step', ['_sync_mods', '_sync_arcanes', '_sync_resources'])
+def test_a_row_write_that_raises_in_a_mod_step_ends_the_sync_as_a_failed_result(
+        app, monkeypatch, caplog, step):
+    _replace_every_step(monkeypatch)
+    monkeypatch.setattr(wiki_sync, step, getattr(wiki_sync_mods, step))
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: MOD_FILES.get(f, []))
+    monkeypatch.setattr(wiki_sync_mods, 'Item', _BrokenItem)
+    with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
+        result = wiki_sync.run_sync(app)
+    assert result == {'ok': False, 'error': 'write refused'}
+    assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno >= logging.ERROR] == [
+        ('services.wiki_sync', 'Sync failed: write refused')]
