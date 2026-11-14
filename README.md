@@ -15,7 +15,7 @@ A locally-hosted, multi-user companion app for Warframe that answers the questio
 - **Wiki sync** — one-click (or scheduled) sync from [wiki.warframe.com](https://wiki.warframe.com) to add new items, update vaulted / Prime Resurgence status, import crafting recipes, populate resource farm data, fetch item portrait images, and look up each item's warframe.market listing — without touching user progress. The sync page shows when the last sync finished (in your local time, how long ago, and whether it succeeded), that none has run yet, or that one started and did not finish. Within an hour after a successful sync, Run Sync Now asks before starting another; after a failed one it runs at once. Only one sync runs at a time: a request while one runs starts nothing, and the page says so.
 - **Multi-user** — independent progress records per account, local or OIDC or Azure EasyAuth authentication, role-based access (admin / user). Admins can create, deactivate, and delete accounts, assign roles, and reset passwords for local-auth accounts directly from the admin panel.
 - **Preferences** — on the Settings page: market cache duration (hours, default 6), buy threshold (platinum), platinum per hour and farming hour cap (hours; empty switches the hour check off, as 0 does). Each field takes a whole number (0 or more) or stays empty for the default; any other value is refused with a message naming the field, and nothing of the form is saved.
-- **Backup** — local filesystem and/or S3-compatible bucket, with interval+count or GFS retention strategies.
+- **Backup** — local filesystem and/or S3-compatible bucket. Each target is backed up on its own schedule (checked every 15 minutes, the first check 2 minutes after the start) and with **Back up now** on the Settings page (admins only), as a consistent copy of the SQLite database, and keeps its backups by its own retention strategy: *interval + count* (a backup when the newest is at least N days old, the newest M kept; by default 1 day and 7) or *Grandfather-Father-Son* (the newest backup of each of the last D days, W weeks and M months that have one; by default 7, 4 and 6). Old backups are removed only after a new one was written, and only files named `warframe_tracker_YYYYMMDDTHHMMSSZ.db` directly in the folder or under the prefix: anything else you keep there is left alone. With an MSSQL database no file backup is made; the database's own backups apply.
 - **Export / import** — download all your data as a ZIP of CSV files you can open in a spreadsheet: per-category progress (owned, mastered, subsumed, resurgence watch, notes, arcane ranks), farming goals with their component and resource progress (every component's state: pending, blueprint or crafted), the farming checklist, the market watchlist and your personal settings. A cell that starts with `=`, `+`, `-`, `@`, a tab, a carriage return or `'` is written with a leading `'` so that a spreadsheet shows it as text instead of running it as a formula; importing the ZIP removes that `'` again, so your notes and names come back exactly as they were. Importing a ZIP (older exports too) checks every cell first, then merges it into your data in one step: rows in the file overwrite yours for the same item, new items are added, everything else is kept; one invalid cell refuses the whole file and the message names the file, line and column. You can also import one CSV file of an export on its own (after editing it in a spreadsheet, say), without zipping it again: keep its export name (`warframe.csv`, `farming_goals.csv`, `settings.csv` and so on; a copy suffix such as `warframe (1).csv` is fine) and only that file's data changes.
 
 ---
@@ -102,12 +102,12 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `OIDC_REDIRECT_URI` | — | `https://<your host>/auth/oidc/callback` |
 | `OIDC_ALLOWED_EMAIL_DOMAINS` | — | Optional: only emails of these domains may sign in through OIDC (comma-separated, for example `example.com, example.org`) |
 | `OIDC_ALLOWED_GROUPS` | — | Optional: only members of these provider groups may sign in through OIDC (comma-separated, exact names) |
-| `BACKUP_LOCAL_PATH` | — | Local backup directory |
+| `BACKUP_LOCAL_PATH` | — | Local backup directory, an absolute path (created if missing; a relative path is refused); setting it turns on scheduled backups |
 | `BACKUP_S3_ENDPOINT` | — | S3-compatible endpoint URL |
-| `BACKUP_S3_BUCKET` | — | S3 bucket name |
-| `BACKUP_S3_PREFIX` | `warframe-tracker/` | S3 key prefix |
-| `BACKUP_S3_ACCESS_KEY` | — | S3 credentials |
-| `BACKUP_S3_SECRET_KEY` | — | |
+| `BACKUP_S3_BUCKET` | — | S3 bucket name; setting it with both keys below turns on scheduled backups to S3 |
+| `BACKUP_S3_PREFIX` | `warframe-tracker/` | S3 key prefix (leading `/` removed, a trailing `/` added; empty = the bucket root) |
+| `BACKUP_S3_ACCESS_KEY` | — | S3 access key; required with the bucket (no other credentials are ever used) |
+| `BACKUP_S3_SECRET_KEY` | — | S3 secret key; required with the bucket |
 
 **Sign-in with an OpenID Connect provider** (Keycloak, Authentik, Google, …). Beside the local
 login, the app can sign users in through any OpenID Connect provider:

@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from flask import (Blueprint, Response, current_app, flash, redirect,
+from flask import (Blueprint, Response, abort, current_app, flash, redirect,
                    render_template, request, session, url_for)
 from flask_login import current_user, login_required
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -46,6 +46,8 @@ def index():
                 flash('Password changed.', 'success')
 
         elif action == 'backup_now':
+            if not current_user.is_admin:     # it deletes old backups: the admin's alone
+                abort(403)
             result = backup_now(current_app._get_current_object(), force=True)
             flash(f'Backup result: {json.dumps(result)}', 'info')
 

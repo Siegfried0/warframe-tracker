@@ -100,9 +100,14 @@ def _register_blueprints(flask_app):
 def _start_scheduler(flask_app):
     """The scheduled sync: a check every 15 minutes (first 2 minutes after the start) that
     syncs when the stored last sync is older than SYNC_INTERVAL_HOURS, and with
-    AUTO_SYNC_ON_STARTUP one sync 2 minutes after the start. Neither: no scheduler."""
-    if not flask_app.config.get('AUTO_SYNC_ON_STARTUP') and \
-            not (flask_app.config.get('SYNC_INTERVAL_HOURS') or 0) > 0:
+    AUTO_SYNC_ON_STARTUP one sync 2 minutes after the start. The scheduled backup: a check
+    every 15 minutes (first 2 minutes after the start) that backs up each configured target
+    that is due (SQLite only). None of these: no scheduler."""
+    from services import backup_service
+    sync = bool(flask_app.config.get('AUTO_SYNC_ON_STARTUP')) or \
+        (flask_app.config.get('SYNC_INTERVAL_HOURS') or 0) > 0
+    backups = backup_service.wants_scheduler(flask_app.config)
+    if not sync and not backups:
         return
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -111,10 +116,14 @@ def _start_scheduler(flask_app):
 
         scheduler = BackgroundScheduler(daemon=True, timezone='UTC')
         sync_schedule.add_jobs(scheduler, flask_app, run_sync)
+        backup_service.add_jobs(scheduler, flask_app)
         scheduler.start()
         flask_app.scheduler = scheduler
     except ImportError:
-        flask_app.logger.warning('APScheduler not installed — scheduled sync disabled.')
+        if sync:
+            flask_app.logger.warning('APScheduler not installed — scheduled sync disabled.')
+        if backups:
+            flask_app.logger.warning(backup_service.NO_APSCHEDULER)
 
 
 DEVELOPMENT_KEYLESS_WARNING = (
