@@ -1027,3 +1027,45 @@ tr.resurgence-row {
 .mr-max-rank {
   color: #ffd54f;
 }
+
+/* ── Settings: the admin's backup section ───────────────────────────────── */
+
+.backup-target {
+  margin-bottom: 1.5rem;
+}
+
+.backup-target h6 {
+  font-weight: 500;
+}
+
+/* A location is the environment's text: any length, any characters, wrapped anywhere. */
+.backup-location {
+  margin: .5rem 0;
+}
+
+.backup-location dt {
+  color: #b0bec5;
+  font-size: .85rem;
+}
+
+.backup-location dd {
+  margin: 0 0 .4rem 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.backup-retention fieldset {
+  border: 1px solid rgba(255, 255, 255, .2);
+  margin: 0 0 1rem 0;
+  min-width: 0;
+  padding: .5rem 1rem;
+}
+
+/* The script hides the fields of the strategy not chosen; hidden must win over any display. */
+.backup-retention fieldset[hidden] {
+  display: none;
+}
+
+.backup-retention [type="radio"] + span {
+  color: #fff;
+}

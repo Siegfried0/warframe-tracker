@@ -15,7 +15,7 @@ A locally-hosted, multi-user companion app for Warframe that answers the questio
 - **Wiki sync** — one-click (or scheduled) sync from [wiki.warframe.com](https://wiki.warframe.com) to add new items, update vaulted / Prime Resurgence status, import crafting recipes, populate resource farm data, fetch item portrait images, and look up each item's warframe.market listing — without touching user progress. The sync page shows when the last sync finished (in your local time, how long ago, and whether it succeeded), that none has run yet, or that one started and did not finish. Within an hour after a successful sync, Run Sync Now asks before starting another; after a failed one it runs at once. Only one sync runs at a time: a request while one runs starts nothing, and the page says so.
 - **Multi-user** — independent progress records per account, local or OIDC or Azure EasyAuth authentication, role-based access (admin / user). Admins can create, deactivate, and delete accounts, assign roles, and reset passwords for local-auth accounts directly from the admin panel.
 - **Preferences** — on the Settings page: market cache duration (hours, default 6), buy threshold (platinum), platinum per hour and farming hour cap (hours; empty switches the hour check off, as 0 does). Each field takes a whole number (0 or more) or stays empty for the default; any other value is refused with a message naming the field, and nothing of the form is saved.
-- **Backup** — local filesystem and/or S3-compatible bucket. Each target is backed up on its own schedule (checked every 15 minutes, the first check 2 minutes after the start) and with **Back up now** on the Settings page (admins only), as a consistent copy of the SQLite database, and keeps its backups by its own retention strategy: *interval + count* (a backup when the newest is at least N days old, the newest M kept; by default 1 day and 7) or *Grandfather-Father-Son* (the newest backup of each of the last D days, W weeks and M months that have one; by default 7, 4 and 6). Old backups are removed only after a new one was written, and only files named `warframe_tracker_YYYYMMDDTHHMMSSZ.db` directly in the folder or under the prefix: anything else you keep there is left alone. With an MSSQL database no file backup is made; the database's own backups apply.
+- **Backup** — local filesystem and/or S3-compatible bucket. Each target is backed up on its own schedule (checked every 15 minutes, the first check 2 minutes after the start) and with **Back up now** on the Settings page (admins only), as a consistent copy of the SQLite database, and keeps its backups by its own retention strategy, chosen by an admin in Settings: *interval + count* (a backup when the newest is at least N days old, the newest M kept; by default 1 day and 7) or *Grandfather-Father-Son* (the newest backup of each of the last D days, W weeks and M months that have one; by default 7, 4 and 6). Old backups are removed only after a new one was written, and only files named `warframe_tracker_YYYYMMDDTHHMMSSZ.db` directly in the folder or under the prefix: anything else you keep there is left alone. With an MSSQL database no file backup is made; the database's own backups apply.
 - **Export / import** — download all your data as a ZIP of CSV files you can open in a spreadsheet: per-category progress (owned, mastered, subsumed, resurgence watch, notes, arcane ranks), farming goals with their component and resource progress (every component's state: pending, blueprint or crafted), the farming checklist, the market watchlist and your personal settings. A cell that starts with `=`, `+`, `-`, `@`, a tab, a carriage return or `'` is written with a leading `'` so that a spreadsheet shows it as text instead of running it as a formula; importing the ZIP removes that `'` again, so your notes and names come back exactly as they were. Importing a ZIP (older exports too) checks every cell first, then merges it into your data in one step: rows in the file overwrite yours for the same item, new items are added, everything else is kept; one invalid cell refuses the whole file and the message names the file, line and column. You can also import one CSV file of an export on its own (after editing it in a spreadsheet, say), without zipping it again: keep its export name (`warframe.csv`, `farming_goals.csv`, `settings.csv` and so on; a copy suffix such as `warframe (1).csv` is fine) and only that file's data changes.
 
 ---
@@ -158,6 +158,26 @@ Notes:
 - Logging out ends the session in this app only; you stay signed in at your provider.
 - Pointing `OIDC_ISSUER_URL` at another provider later gives its users new accounts; the old
   ones remain until an admin removes them.
+
+**Backups.** Where backups go is set by the environment only (`BACKUP_LOCAL_PATH`, and
+`BACKUP_S3_BUCKET` with both `BACKUP_S3_*_KEY` variables; see the table above), so the S3 keys
+never enter the database; restart the app after changing them. How long each target keeps its
+backups is chosen by an admin in **Settings → Backup**, one form per configured target. The
+section shows where each target writes (the folder; the S3 endpoint, bucket and prefix, never a
+key) and, for a target that is not configured, which variables configure it. Users who are
+not admins see no backup section. Choose per target:
+- *Interval + count* (the default: 1 day, 7 kept), for a desktop or development setup that
+  starts and stops often: a backup is made when the newest is at least that many days old
+  (0 = at every check), and the given number of newest backups is kept (1–1000; days 0–365).
+- *Grandfather-father-son* (by default 7 daily, 4 weekly, 6 monthly), for an instance that runs
+  all the time as a service: the newest backup of each of the last days, weeks and months that
+  have one is kept (each count 0–1000, at least one above 0).
+
+A save checks every field first and changes nothing when one is out of range, naming each
+field and its range. The new retention applies from that target's next backup; switching
+strategies deletes nothing by itself. **Back up now** backs up every configured target at once
+and reports one line per target: the backup written and how many old backups were removed (or
+could not be), or why it was skipped or failed.
 
 **Return page after login.** After a login (local or OpenID Connect) the app returns to the
 page that asked for it only when that is a page of this app; any other address (another site,

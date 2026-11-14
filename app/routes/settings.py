@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 
 from flask import (Blueprint, Response, abort, current_app, flash, redirect,
@@ -9,6 +8,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from models.progress import Progress
 from services.auth_service import (SETTING_VALUE_MAX, USER_SETTINGS, get_setting,
                                    save_preferences, sign_out)
+from services.backup_page import backup_section, result_messages, save_retention
 from services.backup_service import backup_now
 from services.export_service import export_user_data
 from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
@@ -45,11 +45,16 @@ def index():
                 current_user.set_password(new_pw)
                 flash('Password changed.', 'success')
 
-        elif action == 'backup_now':
-            if not current_user.is_admin:     # it deletes old backups: the admin's alone
+        elif action in ('backup_now', 'save_backup_retention'):
+            if not current_user.is_admin:     # backups and their retention are the admin's
                 abort(403)
-            result = backup_now(current_app._get_current_object(), force=True)
-            flash(f'Backup result: {json.dumps(result)}', 'info')
+            if action == 'backup_now':
+                result = backup_now(current_app._get_current_object(), force=True)
+                for category, sentence in result_messages(result):
+                    flash(sentence, category)
+            else:
+                saved, message = save_retention(request.form, current_app.config)
+                flash(message, 'success' if saved else 'error')
 
         elif action == 'clear_progress':
             confirm = request.form.get('confirm_clear')
@@ -74,7 +79,9 @@ def index():
         return redirect(url_for('settings.index'))
 
     prefs = {key: get_setting(uid, key, default) for key, _, default in USER_SETTINGS}
-    return render_template('settings.html', settings_meta=USER_SETTINGS, prefs=prefs)
+    backup = backup_section(current_app.config) if current_user.is_admin else None
+    return render_template('settings.html', settings_meta=USER_SETTINGS, prefs=prefs,
+                           backup=backup)
 
 
 @settings_bp.route('/export')

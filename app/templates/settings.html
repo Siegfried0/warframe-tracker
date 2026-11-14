@@ -119,23 +119,76 @@
   </div>
 
   <div class="col s12 m5">
-    <!-- Backup -->
-    <div class="card blue-grey darken-2">
+    <!-- Backup: the admin's -->
+    {% if backup %}
+    <div class="card blue-grey darken-2" id="backup-card">
       <div class="card-content white-text">
         <span class="card-title">{{ icon('backup', 'left') }}Backup</span>
-        <p class="grey-text">
-          Configure backup destinations via environment variables
-          (<code>BACKUP_LOCAL_PATH</code>, <code>BACKUP_S3_BUCKET</code>, etc. — see the README).
-        </p>
-        <form method="post">
+        <p class="grey-text">Backup targets are set by environment variables and shown here
+          (see the README, "Backups"); their keys are never shown. Each configured target
+          keeps its backups by the retention chosen below.</p>
+        {% for t in backup.targets %}
+        <section class="backup-target" id="backup-{{ t.target }}">
+          <h6>{{ t.name }}</h6>
+          <dl class="backup-location">
+            {% for label, text in t.location %}<dt>{{ label }}</dt><dd>{{ text }}</dd>{% endfor %}
+          </dl>
+          {% if not t.configured %}
+          <p class="grey-text backup-not-configured">Not configured: {{ t.reason }}. Set
+            {% for name in t.env_vars %}<code>{{ name }}</code>{{ ', ' if not loop.last }}{% endfor %}
+            (see the README, "Backups").</p>
+          {% elif backup.mssql %}
+          <p class="grey-text backup-mssql">No retention to choose: {{ backup.mssql_reason }}.</p>
+          {% elif t.error %}
+          <p class="orange-text backup-read-error">Retention not shown: {{ t.error }}.</p>
+          {% else %}
+          <form method="post" class="backup-retention">
+            {{ csrf_field() }}
+            <input type="hidden" name="action" value="save_backup_retention">
+            <input type="hidden" name="target" value="{{ t.target }}">
+            <fieldset class="backup-strategy">
+              <legend>Strategy</legend>
+              {% for value, label in backup.strategy_labels.items() %}
+              <p><label>
+                <input type="radio" name="strategy" value="{{ value }}"{% if t.retention.strategy == value %} checked{% endif %}>
+                <span>{{ label }}</span>
+              </label></p>
+              {% endfor %}
+            </fieldset>
+            {% for strategy, fields in [('interval_count', ['min_days', 'keep']),
+                                        ('gfs', ['gfs_daily', 'gfs_weekly', 'gfs_monthly'])] %}
+            <fieldset data-strategy="{{ strategy }}">
+              <legend>{{ backup.strategy_labels[strategy] }}</legend>
+              {% for field in fields %}
+              {% set field_id = 'backup-' ~ t.target ~ '-' ~ field %}
+              <div class="input-field">
+                <input id="{{ field_id }}" name="{{ field }}" type="text" inputmode="numeric"
+                       value="{{ t.retention[field] }}" class="white-text">
+                <label for="{{ field_id }}" class="white-text active">{{ backup.field_labels[field] }}
+                  ({{ backup.bounds[field][0] }}&ndash;{{ backup.bounds[field][1] }})</label>
+              </div>
+              {% endfor %}
+            </fieldset>
+            {% endfor %}
+            <button class="btn teal waves-effect" type="submit">Save {{ t.name }} retention</button>
+          </form>
+          {% endif %}
+        </section>
+        {% endfor %}
+        {% if backup.back_up_now %}
+        <form method="post" id="backup-now">
           {{ csrf_field() }}
           <input type="hidden" name="action" value="backup_now">
           <button class="btn blue-grey lighten-1 waves-effect" type="submit">
             {{ icon('cloud_upload', 'left') }}Back Up Now
           </button>
         </form>
+        {% else %}
+        <p class="grey-text backup-none">{{ backup.none_configured }}: Back up now needs one.</p>
+        {% endif %}
       </div>
     </div>
+    {% endif %}
 
     <!-- Account info -->
     <div class="card blue-grey darken-2">
@@ -149,4 +202,10 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if backup %}
+<script src="{{ url_for('static', filename='js/settings_backup.js') }}"></script>
+{% endif %}
 {% endblock %}

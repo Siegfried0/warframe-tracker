@@ -50,22 +50,37 @@ def _invalid(key, raw, default):
     return default
 
 
+def parse_strategy(raw):
+    """The strategy a text names (blanks stripped, ASCII letters lower-cased), or None when it
+    names none. The reader and the Settings page's save both decide by this one check."""
+    text = raw.strip().translate(_ASCII_LOWER) if isinstance(raw, str) else None
+    return text if text in STRATEGIES else None
+
+
+def parse_number(field, raw):
+    """The whole number a text holds for ``field`` (blanks stripped, 1 to 4 ASCII digits,
+    within the field's bounds), or None when it holds none. Never ``int()`` on the raw text,
+    which takes ``+7``, ``1_000`` and other scripts' digits."""
+    low, high = BOUNDS[field]
+    text = raw.strip() if isinstance(raw, str) else ''
+    if _NUMBER.fullmatch(text) and low <= int(text) <= high:
+        return int(text)
+    return None
+
+
 def _strategy(key, raw):
     if raw is None:
         return DEFAULTS.strategy
-    text = raw.strip().translate(_ASCII_LOWER) if isinstance(raw, str) else None
-    return text if text in STRATEGIES else _invalid(key, raw, DEFAULTS.strategy)
+    strategy = parse_strategy(raw)
+    return strategy if strategy is not None else _invalid(key, raw, DEFAULTS.strategy)
 
 
 def _number(key, raw, field):
     default = getattr(DEFAULTS, field)
     if raw is None:
         return default
-    low, high = BOUNDS[field]
-    text = raw.strip() if isinstance(raw, str) else ''
-    if _NUMBER.fullmatch(text) and low <= int(text) <= high:
-        return int(text)
-    return _invalid(key, raw, default)
+    number = parse_number(field, raw)
+    return number if number is not None else _invalid(key, raw, default)
 
 
 def read_retention(target: str, get=None) -> Retention:
