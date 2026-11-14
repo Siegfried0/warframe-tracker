@@ -1,10 +1,10 @@
 """The farming services' modules: one import path, no import cycle.
 
 ``services.farming_service`` stays the import path of every farming name a route or a test
-reaches, also of the names defined in the goal modules beside it: it imports them from
-there. ``services.farming_progress`` imports no other farming module, and no farming module
-imports ``services.farming_service``, so the modules load in any order; code inside them
-calls a function from the module that defines it.
+reaches, also of the names defined in the farming modules beside it: it imports them from
+there. ``services.farming_progress`` and ``services.farming_item_plan`` import no other
+farming module, and no farming module imports ``services.farming_service``, so the modules
+load in any order; code inside them calls a function from the module that defines it.
 """
 import ast
 import inspect
@@ -15,7 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from services import farming_goals, farming_progress, farming_service
+from services import (farming_goal_plan, farming_goals, farming_item_plan, farming_progress,
+                      farming_service)
 
 APP_DIR = Path(__file__).resolve().parent.parent / 'app'
 
@@ -26,13 +27,16 @@ FACADE_NAMES = {
                     'get_pinned_goals', 'move_farming_goal', 'remove_farming_goal',
                     'search_goal_items', 'update_farming_goal'],
     farming_progress: ['set_goal_progress'],
+    farming_goal_plan: ['get_goal_plan_with_progress'],
+    farming_item_plan: ['get_item_plan'],
 }
 FACADE_CASES = [(module, name) for module, names in FACADE_NAMES.items() for name in names]
 # The goal-progress helpers the other farming modules read.
 PROGRESS_HELPERS = ['_comp_state_for', '_compute_progress_pct', '_get_progress_map',
                     '_ingredient_drops_for']
 FARMING_MODULES = ['services.farming_service', 'services.farming_goals',
-                   'services.farming_progress']
+                   'services.farming_progress', 'services.farming_goal_plan',
+                   'services.farming_item_plan']
 
 
 def _imported_modules(module) -> set[str]:
@@ -74,6 +78,15 @@ def test_farming_goals_reads_progress_from_the_progress_module():
     assert farming_goals._compute_progress_pct is farming_progress._compute_progress_pct
 
 
+@pytest.mark.parametrize('name', PROGRESS_HELPERS)
+def test_the_goal_plan_reads_progress_from_the_progress_module(name):
+    assert getattr(farming_goal_plan, name) is getattr(farming_progress, name)
+
+
+def test_the_goal_plan_reads_the_item_plan_from_the_item_plan_module():
+    assert farming_goal_plan.get_item_plan is farming_item_plan.get_item_plan
+
+
 # ── Toolchain: the import graph ──────────────────────────────────────────────
 
 def test_the_progress_module_imports_no_other_farming_module():
@@ -81,7 +94,13 @@ def test_the_progress_module_imports_no_other_farming_module():
     assert sorted(m for m in imported if m.startswith('services.farming')) == []
 
 
-@pytest.mark.parametrize('module', [farming_goals, farming_progress],
+def test_the_item_plan_module_imports_no_other_farming_module():
+    imported = _imported_modules(farming_item_plan)
+    assert sorted(m for m in imported if m.startswith('services.farming')) == []
+
+
+@pytest.mark.parametrize('module', [farming_goals, farming_progress, farming_goal_plan,
+                                    farming_item_plan],
                          ids=lambda m: m.__name__)
 def test_no_goal_module_imports_farming_service(module):
     assert 'services.farming_service' not in _imported_modules(module)
