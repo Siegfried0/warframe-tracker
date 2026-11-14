@@ -1,6 +1,145 @@
-"""Schema versions 2 to 4 (versions 5 to 8 join them here): each migration takes the connection
-and the backend's name, as the runner in models/db.py calls it; nothing here imports from
-models/db.py."""
+"""Schema versions 2 to 8: each migration takes the connection and the backend's name, as the
+runner in models/db.py calls it; nothing here imports from models/db.py."""
+
+
+def _migrate_v8(db, backend='sqlite'):
+    """Add mod/arcane columns to items and user_progress.
+
+    items: mod_type, mod_polarity, mod_max_rank (used for category='mod'/'arcane')
+    user_progress: owned_rank (arcane current rank), target_rank (arcane user goal)
+    """
+    if backend == 'mssql':
+        stmts = [
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('items') AND name = 'mod_type'
+            )
+            ALTER TABLE items ADD mod_type NVARCHAR(100)
+            """,
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('items') AND name = 'mod_polarity'
+            )
+            ALTER TABLE items ADD mod_polarity NVARCHAR(100)
+            """,
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('items') AND name = 'mod_max_rank'
+            )
+            ALTER TABLE items ADD mod_max_rank INT
+            """,
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('user_progress') AND name = 'owned_rank'
+            )
+            ALTER TABLE user_progress ADD owned_rank INT
+            """,
+            """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('user_progress') AND name = 'target_rank'
+            )
+            ALTER TABLE user_progress ADD target_rank INT
+            """,
+        ]
+        for stmt in stmts:
+            db.execute(stmt.strip())
+        db.commit()
+    else:
+        for col_def in [
+            'ALTER TABLE items ADD COLUMN mod_type TEXT',
+            'ALTER TABLE items ADD COLUMN mod_polarity TEXT',
+            'ALTER TABLE items ADD COLUMN mod_max_rank INTEGER',
+            'ALTER TABLE user_progress ADD COLUMN owned_rank INTEGER',
+            'ALTER TABLE user_progress ADD COLUMN target_rank INTEGER',
+        ]:
+            try:
+                db.execute(col_def)
+            except Exception:
+                pass  # column already exists
+        db.commit()
+
+
+def _migrate_v7(db, backend='sqlite'):
+    """Add grants_mastery column to items.
+
+    K-Drive component parts (Board, Deck, Grip, Jet pieces) do not award MR.
+    They are written with grants_mastery=0 by _sync_k_drives(); everything else
+    defaults to 1 so existing rows are unaffected.
+    """
+    if backend == 'mssql':
+        db.execute('''
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('items') AND name = 'grants_mastery'
+            )
+            ALTER TABLE items ADD grants_mastery INT NOT NULL DEFAULT 1
+        ''')
+        db.commit()
+    else:
+        try:
+            db.execute('ALTER TABLE items ADD COLUMN grants_mastery INTEGER NOT NULL DEFAULT 1')
+            db.commit()
+        except Exception:
+            pass  # column already exists
+
+
+def _migrate_v6(db, backend='sqlite'):
+    """Add comp_state column to farming_progress for 3-state component tracking.
+
+    comp_state values:
+      NULL       → pending (not yet started)
+      'blueprint' → blueprint obtained but not yet crafted; resources still needed
+      'crafted'   → fully crafted; its resources are excluded from required totals
+    """
+    if backend == 'mssql':
+        db.execute('''
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID('farming_progress') AND name = 'comp_state'
+            )
+            ALTER TABLE farming_progress ADD comp_state NVARCHAR(20)
+        ''')
+        db.commit()
+    else:
+        try:
+            db.execute('ALTER TABLE farming_progress ADD COLUMN comp_state TEXT')
+            db.commit()
+        except Exception:
+            pass  # column already exists
+
+
+def _migrate_v5(db, backend='sqlite'):
+    """Add item_component_meta table to store per-component image URLs."""
+    if backend == 'mssql':
+        stmts = [
+            """
+            IF OBJECT_ID('item_component_meta', 'U') IS NULL
+            CREATE TABLE item_component_meta (
+                item_id        INT           NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                component_name NVARCHAR(500) NOT NULL,
+                image_url      NVARCHAR(MAX),
+                PRIMARY KEY (item_id, component_name)
+            )
+            """,
+        ]
+        for stmt in stmts:
+            db.execute(stmt.strip())
+        db.commit()
+    else:
+        db.executescript('''
+            CREATE TABLE IF NOT EXISTS item_component_meta (
+                item_id        INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                component_name TEXT    NOT NULL,
+                image_url      TEXT,
+                PRIMARY KEY (item_id, component_name)
+            );
+        ''')
+        db.commit()
 
 
 def _migrate_v4(db, backend='sqlite'):
