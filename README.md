@@ -104,6 +104,7 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `OIDC_ALLOWED_GROUPS` | — | Optional: only members of these provider groups may sign in through OIDC (comma-separated, exact names) |
 | `BACKUP_LOCAL_PATH` | — | Local backup directory, an absolute path (created if missing; a relative path is refused); setting it turns on scheduled backups |
 | `BACKUP_S3_ENDPOINT` | — | S3-compatible endpoint URL |
+| `BACKUP_S3_REGION` | — | S3 region (blanks removed; unset or blank = no region, the S3 client's default) |
 | `BACKUP_S3_BUCKET` | — | S3 bucket name; setting it with both keys below turns on scheduled backups to S3 |
 | `BACKUP_S3_PREFIX` | `warframe-tracker/` | S3 key prefix (leading `/` removed, a trailing `/` added; empty = the bucket root) |
 | `BACKUP_S3_ACCESS_KEY` | — | S3 access key; required with the bucket (no other credentials are ever used) |
@@ -161,11 +162,14 @@ Notes:
 
 **Backups.** Where backups go is set by the environment only (`BACKUP_LOCAL_PATH`, and
 `BACKUP_S3_BUCKET` with both `BACKUP_S3_*_KEY` variables; see the table above), so the S3 keys
-never enter the database; restart the app after changing them. How long each target keeps its
-backups is chosen by an admin in **Settings → Backup**, one form per configured target. The
-section shows where each target writes (the folder; the S3 endpoint, bucket and prefix, never a
-key) and, for a target that is not configured, which variables configure it. Users who are
-not admins see no backup section. Choose per target:
+never enter the database; restart the app after changing them. No `AWS_*` setting (region,
+endpoint, profile, certificates, retries, ...) and no file under `~/.aws` configures the S3
+backup (TLS is checked against the certificate bundle installed with the app's Python
+packages); the proxy variables (`HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`) do apply. How long
+each target keeps its backups is chosen by an admin in **Settings → Backup**, one form per
+configured target. The section shows where each target writes (the folder; the S3 endpoint,
+bucket and prefix, never a key) and, for a target that is not configured, which variables
+configure it. Users who are not admins see no backup section. Choose per target:
 - *Interval + count* (the default: 1 day, 7 kept), for a desktop or development setup that
   starts and stops often: a backup is made when the newest is at least that many days old
   (0 = at every check), and the given number of newest backups is kept (1–1000; days 0–365).

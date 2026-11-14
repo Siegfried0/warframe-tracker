@@ -76,30 +76,68 @@ def s3_keys_missing(config):
     return None
 
 
+def s3_region(config):
+    """The configured region (blanks stripped), or None when unset or blank: botocore's S3
+    default. Not validated: a wrong region fails the backup with the store's error."""
+    return (config.get('BACKUP_S3_REGION') or '').strip() or None
+
+
+def _ignored_session_vars(table):
+    """Botocore's session variable table with every source but the default removed: no
+    variable is read from the environment and no setting from a config file."""
+    return {name: (None, None, default, converter)
+            for name, (_config_name, _env_name, default, converter) in table.items()}
+
+
 def _s3_client(config):
-    """The S3 client of the configured endpoint and keys (the tests replace this seam). Its
-    timeouts and retries bound an unreachable endpoint to about a minute. Without both keys
+    """The S3 client of the configured endpoint, region and keys (the tests replace this seam).
+    Its timeouts and retries bound an unreachable endpoint to about a minute. Without both keys
     it raises before boto3 is imported, so no other credentials are ever looked up.
 
-    The target is configured by these settings alone: the session reads no profile
-    (``AWS_PROFILE``), no AWS config or credentials file, and no endpoint from the
-    environment (``AWS_ENDPOINT_URL``, ``AWS_ENDPOINT_URL_S3``), so settings meant for
-    another tool neither send the database elsewhere nor stop the backup."""
+    The target is configured by these settings alone: the session reads no variable of
+    botocore's session variable table from the environment (the profile, the region, the CA
+    bundle, the data path, the retry settings, FIPS and dual-stack endpoints, ...; the table is
+    taken from the installed botocore, so a variable a later version adds is ignored too) or of
+    its S3 settings table (``AWS_S3_*``), no AWS config or credentials file, no endpoint from the
+    environment (``AWS_ENDPOINT_URL``, ``AWS_ENDPOINT_URL_S3``) and no data file under
+    ``~/.aws/models`` (models and endpoints come from botocore's own data folder), so
+    settings meant for another tool neither send the database elsewhere nor stop the backup. TLS is verified against the certificates botocore ships
+    with (never ``AWS_CA_BUNDLE`` or ``REQUESTS_CA_BUNDLE``); the proxy variables
+    (``HTTPS_PROXY``, ``HTTP_PROXY``, ``NO_PROXY``) still apply."""
     reason = s3_keys_missing(config)
     if reason:
         raise ValueError(reason)
     import boto3
+    import botocore.configprovider
+    import botocore.loaders
     import botocore.session
     from botocore.config import Config
     # (name in the config file, environment variable, default, converter): no file, no variable.
-    core = botocore.session.Session(session_vars={
+    session_vars = _ignored_session_vars(botocore.configprovider.BOTOCORE_DEFAUT_SESSION_VARIABLES)
+    session_vars.update({
         'profile': (None, None, None, None),
         'config_file': (None, None, os.devnull, None),
         'credentials_file': (None, None, os.devnull, None),
     })
+    core = botocore.session.Session(session_vars=session_vars)
+    # botocore's data (service models, the endpoints table) is read from botocore's own folder
+    # only: its default loader searches ``~/.aws/models`` first, where a file another tool left
+    # would send the requests to another host or break every client.
+    core.register_component('data_loader', botocore.loaders.Loader(
+        extra_search_paths=[botocore.loaders.Loader.BUILTIN_DATA_PATH],
+        include_default_search_paths=False))
+    # The S3 settings (``AWS_S3_USE_ARN_REGION``, ``AWS_S3_US_EAST_1_REGIONAL_ENDPOINT``, ...)
+    # are botocore's second table: each keeps its default too.
+    s3_defaults = {name: entry[2]
+                   for name, entry in botocore.configprovider.DEFAULT_S3_CONFIG_VARS.items()
+                   if entry[2] is not None}
+    core.get_component('config_store').set_config_provider(
+        's3', botocore.configprovider.ConstantProvider(s3_defaults or None))
     return boto3.session.Session(botocore_session=core).client(
         's3',
+        region_name=s3_region(config),
         endpoint_url=(config.get('BACKUP_S3_ENDPOINT') or '').strip() or None,
+        verify=True,
         aws_access_key_id=config['BACKUP_S3_ACCESS_KEY'].strip(),
         aws_secret_access_key=config['BACKUP_S3_SECRET_KEY'].strip(),
         config=Config(connect_timeout=10, read_timeout=30, retries={'max_attempts': 2},

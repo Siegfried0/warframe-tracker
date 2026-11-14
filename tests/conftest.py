@@ -34,8 +34,8 @@ os.environ.pop('EASYAUTH_ENABLED', None)
 os.environ.pop('SESSION_COOKIE_SAMESITE', None)
 # A backup target set in the shell would start scheduled backups of the test database into the
 # real folder or bucket: none is configured unless a test sets one in its own temporary folder.
-for _name in ('BACKUP_LOCAL_PATH', 'BACKUP_S3_ENDPOINT', 'BACKUP_S3_BUCKET', 'BACKUP_S3_PREFIX',
-              'BACKUP_S3_ACCESS_KEY', 'BACKUP_S3_SECRET_KEY'):
+for _name in ('BACKUP_LOCAL_PATH', 'BACKUP_S3_ENDPOINT', 'BACKUP_S3_REGION', 'BACKUP_S3_BUCKET',
+              'BACKUP_S3_PREFIX', 'BACKUP_S3_ACCESS_KEY', 'BACKUP_S3_SECRET_KEY'):
     os.environ.pop(_name, None)
 sys.path.insert(0, str(APP_DIR))
 

@@ -107,6 +107,7 @@ class Config:
 
     # Backup — S3-compatible (all optional)
     BACKUP_S3_ENDPOINT = os.environ.get('BACKUP_S3_ENDPOINT')
+    BACKUP_S3_REGION = os.environ.get('BACKUP_S3_REGION')   # blanks stripped where it is used
     BACKUP_S3_BUCKET = os.environ.get('BACKUP_S3_BUCKET')
     BACKUP_S3_PREFIX = os.environ.get('BACKUP_S3_PREFIX', 'warframe-tracker/')
     BACKUP_S3_ACCESS_KEY = os.environ.get('BACKUP_S3_ACCESS_KEY')
