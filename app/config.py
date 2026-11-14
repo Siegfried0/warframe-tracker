@@ -112,6 +112,9 @@ class Config:
     BACKUP_S3_PREFIX = os.environ.get('BACKUP_S3_PREFIX', 'warframe-tracker/')
     BACKUP_S3_ACCESS_KEY = os.environ.get('BACKUP_S3_ACCESS_KEY')
     BACKUP_S3_SECRET_KEY = os.environ.get('BACKUP_S3_SECRET_KEY')
+    # A PEM file of the certificate authorities the store's TLS is verified against (absolute;
+    # blanks stripped where it is used; unset = botocore's own certificates)
+    BACKUP_S3_CA_BUNDLE = os.environ.get('BACKUP_S3_CA_BUNDLE')
 
     # Azure EasyAuth — opt-in
     EASYAUTH_ENABLED = os.environ.get('EASYAUTH_ENABLED', 'false').lower() == 'true'

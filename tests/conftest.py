@@ -5,6 +5,7 @@ importing ``app`` runs ``create_app()`` at import time. So app/ goes first on sy
 DATABASE_PATH names a throwaway database (and SECRET_KEY a random key) before the first
 import: no test ever opens the user's database.
 """
+import ipaddress
 import os
 import secrets
 import shutil
@@ -35,7 +36,8 @@ os.environ.pop('SESSION_COOKIE_SAMESITE', None)
 # A backup target set in the shell would start scheduled backups of the test database into the
 # real folder or bucket: none is configured unless a test sets one in its own temporary folder.
 for _name in ('BACKUP_LOCAL_PATH', 'BACKUP_S3_ENDPOINT', 'BACKUP_S3_REGION', 'BACKUP_S3_BUCKET',
-              'BACKUP_S3_PREFIX', 'BACKUP_S3_ACCESS_KEY', 'BACKUP_S3_SECRET_KEY'):
+              'BACKUP_S3_PREFIX', 'BACKUP_S3_ACCESS_KEY', 'BACKUP_S3_SECRET_KEY',
+              'BACKUP_S3_CA_BUNDLE'):
     os.environ.pop(_name, None)
 sys.path.insert(0, str(APP_DIR))
 
@@ -47,21 +49,68 @@ ADMIN = {'username': 'admin', 'password': 'correct-horse-9', 'confirm': 'correct
 def pytest_unconfigure(config):
     shutil.rmtree(_IMPORT_ROOT, ignore_errors=True)
 
-_LOOPBACK = {'127.0.0.1', '::1', 'localhost'}
 _real_connect = socket.socket.connect
+# The resolver functions a test could reach the network through, saved before any patch; the
+# guard calls the saved one (a test swaps it for a recorder to see that it was never called).
+# getnameinfo is a reverse lookup (a PTR query) of the address in its sockaddr.
+RESOLVERS = ('getaddrinfo', 'gethostbyname', 'gethostbyname_ex', 'gethostbyaddr', 'getnameinfo')
+_real_resolvers = {name: getattr(socket, name) for name in RESOLVERS}
+
+
+def is_loopback(host) -> bool:
+    """The hosts a test may connect to or look up: None or empty (the local host), `localhost`
+    in any case with at most one trailing dot, and an IP literal in 127.0.0.0/8 or ::1. A bytes
+    host is decoded as ASCII first; one that does not decode is refused."""
+    if host is None:
+        return True
+    if isinstance(host, (bytes, bytearray)):
+        try:
+            host = bytes(host).decode('ascii')
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(host, str):
+        return False
+    if host == '' or host.lower() in ('localhost', 'localhost.'):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _guarded_connect(self, address):
     host = address[0] if isinstance(address, tuple) else address
-    if host not in _LOOPBACK:
+    if not is_loopback(host):
         raise RuntimeError(f'tests must not reach the network (tried {address!r})')
     return _real_connect(self, address)
 
 
+def _guarded_resolver(name):
+    def guarded(host, *args, **kwargs):
+        # getnameinfo takes a sockaddr: its host is the first element; any other shape is refused.
+        looked_up = host
+        if name == 'getnameinfo':
+            looked_up = host[0] if isinstance(host, tuple) and host else object()
+        if not is_loopback(looked_up):
+            raise RuntimeError(f'tests must not reach the network (looked up {host!r})')
+        return _real_resolvers[name](host, *args, **kwargs)
+    guarded.__name__ = name
+    return guarded
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """Refuse every non-loopback connection: external services are mocked, never called."""
+    """Refuse every non-loopback connection and name lookup: external services are mocked,
+    never called. A lookup is refused before the real resolver runs, so no DNS query leaves."""
     monkeypatch.setattr(socket.socket, 'connect', _guarded_connect)
+    for name in RESOLVERS:
+        monkeypatch.setattr(socket, name, _guarded_resolver(name))
+
+
+@pytest.fixture(autouse=True)
+def no_tls_key_log(monkeypatch):
+    """A developer's own SSLKEYLOGFILE never reaches a test (a test that needs it sets it)."""
+    monkeypatch.delenv('SSLKEYLOGFILE', raising=False)
 
 
 @pytest.fixture(autouse=True)

@@ -105,6 +105,7 @@ One mandatory environment variable: `SECRET_KEY`. SQLite and built-in login form
 | `BACKUP_LOCAL_PATH` | — | Local backup directory, an absolute path (created if missing; a relative path is refused); setting it turns on scheduled backups |
 | `BACKUP_S3_ENDPOINT` | — | S3-compatible endpoint URL |
 | `BACKUP_S3_REGION` | — | S3 region (blanks removed; unset or blank = no region, the S3 client's default) |
+| `BACKUP_S3_CA_BUNDLE` | — | Absolute path of a PEM file with the certificate authority of a self-hosted store (for example MinIO behind your own CA); it replaces the built-in certificates for the S3 connection. Unset or blank = the built-in certificates. A relative path or one that is not a file fails the S3 backup only; certificate checks are never switched off |
 | `BACKUP_S3_BUCKET` | — | S3 bucket name; setting it with both keys below turns on scheduled backups to S3 |
 | `BACKUP_S3_PREFIX` | `warframe-tracker/` | S3 key prefix (leading `/` removed, a trailing `/` added; empty = the bucket root) |
 | `BACKUP_S3_ACCESS_KEY` | — | S3 access key; required with the bucket (no other credentials are ever used) |
