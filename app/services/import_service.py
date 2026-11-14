@@ -32,6 +32,7 @@ from services.import_reader import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE,  # noqa
 from services.import_writer import write_plan
 
 _INT64_MAX = 2 ** 63 - 1
+_INT64_DIGITS = len(str(_INT64_MAX))  # 19
 _UINT = re.compile(r'[0-9]+')
 
 _FLAGS = ['in_possession', 'mastered', 'subsumed', 'resurgence_watch']
@@ -76,9 +77,14 @@ def _uint(cell: str, column: str, empty):
     s = cell.strip()
     if s == '':
         return empty
-    if not _UINT.fullmatch(s) or int(s) > _INT64_MAX:
+    # Leading zeros do not count, and only the stripped digits reach int(): Python refuses
+    # to convert a decimal string of more than 4300 digits (zeros included), so a longer
+    # one is refused here by its length, like any other number over the bound.
+    digits = s.lstrip('0') or '0'
+    if (not _UINT.fullmatch(s) or len(digits) > _INT64_DIGITS
+            or int(digits) > _INT64_MAX):
         raise _Invalid(column, f'{show(cell)} is not a whole number from 0 to {_INT64_MAX}.')
-    return int(s)
+    return int(digits)
 
 
 def _name(row: dict, column: str = 'name') -> str:

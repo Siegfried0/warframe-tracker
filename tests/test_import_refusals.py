@@ -12,7 +12,7 @@ import pytest
 
 from models.db import get_db
 from models.item import CATEGORIES
-from services.import_service import ImportRefused, import_user_data
+from services.import_service import ImportRefused, import_user_data, show
 from transfer_fixtures import (make_zip, read_user, seeded,  # noqa: F401
                                seeded_template, snapshot)  # noqa: F401
 
@@ -148,6 +148,51 @@ def test_a_farming_integer_cell_refuses_negatives_fractions_and_overflow(app, bo
     fname, header, row, _ = FARM_INT_CELLS[cell]
     message = run(app, bob, upload(fname, header, row, value))
     assert f'{fname} line 2, column {cell}:' in message
+
+
+# Every whole-number cell: (file, header, row template, reader of the stored value). Both
+# ranks are read on the arcane, whose max rank (5) the import clamps them to.
+ALL_INT_CELLS = {
+    'target_rank': ('arcane.csv', 'name,target_rank', 'Arcane Energize,{v}',
+                    lambda u: u['progress'][('Arcane Energize', 'arcane')][6]),
+    'owned_rank': INT_CELLS['owned_rank'] + (
+        lambda u: u['progress'][('Arcane Energize', 'arcane')][5],),
+    'value': INT_CELLS['value'] + (lambda u: int(u['settings']['plat_per_hour']),),
+    **FARM_INT_CELLS,
+}
+# Python's int() refuses a decimal string of more than 4300 digits, leading zeros included.
+LONG_BAD = {'4300 nines': '9' * 4300, '4301 nines': '9' * 4301,
+            '100000 nines': '9' * 100000, '5000 nines padded': '  ' + '9' * 5000 + '  ',
+            '20 digits': '10000000000000000000',
+            'zero-padded 19 digits over the bound': '0' * 5000 + '9223372036854775808'}
+LONG_OK = {'zero-padded 7': ('0' * 5000 + '7', 7),
+           'zeros only': ('0' * 5000, 0),
+           '19 digits at the bound': ('9223372036854775807', 9223372036854775807),
+           'zero-padded 19 digits at the bound': ('0' * 5000 + '9223372036854775807',
+                                                  9223372036854775807)}
+
+
+@pytest.mark.parametrize('cell', ALL_INT_CELLS)
+@pytest.mark.parametrize('value', LONG_BAD.values(), ids=LONG_BAD)
+def test_a_whole_number_cell_longer_than_the_bound_is_refused_naming_its_place(app, bob, cell,
+                                                                               value):
+    fname, header, row, _ = ALL_INT_CELLS[cell]
+    message = run(app, bob, upload(fname, header, row, value))
+    assert isinstance(message, str)
+    assert f'{fname} line 2, column {cell}:' in message
+    assert f'{show(value)} is not a whole number from 0 to 9223372036854775807.' in message
+
+
+@pytest.mark.parametrize('cell', ALL_INT_CELLS)
+@pytest.mark.parametrize('value, expected', LONG_OK.values(), ids=LONG_OK)
+def test_leading_zeros_do_not_count_against_the_bound(app, bob, cell, value, expected):
+    fname, header, row, reader = ALL_INT_CELLS[cell]
+    assert not isinstance(run(app, bob, upload(fname, header, row, value)), str)
+    if cell.endswith('_rank'):
+        expected = min(expected, 5)
+    assert stored(app, bob, reader) == expected
+
+
 @pytest.mark.parametrize('value, expected', [('0', '0'), (' 7 ', '7'),
                                              ('9223372036854775807', '9223372036854775807')])
 def test_a_setting_value_cell_accepts_whole_numbers(app, bob, value, expected):

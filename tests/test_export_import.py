@@ -508,6 +508,17 @@ def test_the_import_route_reports_success_and_refusal(app, admin_client):
     assert 'No file uploaded.' in page.get_data(as_text=True)
 
 
+def test_the_import_route_refuses_a_cell_of_more_digits_than_python_converts(admin_client):
+    data = make_zip({'settings.csv': 'key,value\nplat_per_hour,' + '9' * 4301 + '\n'}).getvalue()
+    response = admin_client.post('/settings/import',
+                                 data={'import_file': (io.BytesIO(data), 'x.zip')},
+                                 content_type='multipart/form-data')
+    assert response.status_code == 302
+    page = admin_client.get(response.headers['Location']).get_data(as_text=True)
+    assert ('Import refused, nothing written: settings.csv line 2, column value: '
+            "&#39;" + '9' * 40 + '…&#39; is not a whole number' in page)
+
+
 @pytest.mark.parametrize('size, read_by_service', [(8 * 1024 * 1024 + 1, True),
                                                     (9 * 1024 * 1024, False)])
 def test_the_import_route_refuses_an_oversized_upload(admin_client, monkeypatch, size,
