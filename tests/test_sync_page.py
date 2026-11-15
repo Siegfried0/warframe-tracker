@@ -184,3 +184,25 @@ def test_the_last_sync_line_is_drawn_as_text_not_html(admin_client):
     html = admin_client.get('/sync/').get_data(as_text=True)
     assert "$('#last-sync').text(line)" in html
     assert "$('#last-sync').html(" not in html
+
+
+# ── What the page says the sync fetches ──────────────────────────────────────
+
+def what_gets_synced(html):
+    found = re.search(r'What gets synced</span>\s*<ul[^>]*>(.*?)</ul>', html, re.S)
+    assert found, 'the page has the "What gets synced" list'
+    return [re.sub(r'\s+', ' ', item).strip()
+            for item in re.findall(r'<li>(.*?)</li>', found.group(1), re.S)]
+
+
+@pytest.mark.parametrize('category', ['Mods', 'Arcanes', 'Amps', 'Kitgun chambers'])
+def test_what_gets_synced_names_every_synced_category(admin_client, category):
+    html = admin_client.get('/sync/').get_data(as_text=True)
+    items = what_gets_synced(html)
+    assert any(item.startswith(category) for item in items), items
+
+
+def test_the_page_names_the_sources_the_sync_reads_and_not_cargo(admin_client):
+    html = admin_client.get('/sync/').get_data(as_text=True)
+    assert 'cargo' not in html.lower()
+    assert 'warframe-items' in html and 'MediaWiki API' in html

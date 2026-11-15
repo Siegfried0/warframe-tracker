@@ -17,9 +17,9 @@ never anyone's progress, goals, watchlist or settings.
 - warframe.market's item list: each item's and part's [market listing](market.md#listings).
 
 The sync page lists what gets synced: Warframes, primary, secondary and melee weapons,
-arch-guns and arch-melee, companions, archwings, K-Drives / MOAs / Necramechs, resources,
-component ingredients, drop sources, item images, Prime Resurgence's current stock and market
-listings.
+arch-guns and arch-melee, kitgun chambers, companions, archwings, K-Drives / MOAs / Necramechs,
+amps, mods, arcanes, resources, component ingredients, drop sources, item images, Prime
+Resurgence's current stock and market listings.
 
 Item images are downloaded once and served from the app's own cache; images already cached are
 not fetched again. The sync page's **Image Coverage** shows how many items have a cached image;

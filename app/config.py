@@ -83,8 +83,6 @@ class Config:
     # (session_cookie_samesite) and refuses to start with any other value.
     SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 
-    MARKET_CACHE_HOURS = int(os.environ.get('MARKET_CACHE_HOURS', 6))
-
     AUTO_SYNC_ON_STARTUP = os.environ.get('AUTO_SYNC_ON_STARTUP', 'false').lower() == 'true'
     SYNC_INTERVAL_HOURS = int(os.environ.get('SYNC_INTERVAL_HOURS', 24))
 

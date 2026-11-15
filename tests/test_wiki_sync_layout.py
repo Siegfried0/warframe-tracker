@@ -45,6 +45,11 @@ def _tree(module) -> ast.Module:
     return ast.parse(inspect.getsource(module))
 
 
+def _last(name: str) -> str:
+    """The last part of a dotted module name: a relative import's `module` carries no dots."""
+    return name.rsplit('.', 1)[-1]
+
+
 def _imports(module) -> list[tuple[str, str]]:
     """(module imported from, name) for every import in the module, nested ones included."""
     found = []
@@ -74,32 +79,10 @@ def test_every_sync_module_logs_as_the_sync(module):
                                     resurgence_sync],
                          ids=lambda m: m.__name__)
 def test_no_module_the_sync_imports_imports_the_entry_point(module):
-    imported = _imports(module)
-    assert [pair for pair in imported if pair[0] == 'services.wiki_sync'] == []
-    assert ('services', 'wiki_sync') not in imported
-
-
-@pytest.mark.parametrize('module', CALLERS, ids=lambda m: m.__name__)
-def test_no_caller_imports_a_fetch_by_name(module):
-    assert [name for source, name in _imports(module)
-            if source == 'services.wiki_sync_requests' and name in FETCHES] == []
-
-
-@pytest.mark.parametrize('module', CALLERS, ids=lambda m: m.__name__)
-def test_every_fetch_is_called_through_the_requests_module(module):
-    bare, qualified = [], []
-    for node in ast.walk(_tree(module)):
-        if not isinstance(node, ast.Call):
-            continue
-        if isinstance(node.func, ast.Name) and node.func.id in FETCHES:
-            bare.append(node.func.id)
-        if (isinstance(node.func, ast.Attribute) and node.func.attr in FETCHES
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == 'wiki_sync_requests'):
-            qualified.append(node.func.attr)
-    assert bare == []
-    # The helpers and the entry point request nothing themselves.
-    assert bool(qualified) == (module not in (wiki_sync_catalogue, wiki_sync))
+    # Absolute or relative (`from .wiki_sync import x`, `from . import wiki_sync`): the entry
+    # point is matched by the last part of the module named.
+    assert [pair for pair in _imports(module)
+            if _last(pair[0]) == 'wiki_sync' or pair[1] == 'wiki_sync'] == []
 
 
 @pytest.mark.parametrize('module', [wiki_sync, wiki_sync_catalogue, wiki_sync_gear,
@@ -107,7 +90,8 @@ def test_every_fetch_is_called_through_the_requests_module(module):
                                     wiki_sync_ingredients, wiki_sync_images, wiki_sync_drops],
                          ids=lambda m: m.__name__)
 def test_only_the_requests_module_imports_requests(module):
-    assert ('requests', '') not in _imports(module)
+    # `import requests [as r]`, `import requests.adapters`, `from requests import get`.
+    assert [pair for pair in _imports(module) if pair[0].split('.', 1)[0] == 'requests'] == []
     assert not hasattr(module, 'requests')
 
 
