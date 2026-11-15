@@ -5,8 +5,13 @@ Every function of ``services.wiki_sync_catalogue`` is called as
 ``from`` import once, when the importing module loads, so a replacement on the catalogue
 module would reach no step that had imported the old function by name; a module attribute is
 looked up at every call. The catalogue calls its own functions by bare name, which looks up
-the module's globals at call time, so a replacement reaches those calls too. Constants may be
-imported by name. Requests are mocked at the requests module; no test reaches the network.
+the module's globals at call time, so a replacement reaches those calls too. A catalogue
+function is never read as a value outside a call, whatever it is read through (the module's
+name, a dotted import path, an alias made by assignment, a call's result), and no module but
+the catalogue names one as a string (``getattr``, ``vars()[...]``, ``__dict__[...]``): such a
+read binds the function once, like a ``from`` import; so does a catalogue function's bare
+name read as a value outside the catalogue. Constants may be imported by name. Requests are
+mocked at the requests module; no test reaches the network.
 """
 import ast
 import inspect
@@ -59,12 +64,19 @@ def test_every_catalogue_function_is_called_through_the_catalogue_module(module)
     bare, qualified, elsewhere = [], [], []
     tree = _tree(module)
     called = {id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)}
-    # A catalogue function read from the module as a value (an assignment, a default argument)
-    # is bound once, like a `from` import: only a call reads the module at call time.
+    # A catalogue function read as a value (an assignment, a default argument) is bound once,
+    # like a `from` import: only a call reads the module at call time. Whatever the attribute
+    # is read from (the module's name, a dotted import path, an alias made by assignment, a
+    # call's result), a read that is not a call is held.
     held = [node.attr for node in ast.walk(tree)
             if isinstance(node, ast.Attribute) and node.attr in HELPERS
-            and isinstance(node.value, ast.Name) and node.value.id == 'wiki_sync_catalogue'
             and id(node) not in called]
+    # A catalogue function's bare name read as a value (after the catalogue's namespace was
+    # copied into the module's globals) is held the same way; the catalogue itself may read
+    # its own functions by bare name, which looks up its globals at call time.
+    bare_held = [node.id for node in ast.walk(tree)
+                 if isinstance(node, ast.Name) and node.id in HELPERS
+                 and isinstance(node.ctx, ast.Load) and id(node) not in called]
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -76,9 +88,22 @@ def test_every_catalogue_function_is_called_through_the_catalogue_module(module)
             (qualified if through else elsewhere).append(node.func.attr)
     if module is not wiki_sync_catalogue:
         assert bare == []
+        assert bare_held == []
     assert elsewhere == []
     assert held == []
     assert bool(qualified) == (module in STEP_MODULES)
+
+
+@pytest.mark.parametrize('module', MODULES, ids=lambda m: m.__name__)
+def test_no_sync_module_names_a_catalogue_function_as_a_string(module):
+    # A reflective read (`getattr(m, '_upsert_wfcd')`, `vars(m)['_upsert_wfcd']`,
+    # `m.__dict__['_upsert_wfcd']`) names the function as a string, never as an attribute, and
+    # binds it once all the same: a catalogue function's name as a string constant is refused
+    # outright outside the catalogue itself, whatever it is passed to.
+    if module is wiki_sync_catalogue:
+        return
+    assert [node.value for node in ast.walk(_tree(module))
+            if isinstance(node, ast.Constant) and node.value in HELPERS] == []
 
 
 # ── The seam: one replacement on the catalogue module reaches every step ─────

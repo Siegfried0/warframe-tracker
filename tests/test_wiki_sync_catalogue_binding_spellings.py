@@ -1,10 +1,14 @@
 """Every spelling that binds a catalogue function at import time is refused by the layout tests.
 
 A step module that holds a catalogue function under a name of its own (a ``from`` import,
-absolute or relative, with or without an alias; a module-level assignment; a default
-argument) keeps the old function when a test replaces it on ``wiki_sync_catalogue``. The
-layout tests read a module's source; each row hands them a small synthetic step module and
-expects at least one of them to refuse it. Nothing is imported or run from the rows' sources.
+absolute or relative, with or without an alias; a module-level assignment, a class attribute,
+a positional, keyword-only or lambda default argument, whether the function is read through
+the module's name, a dotted import path, an alias made by assignment or a call's result; a
+reflective read by its name as a string; its bare name after the catalogue's namespace was
+copied into the module) keeps the old function when a test replaces it on
+``wiki_sync_catalogue``. The layout tests read a module's source; each row hands them a small
+synthetic step module and expects at least one of them to refuse it. Nothing is imported or
+run from the rows' sources.
 """
 import ast
 
@@ -51,6 +55,63 @@ SPELLINGS = {
     'default_argument': (
         'def step(item, upsert=wiki_sync_catalogue._upsert_wfcd):\n'
         "    return upsert(item, 'warframe')\n"),
+    'keyword_only_default_argument': (
+        'def step(item, *, upsert=wiki_sync_catalogue._upsert_wfcd):\n'
+        "    return upsert(item, 'warframe')\n"),
+    'lambda_default_argument': (
+        "step = lambda item, upsert=wiki_sync_catalogue._upsert_wfcd: upsert(item, 'w')\n"),
+    'class_attribute': (
+        'class Step:\n    upsert = wiki_sync_catalogue._upsert_wfcd\n'),
+    # A dotted import path: the function is read from an attribute, not from a plain name.
+    'dotted_path_module_level_assignment': (
+        'import services.wiki_sync_catalogue\n'
+        'upsert = services.wiki_sync_catalogue._upsert_wfcd\n'
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'dotted_path_default_argument': (
+        'import services.wiki_sync_catalogue\n'
+        'def step(item, upsert=services.wiki_sync_catalogue._upsert_wfcd):\n'
+        "    return upsert(item, 'warframe')\n"),
+    # A module alias made by assignment, which the import checks never see.
+    'alias_by_assignment_module_level_assignment': (
+        'cat = wiki_sync_catalogue\n'
+        'upsert = cat._upsert_wfcd\n'
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'alias_by_assignment_default_argument': (
+        'cat = wiki_sync_catalogue\n'
+        'def step(item, upsert=cat._upsert_wfcd):\n'
+        "    return upsert(item, 'warframe')\n"),
+    # The module read as a call's result.
+    'call_result_module_level_assignment': (
+        'import importlib\n'
+        "upsert = importlib.import_module('services.wiki_sync_catalogue')._upsert_wfcd\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    # The function's name as a string: never an attribute in the tree.
+    'getattr_constant_name': (
+        "upsert = getattr(wiki_sync_catalogue, '_upsert_wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'getattr_constant_name_default_argument': (
+        "def step(item, upsert=getattr(wiki_sync_catalogue, '_upsert_wfcd')):\n"
+        "    return upsert(item, 'warframe')\n"),
+    'vars_subscript': (
+        "upsert = vars(wiki_sync_catalogue)['_upsert_wfcd']\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'dunder_dict_subscript': (
+        "upsert = wiki_sync_catalogue.__dict__['_upsert_wfcd']\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'attrgetter_constant_name': (
+        'import operator\n'
+        "upsert = operator.attrgetter('_upsert_wfcd')(wiki_sync_catalogue)\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    # The catalogue's namespace copied into the module's own globals: the function is then
+    # read by its bare name, neither an attribute nor a string.
+    'namespace_copy_bare_name_assignment': (
+        'globals().update(vars(wiki_sync_catalogue))\n'
+        'upsert = _upsert_wfcd\n'
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'namespace_copy_bare_name_default_argument': (
+        'globals().update(vars(wiki_sync_catalogue))\n'
+        'def step(item, upsert=_upsert_wfcd):\n'
+        "    return upsert(item, 'warframe')\n"),
 }
 
 
@@ -61,7 +122,8 @@ def _refusals(monkeypatch, source):
     refused = []
     for guard in (calls.test_no_sync_module_imports_a_catalogue_function_by_name,
                   calls.test_the_catalogue_module_is_bound_under_its_own_name,
-                  calls.test_every_catalogue_function_is_called_through_the_catalogue_module):
+                  calls.test_every_catalogue_function_is_called_through_the_catalogue_module,
+                  calls.test_no_sync_module_names_a_catalogue_function_as_a_string):
         try:
             guard(wiki_sync_gear)
         except AssertionError:
