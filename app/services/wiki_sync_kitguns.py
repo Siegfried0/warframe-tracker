@@ -5,10 +5,8 @@ import logging
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync_requests
-from services.wiki_sync_catalogue import (
-    _WIKI_BASE, _WIKI_SKIP_WORDS, _cleanup_source_components, _wfcd_image_url,
-)
+from services import wiki_sync_catalogue, wiki_sync_requests
+from services.wiki_sync_catalogue import _WIKI_BASE, _WIKI_SKIP_WORDS
 
 # The sync's log lines keep the logger name an operator filters on.
 log = logging.getLogger('services.wiki_sync')
@@ -92,7 +90,7 @@ def _sync_kitgun_chambers() -> int:
             wiki_url=wiki_url,
             vaulted=False,
             tradable=False,
-            image_url=_wfcd_image_url(item) if item else None,
+            image_url=wiki_sync_catalogue._wfcd_image_url(item) if item else None,
             grants_mastery=True,
         )
         synced_names.add(canon)
@@ -201,7 +199,7 @@ def _sync_kitgun_chambers() -> int:
         log.warning('No kitgun chambers found from any source — hardcoded list also empty')
 
     # Remove stale kitgun rows inserted by any previous incorrect sync run.
-    _cleanup_source_components('secondary', 'kitgun', synced_names)
+    wiki_sync_catalogue._cleanup_source_components('secondary', 'kitgun', synced_names)
 
     log.info('Kitgun chambers total: %d', count)
     return count

@@ -4,10 +4,8 @@ masterable gear the sync reads from WFCD and the wiki category API."""
 import logging
 
 from models.db import get_db
-from services import wiki_sync_requests
-from services.wiki_sync_catalogue import (
-    _NECRAMECHS, _WIKI_SKIP_WORDS, _cleanup_source_components, _upsert_wfcd, _upsert_wiki,
-)
+from services import wiki_sync_catalogue, wiki_sync_requests
+from services.wiki_sync_catalogue import _NECRAMECHS, _WIKI_SKIP_WORDS
 
 # The sync's log lines keep the logger name an operator filters on.
 log = logging.getLogger('services.wiki_sync')
@@ -20,7 +18,7 @@ log = logging.getLogger('services.wiki_sync')
 def _sync_warframes() -> int:
     log.info('Syncing warframes…')
     count = sum(
-        _upsert_wfcd(item, 'warframe', tradable_override=False)
+        wiki_sync_catalogue._upsert_wfcd(item, 'warframe', tradable_override=False)
         for item in wiki_sync_requests._fetch_wfcd('Warframes.json')
         if item.get('masterable') and item.get('name', '').strip() not in _NECRAMECHS
     )
@@ -57,13 +55,14 @@ def _sync_weapons() -> int:
                 continue
             else:
                 source_override = None
-            count += _upsert_wfcd(item, category, source_override=source_override)
+            count += wiki_sync_catalogue._upsert_wfcd(item, category,
+                                                      source_override=source_override)
         log.info('%s synced: %d', category, count)
         total += count
 
     # Remove stale Zaw component rows that WFCD may have previously exposed
     # as masterable but are actually component parts (strikes, grips, links…).
-    _cleanup_source_components('melee', 'zaw', synced_zaw_names)
+    wiki_sync_catalogue._cleanup_source_components('melee', 'zaw', synced_zaw_names)
 
     return total
 
@@ -81,11 +80,11 @@ def _sync_companions() -> int:
             continue
         if item.get('name', '').lower().endswith(' moa'):
             continue  # MOAs handled by _sync_k_drives
-        count += _upsert_wfcd(item, 'companion')
+        count += wiki_sync_catalogue._upsert_wfcd(item, 'companion')
 
     for item in wiki_sync_requests._fetch_wfcd('Sentinels.json'):
         if item.get('masterable'):
-            count += _upsert_wfcd(item, 'companion')
+            count += wiki_sync_catalogue._upsert_wfcd(item, 'companion')
 
     log.info('Companions synced: %d', count)
     return count
@@ -94,7 +93,7 @@ def _sync_companions() -> int:
 def _sync_archwings() -> int:
     log.info('Syncing archwings…')
     count = sum(
-        _upsert_wfcd(item, 'archwing', tradable_override=False)
+        wiki_sync_catalogue._upsert_wfcd(item, 'archwing', tradable_override=False)
         for item in wiki_sync_requests._fetch_wfcd('Archwing.json')
         if item.get('masterable')
     )
@@ -131,7 +130,7 @@ def _sync_k_drives() -> int:
     # --- MOAs: identified by name ending with " Moa" regardless of WFCD type field ---
     for item in wiki_sync_requests._fetch_wfcd('Pets.json'):
         if item.get('name', '').lower().endswith(' moa'):
-            count += _upsert_wfcd(item, 'k-drive')
+            count += wiki_sync_catalogue._upsert_wfcd(item, 'k-drive')
 
     # Remove stale MOA rows that may have been inserted under 'companion' before
     # the exclusion was added — upsert uses (name, category) as the unique key so
@@ -146,14 +145,14 @@ def _sync_k_drives() -> int:
             continue
         if title in _KDRIVE_NON_MASTERY:
             continue  # Reactor / Nose / Jet — no mastery, do not upsert
-        count += _upsert_wiki(title, 'k-drive')
+        count += wiki_sync_catalogue._upsert_wiki(title, 'k-drive')
         wiki_titles.append(title)
 
     # --- Necramechs: wiki Category:Necramechs, minus meta-pages ---
     for title in wiki_sync_requests._wiki_category_members('Necramechs'):
         if 'Necramech' in title or any(w in title for w in _WIKI_SKIP_WORDS):
             continue
-        count += _upsert_wiki(title, 'k-drive')
+        count += wiki_sync_catalogue._upsert_wiki(title, 'k-drive')
         wiki_titles.append(title)
 
     # --- Clean up non-mastery K-Drive rows inserted by earlier syncs ---

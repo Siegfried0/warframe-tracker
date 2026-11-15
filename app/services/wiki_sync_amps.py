@@ -4,10 +4,8 @@ import logging
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync_requests
-from services.wiki_sync_catalogue import (
-    _WIKI_BASE, _WIKI_SKIP_WORDS, _cleanup_source_components, _detect_source, _wfcd_image_url,
-)
+from services import wiki_sync_catalogue, wiki_sync_requests
+from services.wiki_sync_catalogue import _WIKI_BASE, _WIKI_SKIP_WORDS
 
 # The sync's log lines keep the logger name an operator filters on.
 log = logging.getLogger('services.wiki_sync')
@@ -72,11 +70,11 @@ def _sync_amps() -> int:
         Item.upsert(
             name=canon,
             category='amp',
-            source=_detect_source(canon),
+            source=wiki_sync_catalogue._detect_source(canon),
             wiki_url=wiki_url,
             vaulted=bool(item.get('vaulted', False)) if item else False,
             tradable=False,
-            image_url=_wfcd_image_url(item) if item else None,
+            image_url=wiki_sync_catalogue._wfcd_image_url(item) if item else None,
             grants_mastery=True,
         )
         synced_names.add(canon)
@@ -84,7 +82,7 @@ def _sync_amps() -> int:
 
     def _cleanup_amps() -> None:
         for src in ('standard', 'prime'):
-            _cleanup_source_components('amp', src, synced_names)
+            wiki_sync_catalogue._cleanup_source_components('amp', src, synced_names)
 
     # --- Primary: WFCD dedicated Amps.json ---
     try:

@@ -261,7 +261,7 @@ def test_a_row_write_that_raises_in_a_gear_step_ends_the_sync_as_a_failed_result
     def broken(*args, **kwargs):
         raise RuntimeError('write refused')
     monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd', lambda f: GEAR_FILES.get(f, []))
-    monkeypatch.setattr(wiki_sync_gear, '_upsert_wfcd', broken)
+    monkeypatch.setattr(wiki_sync_catalogue, '_upsert_wfcd', broken)
     with caplog.at_level(logging.ERROR, logger='services.wiki_sync'):
         result = wiki_sync.run_sync(app)
     assert result == {'ok': False, 'error': 'write refused'}

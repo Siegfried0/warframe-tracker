@@ -4,8 +4,8 @@ import logging
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync_requests
-from services.wiki_sync_catalogue import _WIKI_BASE, _WIKI_SKIP_WORDS, _wfcd_image_url
+from services import wiki_sync_catalogue, wiki_sync_requests
+from services.wiki_sync_catalogue import _WIKI_BASE, _WIKI_SKIP_WORDS
 
 # The sync's log lines keep the logger name an operator filters on.
 log = logging.getLogger('services.wiki_sync')
@@ -62,7 +62,7 @@ def _sync_mods() -> int:
                 wiki_url=_WIKI_BASE + 'Riven_Mod',
                 vaulted=False,
                 tradable=True,
-                image_url=_wfcd_image_url(item),
+                image_url=wiki_sync_catalogue._wfcd_image_url(item),
                 grants_mastery=False,
                 mod_type=raw_type,
                 mod_polarity='Any',
@@ -78,7 +78,7 @@ def _sync_mods() -> int:
             wiki_url=item.get('wikiaUrl') or (_WIKI_BASE + name.replace(' ', '_')),
             vaulted=False,
             tradable=bool(item.get('tradable', False)),
-            image_url=_wfcd_image_url(item),
+            image_url=wiki_sync_catalogue._wfcd_image_url(item),
             grants_mastery=False,
             mod_type=raw_type or None,
             mod_polarity=polarity or None,
@@ -146,7 +146,7 @@ def _sync_arcanes() -> int:
             wiki_url=item.get('wikiaUrl') or (_WIKI_BASE + name.replace(' ', '_')),
             vaulted=False,
             tradable=bool(item.get('tradable', True)),
-            image_url=_wfcd_image_url(item),
+            image_url=wiki_sync_catalogue._wfcd_image_url(item),
             grants_mastery=False,
             mod_type=None,
             mod_polarity=None,
@@ -266,7 +266,7 @@ def _sync_resources() -> int:
             wiki_url=wiki_url,
             vaulted=False,
             tradable=bool(item.get('tradable', False)),
-            image_url=_wfcd_image_url(item),
+            image_url=wiki_sync_catalogue._wfcd_image_url(item),
             grants_mastery=False,
         )
         count += 1

@@ -4,8 +4,8 @@ import logging
 
 from models.db import get_db
 from models.item import Item
-from services import wiki_sync_requests
-from services.wiki_sync_catalogue import _NECRAMECHS, _WIKI_BASE, _wfcd_image_url
+from services import wiki_sync_catalogue, wiki_sync_requests
+from services.wiki_sync_catalogue import _NECRAMECHS, _WIKI_BASE
 
 # The sync's log lines keep the logger name an operator filters on.
 log = logging.getLogger('services.wiki_sync')
@@ -89,7 +89,7 @@ def _sync_component_ingredients(status: dict | None = None) -> int:
 
                 # Store component image URL — always insert a row so the wiki
                 # fallback (_sync_component_wiki_images) can later fill in NULLs.
-                img_url = _wfcd_image_url(comp)
+                img_url = wiki_sync_catalogue._wfcd_image_url(comp)
                 try:
                     db.execute(
                         '''INSERT OR IGNORE INTO item_component_meta
@@ -122,7 +122,7 @@ def _sync_component_ingredients(status: dict | None = None) -> int:
                         (ing_name,),
                     ).fetchone()
                     if not existing:
-                        ing_img   = _wfcd_image_url(ing)
+                        ing_img   = wiki_sync_catalogue._wfcd_image_url(ing)
                         ing_wiki  = (_WIKI_BASE + ing_name.replace(' ', '_'))
                         Item.upsert(
                             name=ing_name,
