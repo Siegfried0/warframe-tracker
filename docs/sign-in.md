@@ -3,7 +3,7 @@
 The app has three ways to sign in: local accounts with a username and password (always, unless
 Azure EasyAuth is on), an OpenID Connect provider beside them (optional), and Azure App Service
 EasyAuth instead of both. Every account has its own progress records and one of two roles,
-`admin` or `user`. Admins manage the accounts in the admin panel
+`admin` or `user`. Admins manage the accounts in the [admin panel](features/accounts.md#the-admin-panel)
 (see [Local accounts and roles](#local-accounts-and-roles)).
 
 ## Local accounts and roles

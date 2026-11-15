@@ -20,7 +20,7 @@ switch read as `true` (`AUTO_SYNC_ON_STARTUP`, `EASYAUTH_ENABLED`) is on only fo
 | `MSSQL_CONNECTION_STRING` | — | A full pyodbc connection string: switches the database from SQLite to Azure SQL / MSSQL (`DATABASE_PATH` is then not used, and no file backup is made) |
 | `SESSION_LIFETIME_DAYS` | `30` | Session cookie lifetime in days |
 | `SESSION_COOKIE_SAMESITE` | `Lax` | The session cookie's `SameSite` attribute (`Lax`, `Strict`, or `None`, which needs HTTPS), in any letter case; empty means `Lax`; any other value and the app does not start, with a message naming the setting and its three values |
-| `MARKET_CACHE_HOURS` | `6` | Read, but not used: how long a market price counts as fresh is each user's own *market cache duration* on the Settings page (default 6 hours) |
+| `MARKET_CACHE_HOURS` | `6` | Read, but not used: how long a market price counts as fresh is each user's own *market cache duration* on the [Settings page](features/settings.md#preferences) (default 6 hours) |
 | `FLASK_RUN_HOST` | `127.0.0.1` | Development server only (`python run.py`): the address to listen on; ignored without a usable `SECRET_KEY` (see [Install and run](install.md)) |
 | `FLASK_DEBUG` | off | Development server only: `1` or `true` turns on the debugger and reloader; refused with a host other than `127.0.0.1`, `localhost` or `::1` |
 
@@ -28,9 +28,9 @@ switch read as `true` (`AUTO_SYNC_ON_STARTUP`, `EASYAUTH_ENABLED`) is on only fo
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `AUTO_SYNC_ON_STARTUP` | `false` | Run a wiki sync 2 minutes after every server start, whether one is due or not |
+| `AUTO_SYNC_ON_STARTUP` | `false` | Run a [wiki sync](features/wiki-sync.md) 2 minutes after every server start, whether one is due or not |
 | `SYNC_INTERVAL_HOURS` | `24` | Hours after the last finished sync (successful or not) before the scheduled sync runs again; the time is stored, so restarts do not reset it (0 = off) |
-| `RESURGENCE_FALLBACK_DAYS` | `7` | Days the Prime Resurgence stock counts after a sync when the wiki page shows no end date (a value below 1 means 7) |
+| `RESURGENCE_FALLBACK_DAYS` | `7` | Days the [Prime Resurgence](features/prime-resurgence.md) stock counts after a sync when the wiki page shows no end date (a value below 1 means 7) |
 
 ## Sign-in
 

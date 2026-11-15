@@ -31,7 +31,7 @@ When `EASYAUTH_ENABLED=true`:
   already has the same name, or a local or OpenID Connect account of an earlier setup has the
   same id, the request is refused (403) and nothing is created; an admin can delete that
   account.
-- Account creation via the admin panel is hidden (accounts are created automatically on first
+- Account creation via the [admin panel](features/accounts.md#the-admin-panel) is hidden (accounts are created automatically on first
   EasyAuth access); role assignment remains available.
 - OpenID Connect sign-in is off (see [Sign-in and accounts](sign-in.md)).
 

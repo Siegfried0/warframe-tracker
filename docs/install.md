@@ -74,7 +74,7 @@ gunicorn --chdir app --bind=0.0.0.0 --timeout 600 app:app
 server, `app:app` never starts without a usable `SECRET_KEY`. Any service manager can keep that
 command running; the app ships no service definition of its own.
 
-While the app runs, scheduled wiki syncs run in it: the app stores when the last sync finished
+While the app runs, scheduled [wiki syncs](features/wiki-sync.md#scheduled-syncs) run in it: the app stores when the last sync finished
 and checks every 15 minutes (first 2 minutes after it starts) whether `SYNC_INTERVAL_HOURS`
 have passed since then, so a restart neither delays nor repeats the sync. Scheduled backups are
 checked on the same rhythm (see [Backup and restore](backup.md)).

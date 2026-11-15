@@ -26,7 +26,7 @@ While the app runs it checks every 15 minutes (the first check 2 minutes after t
 whether a configured target is due, and backs it up then. Each backup is a consistent copy of
 the SQLite database, made while the app runs.
 
-**Back up now**, on the Settings page (admins only), backs up every configured target at once
+**Back up now**, on the [Settings page](features/settings.md#backup-admins-only) (admins only), backs up every configured target at once
 and reports one line per target: the backup written and how many old backups were removed (or
 could not be), or why it was skipped or failed.
 
@@ -85,5 +85,5 @@ The app has no restore function: a backup is put back by hand, while the app is 
    app is brought up to date when the app starts, as any older database is.
 
 Everything written after the backup was made is not in it: progress, goals and settings changed
-since then are lost unless you export them first with the app's export and import, which moves
+since then are lost unless you export them first with the app's [export and import](features/export-import.md), which moves
 one user's data rather than the whole database.
