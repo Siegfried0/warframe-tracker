@@ -48,17 +48,38 @@ SESSION_HELPERS = [(farming_aggregate, '_comp_state_for'), (farming_aggregate, '
                    (farming_advisor, '_comp_state_for'), (farming_advisor, '_get_progress_map')]
 
 
-def _imported_modules(module) -> set[str]:
-    """Every module the source imports from, nested imports included."""
+def _resolve_from(node: ast.ImportFrom, package: str) -> str:
+    """The absolute name of the module a ``from`` import reads, a relative one resolved
+    against ``package``; one that climbs above the top package keeps only what it names."""
+    if not node.level:
+        return node.module or ''
+    parts = package.split('.') if package else []
+    up = node.level - 1
+    base = parts[:len(parts) - up] if up <= len(parts) else []
+    return '.'.join(base + ([node.module] if node.module else []))
+
+
+def _imported_modules(source: str, package: str) -> set[str]:
+    """Every module the source imports from, nested imports included, by its absolute name:
+    a relative import is resolved against ``package``, and ``from services import m`` or a
+    relative ``from . import m`` (any level) records the module ``m`` it names as well."""
     found = set()
-    for node in ast.walk(ast.parse(inspect.getsource(module))):
+    for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             found |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
-            found.add(node.module or '')
-            if node.module == 'services':
-                found |= {f'services.{alias.name}' for alias in node.names}
+            resolved = _resolve_from(node, package)
+            if resolved:
+                found.add(resolved)
+            if resolved == 'services' or (node.level and node.module is None):
+                prefix = f'{resolved}.' if resolved else ''
+                found |= {prefix + alias.name for alias in node.names}
     return found
+
+
+def _module_imports(module) -> set[str]:
+    """``_imported_modules`` over a loaded module's own source and package."""
+    return _imported_modules(inspect.getsource(module), module.__package__)
 
 
 # ── Interface: the names reached on services.farming_service ─────────────────
@@ -105,19 +126,19 @@ def test_the_aggregate_list_and_the_advisor_read_progress_from_the_progress_modu
 # ── Toolchain: the import graph ──────────────────────────────────────────────
 
 def test_the_progress_module_imports_no_other_farming_module():
-    imported = _imported_modules(farming_progress)
+    imported = _module_imports(farming_progress)
     assert sorted(m for m in imported if m.startswith('services.farming')) == []
 
 
 def test_the_item_plan_module_imports_no_other_farming_module():
-    imported = _imported_modules(farming_item_plan)
+    imported = _module_imports(farming_item_plan)
     assert sorted(m for m in imported if m.startswith('services.farming')) == []
 
 
 @pytest.mark.parametrize('module', [farming_aggregate, farming_advisor],
                          ids=lambda m: m.__name__)
 def test_the_aggregate_list_and_the_advisor_import_only_the_progress_module(module):
-    imported = _imported_modules(module)
+    imported = _module_imports(module)
     assert sorted(m for m in imported if m.startswith('services.farming')) == [
         'services.farming_progress']
 
@@ -126,7 +147,47 @@ def test_the_aggregate_list_and_the_advisor_import_only_the_progress_module(modu
                                     farming_item_plan, farming_aggregate, farming_advisor],
                          ids=lambda m: m.__name__)
 def test_no_goal_module_imports_farming_service(module):
-    assert 'services.farming_service' not in _imported_modules(module)
+    assert 'services.farming_service' not in _module_imports(module)
+
+
+# Each spelling of an import the guards above must see, with the absolute names the reader
+# records for it when the source sits in the package given.
+IMPORT_SPELLINGS = [
+    ('absolute_from', 'from services.farming_progress import x\n', 'services',
+     {'services.farming_progress'}),
+    ('absolute_from_package', 'from services import farming_service\n', 'services',
+     {'services', 'services.farming_service'}),
+    ('import_as', 'import services.farming_service as fs\n', 'services',
+     {'services.farming_service'}),
+    ('relative_from_module', 'from .farming_progress import x\n', 'services',
+     {'services.farming_progress'}),
+    ('relative_from_module_aliased', 'from .farming_progress import x as y\n', 'services',
+     {'services.farming_progress'}),
+    ('relative_from_dot', 'from . import farming_service\n', 'services',
+     {'services', 'services.farming_service'}),
+    ('relative_from_dot_aliased', 'from . import farming_service as fs\n', 'services',
+     {'services', 'services.farming_service'}),
+    ('relative_from_dot_two_names', 'from . import farming_progress, farming_service\n',
+     'services', {'services', 'services.farming_progress', 'services.farming_service'}),
+    ('relative_nested_in_a_function',
+     'def f():\n    from .farming_progress import x\n    return x\n', 'services',
+     {'services.farming_progress'}),
+    ('relative_nested_dot_import',
+     'def f():\n    from . import farming_service\n    return farming_service\n', 'services',
+     {'services', 'services.farming_service'}),
+    ('relative_two_levels_from_a_subpackage', 'from ..farming_progress import x\n',
+     'services.sub', {'services.farming_progress'}),
+    ('relative_above_the_top_package', 'from .. import farming_service\n', 'services',
+     {'farming_service'}),
+]
+
+
+@pytest.mark.parametrize('source, package, expected',
+                         [row[1:] for row in IMPORT_SPELLINGS],
+                         ids=[row[0] for row in IMPORT_SPELLINGS])
+def test_the_import_reader_records_each_spelling_by_its_absolute_name(source, package,
+                                                                      expected):
+    assert _imported_modules(source, package) == expected
 
 
 @pytest.mark.parametrize('path', sorted((APP_DIR / 'services').glob('farming*.py')),
