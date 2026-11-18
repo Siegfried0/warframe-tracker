@@ -206,3 +206,31 @@ def test_the_page_names_the_sources_the_sync_reads_and_not_cargo(admin_client):
     html = admin_client.get('/sync/').get_data(as_text=True)
     assert 'cargo' not in html.lower()
     assert 'warframe-items' in html and 'MediaWiki API' in html
+
+
+def test_the_card_title_names_the_catalogue_not_one_source(admin_client):
+    html = admin_client.get('/sync/').get_data(as_text=True)
+    titles = [re.sub(r'\s+', ' ', title).strip()
+              for title in re.findall(r'<span class="card-title">(.*?)</span>', html, re.S)]
+    assert titles[0] == 'Sync the item catalogue', titles
+    assert 'wiki.warframe.com' not in html
+
+
+def card_titles(html):
+    return [re.sub(r'<[^>]+>', '', re.sub(r'\s+', ' ', title)).strip()
+            for title in re.findall(r'<span class="card-title"[^>]*>(.*?)</span>', html, re.S)]
+
+
+def test_the_heading_browser_title_and_nav_label_stay_wiki_sync(admin_client):
+    html = admin_client.get('/sync/').get_data(as_text=True)
+    assert re.search(r'<title>\s*Wiki Sync — Warframe Tracker\s*</title>', html)
+    assert re.search(r'<h4[^>]*>.*?Wiki Sync\s*</h4>', html, re.S)
+    assert 'Wiki Sync</a>' in html
+
+
+def test_no_card_title_on_the_sync_page_names_a_single_source(admin_client):
+    titles = card_titles(admin_client.get('/sync/').get_data(as_text=True))
+    assert 'Sync the item catalogue' in titles, titles
+    for title in titles:
+        for source in ('wiki', 'wfcd', 'warframestat', 'warframe.market'):
+            assert source not in title.lower(), (source, title)
