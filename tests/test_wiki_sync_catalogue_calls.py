@@ -10,7 +10,12 @@ function is never read as a value outside a call, whatever it is read through (t
 name, a dotted import path, an alias made by assignment, a call's result), and no module but
 the catalogue names one as a string (``getattr``, ``vars()[...]``, ``__dict__[...]``): such a
 read binds the function once, like a ``from`` import; so does a catalogue function's bare
-name read as a value outside the catalogue. Constants may be imported by name. Requests are
+name read as a value outside the catalogue. The catalogue module itself, by its name or its
+dotted import path, is read only as the value of an attribute read, and never through a dunder
+attribute (``__dict__``, ``__getattribute__``): passed to ``getattr``, ``vars`` or any call,
+assigned, used as a default argument or iterated, it lets a function be named at run time
+where no check reads it; so does the module's name as a string (``getattr(services, ...)``,
+``importlib.import_module(...)``, ``sys.modules[...]``). Constants may be imported by name. Requests are
 mocked at the requests module; no test reaches the network.
 """
 import ast
@@ -53,10 +58,30 @@ def test_no_sync_module_imports_a_catalogue_function_by_name(module):
 
 @pytest.mark.parametrize('module', MODULES, ids=lambda m: m.__name__)
 def test_the_catalogue_module_is_bound_under_its_own_name(module):
-    aliases = [alias.asname for node in ast.walk(_tree(module))
+    tree = _tree(module)
+    aliases = [alias.asname for node in ast.walk(tree)
                if isinstance(node, (ast.Import, ast.ImportFrom)) for alias in node.names
                if alias.name in CATALOGUE_NAMES]
     assert [asname for asname in aliases if asname not in (None, 'wiki_sync_catalogue')] == []
+    # The module read as a whole object (passed to `getattr`, `vars` or any call, assigned,
+    # used as a default argument, iterated), by its bare name or by its dotted path
+    # (`services.wiki_sync_catalogue`), lets a function be named at run time where no check
+    # reads it: only an attribute read keeps the module's own name.
+    read = {id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    catalogue = [node for node in ast.walk(tree)
+                 if (isinstance(node, ast.Name) and node.id == 'wiki_sync_catalogue')
+                 or (isinstance(node, ast.Attribute) and node.attr == 'wiki_sync_catalogue')]
+    assert [ast.unparse(node) for node in catalogue if id(node) not in read] == []
+    # A dunder read on the module (`__dict__`, `__getattribute__`) hands its namespace out,
+    # where a function is named by a string that no guard reads.
+    assert [node.attr for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr.startswith('__')
+            and any(node.value is c for c in catalogue)] == []
+    # The module's name as a string constant (`getattr(services, 'wiki_sync_catalogue')`,
+    # `importlib.import_module('services.wiki_sync_catalogue')`, `sys.modules[...]`) reaches
+    # the module as a whole object all the same.
+    assert [node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and node.value in CATALOGUE_NAMES] == []
 
 
 @pytest.mark.parametrize('module', MODULES, ids=lambda m: m.__name__)

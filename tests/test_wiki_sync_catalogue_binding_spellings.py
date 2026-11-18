@@ -5,8 +5,9 @@ absolute or relative, with or without an alias; a module-level assignment, a cla
 a positional, keyword-only or lambda default argument, whether the function is read through
 the module's name, a dotted import path, an alias made by assignment or a call's result; a
 reflective read by its name as a string; its bare name after the catalogue's namespace was
-copied into the module) keeps the old function when a test replaces it on
-``wiki_sync_catalogue``. The layout tests read a module's source; each row hands them a small
+copied into the module; the module itself read as a whole object, by its name or its dotted
+path or by its name as a string, where the function's name is built at run time) keeps the
+old function when a test replaces it on ``wiki_sync_catalogue``. The layout tests read a module's source; each row hands them a small
 synthetic step module and expects at least one of them to refuse it. Nothing is imported or
 run from the rows' sources.
 """
@@ -112,6 +113,58 @@ SPELLINGS = {
         'globals().update(vars(wiki_sync_catalogue))\n'
         'def step(item, upsert=_upsert_wfcd):\n'
         "    return upsert(item, 'warframe')\n"),
+    # The module itself read as a whole object: the function's name is built at run time, so
+    # it is neither an attribute nor a string constant in the tree.
+    'getattr_name_built_by_concatenation': (
+        "upsert = getattr(wiki_sync_catalogue, '_upsert_' + 'wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'namespace_copy_by_comprehension': (
+        "fns = {n.strip('_'): f for n, f in vars(wiki_sync_catalogue).items()}\n"
+        "def step(item):\n    return fns['upsert_wfcd'](item, 'warframe')\n"),
+    'dotted_path_getattr_name_built_by_concatenation': (
+        'import services.wiki_sync_catalogue\n'
+        "upsert = getattr(services.wiki_sync_catalogue, '_upsert_' + 'wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'dotted_path_vars_comprehension': (
+        'import services.wiki_sync_catalogue\n'
+        'fns = {n: f for n, f in vars(services.wiki_sync_catalogue).items()}\n'
+        "def step(item):\n    return fns['_upsert_' + 'wfcd'](item, 'warframe')\n"),
+    'dunder_dict_get_name_built_by_concatenation': (
+        "upsert = wiki_sync_catalogue.__dict__.get('_upsert_' + 'wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'dunder_getattribute_name_built_by_concatenation': (
+        "upsert = wiki_sync_catalogue.__getattribute__('_upsert_' + 'wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'attrgetter_name_built_by_concatenation': (
+        'import operator\n'
+        "upsert = operator.attrgetter('_upsert_' + 'wfcd')(wiki_sync_catalogue)\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'module_alias_by_assignment': (
+        'cat = wiki_sync_catalogue\n'
+        "def step(item):\n    return cat._upsert_wfcd(item, 'warframe')\n"),
+    'module_passed_as_default_argument': (
+        'def step(item, cat=wiki_sync_catalogue):\n'
+        "    return cat._upsert_wfcd(item, 'warframe')\n"),
+    'module_passed_as_keyword_only_default_argument': (
+        'def step(item, *, cat=wiki_sync_catalogue):\n'
+        "    return getattr(cat, '_upsert_' + 'wfcd')(item, 'warframe')\n"),
+    'module_passed_as_call_argument': (
+        'def _pick(module):\n    return getattr(module, \'_upsert_\' + \'wfcd\')\n'
+        'upsert = _pick(wiki_sync_catalogue)\n'
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
+    'module_iterated_in_comprehension': (
+        "fns = [getattr(m, '_upsert_' + 'wfcd') for m in (wiki_sync_catalogue,)]\n"
+        "def step(item):\n    return fns[0](item, 'warframe')\n"),
+}
+
+# The module reached without its name (through ``sys.modules`` or ``importlib`` with a name
+# built at run time from parts that are not the module's name) is not visible to any check that reads the source: kept here so a guard
+# that starts refusing it turns the row green and is noticed.
+UNGUARDED = {
+    'sys_modules_name_built_by_concatenation': (
+        'import sys\n'
+        "upsert = getattr(sys.modules['services.wiki_sync_' + 'catalogue'], '_upsert_' + 'wfcd')\n"
+        "def step(item):\n    return upsert(item, 'warframe')\n"),
 }
 
 
@@ -139,3 +192,9 @@ def test_a_step_module_that_calls_through_the_catalogue_is_accepted(monkeypatch)
 @pytest.mark.parametrize('spelling', list(SPELLINGS))
 def test_a_catalogue_function_bound_at_import_time_is_refused(monkeypatch, spelling):
     assert _refusals(monkeypatch, SPELLINGS[spelling]) != []
+
+
+@pytest.mark.xfail(strict=True, reason='a module reached without its name is not in the tree')
+@pytest.mark.parametrize('spelling', list(UNGUARDED))
+def test_a_catalogue_module_reached_without_its_name_is_refused(monkeypatch, spelling):
+    assert _refusals(monkeypatch, UNGUARDED[spelling]) != []
