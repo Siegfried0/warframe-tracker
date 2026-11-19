@@ -1,11 +1,10 @@
 from flask import (Blueprint, abort, current_app, flash, redirect, render_template, request,
                    session, url_for)
-from flask_login import current_user, login_required, login_user
+from flask_login import current_user, login_required
 
 from models.user import User
 from services import oidc
-from services.auth_service import safe_return_path, sign_out
-from services.csrf import rotate_token
+from services.auth_service import safe_return_path, sign_in, sign_out
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -38,9 +37,7 @@ def setup():
                 # Another setup or first sign-in made the first account meanwhile.
                 flash('The administrator account already exists. Sign in.', 'error')
                 return redirect(url_for('auth.login'))
-            rotate_token()
-            session.permanent = True     # remembered: the session lifetime bounds it
-            login_user(user)
+            sign_in(session, user, remember=True)
             flash(f'Welcome, {user.username}! Admin account created.', 'success')
             return redirect(url_for('dashboard.index'))
     return render_template('auth/setup.html')
@@ -62,9 +59,7 @@ def login():
 
         user = User.get_by_username(username)
         if user and user.is_active and user.check_password(password):
-            rotate_token()
-            session.permanent = remember   # "remember me": outlives the browser
-            login_user(user)
+            sign_in(session, user, remember)   # "remember me": outlives the browser
             user.update_last_login()
             return redirect(safe_return_path(request.args.get('next'))
                             or url_for('dashboard.index'))
@@ -102,9 +97,7 @@ def oidc_callback():
         current_app.logger.warning('OIDC sign-in refused: %s', refused.reason)
         flash(refused.message, 'error')
         return redirect(url_for('auth.login'))
-    rotate_token()
-    session.permanent = True     # remembered: the session lifetime bounds it
-    login_user(user)
+    sign_in(session, user, remember=True)
     user.update_last_login()
     return redirect(safe_return_path(return_path) or url_for('dashboard.index'))
 
@@ -149,9 +142,7 @@ def register():
             flash(error, 'error')
         else:
             user = User.create(username=username, password=password, email=email)
-            rotate_token()
-            session.permanent = True     # remembered: the session lifetime bounds it
-            login_user(user)
+            sign_in(session, user, remember=True)
             user.update_last_login()
             flash(f'Account created. Welcome, {user.username}!', 'success')
             return redirect(url_for('dashboard.index'))

@@ -18,6 +18,17 @@ EasyAuth instead of both. Every account has its own progress records and one of 
   password of accounts in the admin panel.
 - A local account changes its own password in **Settings → Change Password**.
 
+## How long a sign-in lasts
+
+A sign-in (local or through an OpenID Connect provider) ends when it has not been used for the
+session lifetime (`SESSION_LIFETIME_DAYS`, 30 days by default; see
+[Configuration](configuration.md)), and in any case three session lifetimes after it was made
+(90 days by default), however often it is used. You are then sent to the login page and sign in
+again; a form sent from a page left open that long is refused once with "Reload the page and try
+again". "Remember me" keeps the sign-in when the browser closes; without it the sign-in ends with
+the browser. Shortening the lifetime shortens both limits from the next request. Under Azure
+EasyAuth the platform decides how long a sign-in lasts.
+
 ## Sign-in with an OpenID Connect provider
 
 Keycloak, Authentik, Google, … Beside the local login, the app can sign users in through any

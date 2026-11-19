@@ -60,16 +60,34 @@ def _plain_path(value: str) -> bool:
     return '\\' not in value and not any(ord(ch) < 0x20 or ord(ch) == 0x7f for ch in value)
 
 
+def sign_in(session, user, remember: bool) -> None:
+    """Sign ``user`` in to the app (setup, the sign-in form, registration, OIDC): the CSRF
+    token is replaced, the session is made permanent when the sign-in is remembered (no
+    remember cookie: the session lifetime bounds it), the user is logged in and the time of the
+    sign-in is stored in the session, replacing an earlier one. When Flask-Login refuses the
+    user (an inactive account) no time is stored: no sign-in time without a signed-in user. The
+    caller records the login."""
+    # Imported here: services.csrf reaches this module through the export service.
+    from flask_login import login_user
+    from services import csrf, runtime_settings
+    csrf.rotate_token()
+    session.permanent = remember
+    if login_user(user):
+        runtime_settings.stamp_sign_in(session)
+
+
 def sign_out(session) -> None:
     """End the signed-in session (logout, and the deletion of one's own account): the CSRF
-    token is replaced at once, a pending OIDC sign-in is dropped and the user is logged
-    out. The caller sends the browser on (in EasyAuth mode to Azure's sign-out)."""
+    token is replaced at once, a pending OIDC sign-in is dropped, the user is logged out and
+    the sign-in time removed. The caller sends the browser on (in EasyAuth mode to Azure's
+    sign-out)."""
     # Imported here: services.csrf reaches this module through the export service.
     from flask_login import logout_user
-    from services import csrf, oidc
+    from services import csrf, oidc, runtime_settings
     csrf.rotate_token()
     oidc.forget_pending(session)
     logout_user()
+    session.pop(runtime_settings.SIGNED_IN_AT, None)
 
 
 def admin_required(f):

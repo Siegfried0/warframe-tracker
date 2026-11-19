@@ -64,10 +64,14 @@ ORDER = (AUTO_SYNC, INTERVAL, LIFETIME)
 EXTENSION = 'runtime_settings'
 CACHE_SECONDS = 60          # the stored session lifetime is read at most once a minute
 REMEMBER_COOKIE = 'remember_token'   # Flask-Login's default name of its remember cookie
+SIGNED_IN_AT = '_signed_in_at'   # the session's sign-in time, whole seconds since the epoch
+SIGN_IN_BOUND_LIFETIMES = 3      # a sign-in ends this many effective lifetimes after it was made
+USER_KEY = '_user_id'            # Flask-Login's key of the signed-in user in the session
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 _logged = set()   # (key, repr of the stored value) already logged in this process
 _clock = time.monotonic   # the cache's clock (a test replaces it)
+_wall = time.time         # the sign-in time's clock: wall time, the same in every worker process
 
 
 def parse_switch(raw):
@@ -236,11 +240,48 @@ def forget_cached_lifetime(app) -> None:
         state.lifetime = None
 
 
+# ── The sign-in time ─────────────────────────────────────────────────────────
+
+def now_seconds() -> int:
+    """The wall clock in whole seconds since the epoch: every worker process reads the same."""
+    return int(_wall())
+
+
+def stamp_sign_in(session) -> None:
+    """Store the time of a sign-in in the session, replacing any earlier one."""
+    session[SIGNED_IN_AT] = now_seconds()
+
+
+def _sign_in_time(raw, now: int):
+    """The stored sign-in time when it is a whole number not later than now, else None (to be
+    replaced by now): a bool, a text or a float is treated as missing, a time later than now
+    (a clock set back) as now."""
+    if type(raw) is not int or raw > now:
+        return None
+    return raw
+
+
+def sign_in_expired(session, lifetime: timedelta) -> bool:
+    """Whether a signed-in session's sign-in is at or past the bound (three effective
+    lifetimes). A missing, odd or future sign-in time is set to now first (the session is then
+    modified and re-signed), so it is kept."""
+    now = now_seconds()
+    signed_in_at = _sign_in_time(session.get(SIGNED_IN_AT), now)
+    if signed_in_at is None:
+        session[SIGNED_IN_AT] = now
+        return False
+    bound = SIGN_IN_BOUND_LIFETIMES * int(lifetime.total_seconds())
+    return now - signed_in_at >= bound
+
+
 class RuntimeSessionInterface(SecureCookieSessionInterface):
     """Flask's signed-cookie session, with the effective lifetime as the cookie's maximum age
     (its idle time: Flask re-signs a permanent session at each request) and as a permanent
-    cookie's expiry. A request that carries Flask-Login's remember cookie is marked so that the
-    cookie signs nobody in and the response removes it: "remember me" is a permanent session."""
+    cookie's expiry. A signed-in session (EasyAuth off) also ends three lifetimes after its
+    sign-in, whatever the use: it is replaced by an empty one, so no hook sees its user and the
+    response clears the cookie. A request that carries Flask-Login's remember cookie is marked
+    so that the cookie signs nobody in and the response removes it: "remember me" is a
+    permanent session."""
 
     def open_session(self, app, request):
         serializer = self.get_signing_serializer(app)
@@ -254,6 +295,10 @@ class RuntimeSessionInterface(SecureCookieSessionInterface):
                 session = self.session_class(serializer.loads(value, max_age=max_age))
             except BadSignature:
                 session = self.session_class()
+            if (USER_KEY in session and not app.config.get('EASYAUTH_ENABLED')
+                    and sign_in_expired(session, timedelta(seconds=max_age))):
+                session = self.session_class()
+                session.modified = True   # the response deletes or replaces the cookie
         if app.config.get('REMEMBER_COOKIE_NAME', REMEMBER_COOKIE) in request.cookies:
             # Flask-Login then neither loads a user from it nor keeps it (its after-request
             # hook deletes the cookie and pops this mark before the session is saved).
