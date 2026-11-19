@@ -7,8 +7,9 @@ three values are app-wide rows in the ``settings`` table (``user_id`` NULL), in 
 ``YYYY-MM-DDTHH:MM:SSZ``; they hold no user's data and are never exported.
 
 The scheduler does not count from the app's start: one check, first 2 minutes after the start
-and then every 15 minutes, syncs when no finished sync is recorded or ``SYNC_INTERVAL_HOURS``
-have passed since the last one finished. So a restart never starts the clock again, and a
+and then every 15 minutes, syncs when no finished sync is recorded or the effective interval
+(``services.runtime_settings``: the pin, the Settings page's value or 24 hours, read at each
+check) has passed since the last one finished. So a restart never starts the clock again, and a
 manual sync also resets the schedule.
 
 A stored finish time that cannot be read (empty, NULL, another format), a result other than
@@ -177,34 +178,54 @@ def run_from_page(app, body, run, now=None):
 
 # ── The scheduler ────────────────────────────────────────────────────────────
 
+CHECK_JOB = 'sync-check'
+STARTUP_JOB = 'sync-on-startup'
+
+
 def scheduled_check(app, run, now=None) -> bool:
-    """The repeating check: sync when due. A sync already running is skipped (the next
-    check tries again). Returns whether a sync was started."""
+    """The repeating check: sync when due. The interval is the effective one, read at every
+    check, so a stored value applies from the next check in every process; 0 syncs nothing
+    (the job stays, a later value above 0 switches it on again). A sync already running
+    is skipped (the next check tries again); a failed read of the interval is logged and the
+    check skipped, the scheduler keeps running. Returns whether a sync was started."""
+    from services import runtime_settings
     with app.app_context():
         moment = now or _utc_now()
         if is_running():
             log.info('Scheduled sync check: a sync is running, skipped')
             return False
-        if not is_due(read_record(), moment, app.config.get('SYNC_INTERVAL_HOURS', 0)):
+        try:
+            interval = runtime_settings.effective(app, runtime_settings.INTERVAL)
+        except Exception:  # noqa: BLE001 (any storage error: this check is skipped)
+            log.exception('Scheduled sync check: the interval could not be read, skipped')
+            return False
+        if interval <= 0 or not is_due(read_record(), moment, interval):
             return False
     log.info('Scheduled sync is due: starting it')
     run(app)
     return True
 
 
-def add_jobs(scheduler, app, run, now=None) -> int:
-    """Add the sync jobs the configuration asks for; returns how many. With
-    ``SYNC_INTERVAL_HOURS`` above 0 one check every 15 minutes, its first 2 minutes after
-    ``now``; with ``AUTO_SYNC_ON_STARTUP`` one sync 2 minutes after ``now``."""
+def _add_check_job(scheduler, app, run, start) -> None:
+    scheduler.add_job(scheduled_check, 'interval', args=[app, run], id=CHECK_JOB,
+                      seconds=int(CHECK_PERIOD.total_seconds()), start_date=start,
+                      coalesce=True, max_instances=1)
+
+
+def add_jobs(scheduler, app, run, now=None, values=None) -> int:
+    """Add the sync jobs the start's values ask for (``runtime_settings.start_values``);
+    returns how many. With an interval above 0 one check every 15 minutes, its first 2 minutes
+    after ``now``; with auto-sync on startup one sync 2 minutes after ``now``."""
+    if values is None:
+        from services import runtime_settings
+        values = runtime_settings.start_values(app)
     start = (now or _utc_now()) + START_DELAY
     added = 0
-    if app.config.get('AUTO_SYNC_ON_STARTUP'):
-        scheduler.add_job(run, 'date', run_date=start, args=[app], id='sync-on-startup')
+    if values.auto_sync:
+        scheduler.add_job(run, 'date', run_date=start, args=[app], id=STARTUP_JOB)
         added += 1
-    interval = app.config.get('SYNC_INTERVAL_HOURS') or 0
-    if interval > 0:
-        scheduler.add_job(scheduled_check, 'interval', args=[app, run], id='sync-check',
-                          seconds=int(CHECK_PERIOD.total_seconds()), start_date=start,
-                          coalesce=True, max_instances=1)
+    if values.interval > 0:
+        _add_check_job(scheduler, app, run, start)
         added += 1
     return added
+

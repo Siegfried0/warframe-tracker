@@ -57,15 +57,21 @@ def parse_strategy(raw):
     return text if text in STRATEGIES else None
 
 
-def parse_number(field, raw):
-    """The whole number a text holds for ``field`` (blanks stripped, 1 to 4 ASCII digits,
-    within the field's bounds), or None when it holds none. Never ``int()`` on the raw text,
-    which takes ``+7``, ``1_000`` and other scripts' digits."""
-    low, high = BOUNDS[field]
+def parse_whole(raw, low, high):
+    """The whole number a text holds (blanks stripped, 1 to 4 ASCII digits, from ``low`` to
+    ``high``), or None when it holds none. Never ``int()`` on the raw text, which takes
+    ``+7``, ``1_000`` and other scripts' digits. Every stored or typed number of the app-wide
+    settings is read by this one check."""
     text = raw.strip() if isinstance(raw, str) else ''
     if _NUMBER.fullmatch(text) and low <= int(text) <= high:
         return int(text)
     return None
+
+
+def parse_number(field, raw):
+    """The whole number a text holds for ``field`` within the field's bounds, or None."""
+    low, high = BOUNDS[field]
+    return parse_whole(raw, low, high)
 
 
 def _strategy(key, raw):

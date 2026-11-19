@@ -39,7 +39,8 @@ def setup():
                 flash('The administrator account already exists. Sign in.', 'error')
                 return redirect(url_for('auth.login'))
             rotate_token()
-            login_user(user, remember=True)
+            session.permanent = True     # remembered: the session lifetime bounds it
+            login_user(user)
             flash(f'Welcome, {user.username}! Admin account created.', 'success')
             return redirect(url_for('dashboard.index'))
     return render_template('auth/setup.html')
@@ -62,7 +63,8 @@ def login():
         user = User.get_by_username(username)
         if user and user.is_active and user.check_password(password):
             rotate_token()
-            login_user(user, remember=remember)
+            session.permanent = remember   # "remember me": outlives the browser
+            login_user(user)
             user.update_last_login()
             return redirect(safe_return_path(request.args.get('next'))
                             or url_for('dashboard.index'))
@@ -101,7 +103,8 @@ def oidc_callback():
         flash(refused.message, 'error')
         return redirect(url_for('auth.login'))
     rotate_token()
-    login_user(user, remember=True)
+    session.permanent = True     # remembered: the session lifetime bounds it
+    login_user(user)
     user.update_last_login()
     return redirect(safe_return_path(return_path) or url_for('dashboard.index'))
 
@@ -147,7 +150,8 @@ def register():
         else:
             user = User.create(username=username, password=password, email=email)
             rotate_token()
-            login_user(user, remember=True)
+            session.permanent = True     # remembered: the session lifetime bounds it
+            login_user(user)
             user.update_last_login()
             flash(f'Account created. Welcome, {user.username}!', 'success')
             return redirect(url_for('dashboard.index'))

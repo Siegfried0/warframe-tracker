@@ -1,7 +1,6 @@
 import mimetypes
 import os
 import secrets
-from datetime import timedelta
 from typing import NamedTuple, Optional
 
 from flask import Flask, redirect, url_for
@@ -11,7 +10,7 @@ from config import (SECRET_KEY_HELP, Config, require_usable_secret_key, secret_k
                     SettingError, session_cookie_samesite)
 from models.db import init_db
 from models.user import User
-from services import csrf, oidc
+from services import csrf, oidc, runtime_settings
 from services.request_ids import Id64Converter, RequestJSONProvider
 
 login_manager = LoginManager()
@@ -37,9 +36,10 @@ def create_app(config_overrides: dict = None):
     # A JSON body nested too deep to parse is malformed (400), never a 500.
     flask_app.json = RequestJSONProvider(flask_app)
 
-    flask_app.permanent_session_lifetime = timedelta(
-        days=flask_app.config['SESSION_LIFETIME_DAYS']
-    )
+    # Auto-sync, the sync interval and the session lifetime: a variable or override that is
+    # set pins its setting (an unusable one refuses the start here, before the database is
+    # opened); the session interface applies the effective lifetime to every request.
+    runtime_settings.init_app(flask_app)
 
     # Every unsafe request carries the session's CSRF token; checked before any other hook.
     csrf.init_app(flask_app)
@@ -98,14 +98,15 @@ def _register_blueprints(flask_app):
 
 
 def _start_scheduler(flask_app):
-    """The scheduled sync: a check every 15 minutes (first 2 minutes after the start) that
-    syncs when the stored last sync is older than SYNC_INTERVAL_HOURS, and with
-    AUTO_SYNC_ON_STARTUP one sync 2 minutes after the start. The scheduled backup: a check
-    every 15 minutes (first 2 minutes after the start) that backs up each configured target
-    that is due (SQLite only). None of these: no scheduler."""
+    """The scheduled sync: with an effective interval above 0, a check every 15 minutes (first
+    2 minutes after the start) that syncs when the stored last sync is older than the interval,
+    and with auto-sync on startup one sync 2 minutes after the start (both effective values
+    from services.runtime_settings; a pinned 0 / false keeps them off whatever is stored). The
+    scheduled backup: a check every 15 minutes (first 2 minutes after the start) that backs up
+    each configured target that is due (SQLite only). None of these: no scheduler."""
     from services import backup_service
-    sync = bool(flask_app.config.get('AUTO_SYNC_ON_STARTUP')) or \
-        (flask_app.config.get('SYNC_INTERVAL_HOURS') or 0) > 0
+    values = runtime_settings.start_values(flask_app)
+    sync = values.auto_sync or values.interval > 0
     backups = backup_service.wants_scheduler(flask_app.config)
     if not sync and not backups:
         return
@@ -115,7 +116,7 @@ def _start_scheduler(flask_app):
         from services.wiki_sync import run_sync
 
         scheduler = BackgroundScheduler(daemon=True, timezone='UTC')
-        sync_schedule.add_jobs(scheduler, flask_app, run_sync)
+        sync_schedule.add_jobs(scheduler, flask_app, run_sync, values=values)
         backup_service.add_jobs(scheduler, flask_app)
         scheduler.start()
         flask_app.scheduler = scheduler

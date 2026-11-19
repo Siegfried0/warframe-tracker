@@ -37,7 +37,9 @@ it succeeded), that none has run yet, or that one started and did not finish.
 ## Scheduled syncs
 
 While the app runs it stores when the last sync finished and checks every 15 minutes (first 2
-minutes after it starts) whether `SYNC_INTERVAL_HOURS` (default 24; 0 switches the schedule off)
-have passed since then, so a restart neither delays nor repeats the sync. A sync started from
-the page counts too. `AUTO_SYNC_ON_STARTUP=true` also runs one sync 2 minutes after every start.
-See [Configuration](../configuration.md#wiki-sync).
+minutes after it starts) whether the sync interval (default 24 hours; 0 switches the schedule
+off) has passed since then, so a restart neither delays nor repeats the sync. A sync started
+from the page counts too. With auto-sync on startup, one sync also runs 2 minutes after every
+start. Both are set by `SYNC_INTERVAL_HOURS` and `AUTO_SYNC_ON_STARTUP` when those are set, else
+by the app's stored setting, else by the default; a stored interval is read at every check. See
+[Configuration](../configuration.md#wiki-sync).

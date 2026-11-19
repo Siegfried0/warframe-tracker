@@ -286,9 +286,16 @@ def test_two_threads_asking_at_once_run_one_sync(app):
 # ── The scheduler ────────────────────────────────────────────────────────────
 
 class FakeApp:
+    """An app whose runtime settings are pinned to the values given (as an environment
+    variable that is set would pin them)."""
+
     def __init__(self, real, **config):
+        from services import runtime_settings as rs
         self.config = config
         self._real = real
+        pins = {key: config[rs.SETTINGS[key].env] for key in rs.ORDER
+                if rs.SETTINGS[key].env in config}
+        self.extensions = {rs.EXTENSION: rs._State(pins)}
 
     def app_context(self):
         return self._real.app_context()
@@ -360,12 +367,14 @@ def jobs(sched):
     (False, 1, {'sync-check'}),
 ], ids=['interval only', 'both', 'start-up only', 'neither', 'negative interval',
         'one hour'])
-def test_the_scheduler_jobs_follow_the_configuration(app, scheduler, auto, hours, expected):
-    fake = FakeApp(app, AUTO_SYNC_ON_STARTUP=auto, SYNC_INTERVAL_HOURS=hours)
+def test_the_scheduler_jobs_follow_the_start_values(app, scheduler, auto, hours, expected):
+    from services.runtime_settings import StartValues
+    fake = FakeApp(app)
     def run(app):
         return None
 
-    assert ss.add_jobs(scheduler, fake, run, now=NOW) == len(expected)
+    assert ss.add_jobs(scheduler, fake, run, now=NOW,
+                       values=StartValues(auto, hours)) == len(expected)
     found = jobs(scheduler)
     assert set(found) == expected
     first = NOW + 2 * M
@@ -380,14 +389,17 @@ def test_the_scheduler_jobs_follow_the_configuration(app, scheduler, auto, hours
 
 
 @pytest.mark.parametrize('auto,hours,started', [
-    (False, 0, False), (True, 0, True), (False, 24, True), (False, -3, False),
+    (False, 0, False), (True, 0, True), (False, 24, True), ('false', '0', False),
 ])
-def test_no_scheduler_starts_without_an_interval_or_a_start_up_sync(app, auto, hours,
+def test_no_scheduler_starts_without_an_interval_or_a_start_up_sync(tmp_path, auto, hours,
                                                                     started, monkeypatch):
     import app as app_module
     from apscheduler.schedulers.background import BackgroundScheduler
     monkeypatch.setattr(BackgroundScheduler, 'start', lambda self, *a, **k: None)
-    app.config.update(AUTO_SYNC_ON_STARTUP=auto, SYNC_INTERVAL_HOURS=hours)
+    app = app_module.create_app({'TESTING': True, 'DATABASE_PATH': str(tmp_path / 's.db'),
+                                 'SECRET_KEY': 'test-only', 'AUTO_SYNC_ON_STARTUP': auto,
+                                 'SYNC_INTERVAL_HOURS': hours})
+    assert hasattr(app, 'scheduler') is started
     if hasattr(app, 'scheduler'):
         del app.scheduler
     app_module._start_scheduler(app)

@@ -76,15 +76,18 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY')
     DATABASE_PATH = os.environ.get('DATABASE_PATH', str(BASE_DIR / 'warframe_tracker.db'))
 
-    SESSION_LIFETIME_DAYS = int(os.environ.get('SESSION_LIFETIME_DAYS', 30))
+    # The admin's runtime settings: the raw text of the environment, or None when unset. A
+    # value that is set pins its setting (services.runtime_settings decides and checks it at
+    # the start); unset, the Settings page's stored value or the default applies.
+    SESSION_LIFETIME_DAYS = os.environ.get('SESSION_LIFETIME_DAYS')
 
     # The session cookie is not sent on cross-site posts (defence in depth beside the CSRF
     # token); 'Strict', 'Lax' or 'None' (the last needs HTTPS). create_app() normalises it
     # (session_cookie_samesite) and refuses to start with any other value.
     SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 
-    AUTO_SYNC_ON_STARTUP = os.environ.get('AUTO_SYNC_ON_STARTUP', 'false').lower() == 'true'
-    SYNC_INTERVAL_HOURS = int(os.environ.get('SYNC_INTERVAL_HOURS', 24))
+    AUTO_SYNC_ON_STARTUP = os.environ.get('AUTO_SYNC_ON_STARTUP')
+    SYNC_INTERVAL_HOURS = os.environ.get('SYNC_INTERVAL_HOURS')
 
     # Prime Resurgence stock read from a page without a readable end date counts for this
     # many days after the sync that read it (a value below 1 means the default, 7)
