@@ -13,6 +13,7 @@ from services.backup_service import backup_now
 from services.export_service import export_user_data
 from services.import_service import (MAX_REQUEST_BYTES, UPLOAD_TOO_LARGE, ImportRefused,
                                      import_user_data)
+from services.runtime_page import ACTION as RUNTIME_ACTION, runtime_section, save_runtime
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 
@@ -56,6 +57,13 @@ def index():
                 saved, message = save_retention(request.form, current_app.config)
                 flash(message, 'success' if saved else 'error')
 
+        elif action == RUNTIME_ACTION:
+            if not current_user.is_admin:     # the runtime settings are the admin's
+                abort(403)
+            for category, sentence in save_runtime(request.form,
+                                                   current_app._get_current_object(), uid):
+                flash(sentence, category)
+
         elif action == 'clear_progress':
             confirm = request.form.get('confirm_clear')
             if confirm == 'CLEAR':
@@ -80,8 +88,10 @@ def index():
 
     prefs = {key: get_setting(uid, key, default) for key, _, default in USER_SETTINGS}
     backup = backup_section(current_app.config) if current_user.is_admin else None
+    runtime = (runtime_section(current_app._get_current_object())
+               if current_user.is_admin else None)
     return render_template('settings.html', settings_meta=USER_SETTINGS, prefs=prefs,
-                           backup=backup)
+                           backup=backup, runtime=runtime)
 
 
 @settings_bp.route('/export')

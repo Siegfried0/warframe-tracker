@@ -180,6 +180,7 @@ def run_from_page(app, body, run, now=None):
 
 CHECK_JOB = 'sync-check'
 STARTUP_JOB = 'sync-on-startup'
+_job_lock = threading.Lock()   # one save at a time adds the check job (and a scheduler)
 
 
 def scheduled_check(app, run, now=None) -> bool:
@@ -229,3 +230,36 @@ def add_jobs(scheduler, app, run, now=None, values=None) -> int:
         added += 1
     return added
 
+
+def ensure_check_job(app, run=None, now=None, make_scheduler=None) -> str:
+    """After a save that leaves the effective interval above 0: add the check job in this
+    process when it has none (its first check 2 minutes after ``now``, as after a start),
+    starting a scheduler when the process has none. Returns ``present`` (the job was there:
+    none added), ``added``, or ``unavailable`` (APScheduler is not installed; logged). Never
+    removes a job: an interval of 0 is honoured by the check itself."""
+    with _job_lock:
+        scheduler = getattr(app, 'scheduler', None)
+        if scheduler is not None and scheduler.get_job(CHECK_JOB) is not None:
+            return 'present'
+        if run is None:
+            from services.wiki_sync import run_sync as run
+        start = (now or _utc_now()) + START_DELAY
+        if scheduler is None:
+            try:
+                if make_scheduler is None:
+                    from apscheduler.schedulers.background import BackgroundScheduler
+
+                    def make_scheduler():
+                        return BackgroundScheduler(daemon=True, timezone='UTC')
+                scheduler = make_scheduler()
+            except ImportError:
+                log.warning('APScheduler not installed: the scheduled sync a save switched on '
+                            'does not run in this process.')
+                return 'unavailable'
+            _add_check_job(scheduler, app, run, start)
+            scheduler.start()
+            app.scheduler = scheduler
+        else:
+            _add_check_job(scheduler, app, run, start)
+        log.info('Scheduled sync switched on by a save: check job added in this process')
+        return 'added'

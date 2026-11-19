@@ -228,6 +228,14 @@ def session_lifetime(app, get=None, clock=None) -> timedelta:
     return timedelta(days=days)
 
 
+def forget_cached_lifetime(app) -> None:
+    """Drop this app's cached session lifetime (after a save in this process), so the next
+    request reads the stored value."""
+    state = _state(app)
+    with state.lock:
+        state.lifetime = None
+
+
 class RuntimeSessionInterface(SecureCookieSessionInterface):
     """Flask's signed-cookie session, with the effective lifetime as the cookie's maximum age
     (its idle time: Flask re-signs a permanent session at each request) and as a permanent

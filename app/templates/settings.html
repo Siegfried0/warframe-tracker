@@ -119,6 +119,70 @@
   </div>
 
   <div class="col s12 m5">
+    <!-- Sync & sessions: the admin's -->
+    {% if runtime %}
+    <div class="card blue-grey darken-2" id="runtime-card">
+      <div class="card-content white-text">
+        <span class="card-title">{{ icon('sync', 'left') }}Sync &amp; Sessions</span>
+        <p class="grey-text">App-wide settings for every user. A setting whose environment
+          variable is set is shown here and changed there.</p>
+        {% if runtime.error %}
+        <p class="orange-text runtime-read-error">Settings not shown: {{ runtime.error }}.</p>
+        {% endif %}
+        {% if runtime.editable %}
+        <form method="post" id="runtime-form">
+          {{ csrf_field() }}
+          <input type="hidden" name="action" value="{{ runtime.action }}">
+        {% endif %}
+          {% for e in runtime.entries %}
+          {% set s = e.setting %}
+          {% set field_id = 'runtime-' ~ e.key %}
+          <section class="runtime-setting" id="{{ field_id }}-row">
+            {% if e.source == 'pinned' %}
+            <p class="runtime-pinned-value"><strong>{{ s.label }}:</strong> {{ e.text }}</p>
+            {% elif s.kind == 'switch' %}
+            <p><label for="{{ field_id }}">
+              <input type="checkbox" id="{{ field_id }}" name="{{ e.key }}" value="on"
+                     class="filled-in"{% if e.value %} checked{% endif %}
+                     aria-describedby="{{ field_id }}-help">
+              <span class="white-text">{{ s.label }}</span>
+            </label></p>
+            {% else %}
+            <div class="input-field">
+              <input id="{{ field_id }}" name="{{ e.key }}" type="text" inputmode="numeric"
+                     value="{{ e.value }}" class="white-text"
+                     aria-describedby="{{ field_id }}-help">
+              <label for="{{ field_id }}" class="white-text active">{{ s.label }}
+                ({{ s.unit }}, {{ s.low }}&ndash;{{ s.high }})</label>
+            </div>
+            {% endif %}
+            <p class="grey-text runtime-help" id="{{ field_id }}-help">
+              {% if e.source == 'pinned' %}<span class="runtime-pinned">{{ e.pin_sentence }}</span>
+              {% elif e.invalid_stored %}<span class="orange-text runtime-invalid">The saved value
+                is not valid: the default ({{ e.default_text }}) applies until you save.</span>
+              {% elif e.source == 'saved' %}<span class="runtime-saved">Saved here (default:
+                {{ e.default_text }}).</span>
+              {% else %}<span class="runtime-default">The default.</span>{% endif %}
+              {{ e.applies }}</p>
+            {% if e.source != 'pinned' and e.stored %}
+            <p class="runtime-use-default"><label for="{{ field_id }}-default">
+              <input type="checkbox" id="{{ field_id }}-default" name="{{ e.box }}" value="on"
+                     class="filled-in">
+              <span class="white-text">Use the default ({{ e.default_text }}):
+                {% if s.kind == 'switch' %}tick this and untick the box above{% else %}tick
+                this and empty the field{% endif %}</span>
+            </label></p>
+            {% endif %}
+          </section>
+          {% endfor %}
+        {% if runtime.editable %}
+          <button class="btn teal waves-effect" type="submit">Save sync &amp; session settings</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Backup: the admin's -->
     {% if backup %}
     <div class="card blue-grey darken-2" id="backup-card">

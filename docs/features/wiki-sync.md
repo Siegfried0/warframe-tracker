@@ -41,5 +41,6 @@ minutes after it starts) whether the sync interval (default 24 hours; 0 switches
 off) has passed since then, so a restart neither delays nor repeats the sync. A sync started
 from the page counts too. With auto-sync on startup, one sync also runs 2 minutes after every
 start. Both are set by `SYNC_INTERVAL_HOURS` and `AUTO_SYNC_ON_STARTUP` when those are set, else
-by the app's stored setting, else by the default; a stored interval is read at every check. See
-[Configuration](../configuration.md#wiki-sync).
+by the app's stored setting, which an admin changes in
+[Settings → Sync & Sessions](settings.md#sync--sessions-admins-only), else by the default; a
+stored interval is read at every check. See [Configuration](../configuration.md#wiki-sync).

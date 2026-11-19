@@ -1,7 +1,8 @@
 # Settings and preferences
 
 The Settings page holds your personal preferences, your password, your data's export and
-import, and the danger zone; admins also see the backup section.
+import, and the danger zone; admins also see the sync and session settings and the backup
+section.
 
 ## Preferences
 
@@ -35,6 +36,31 @@ Download your data as a ZIP of CSV files, or import one; see
   market watchlist and preferences are kept.
 - **Delete account** (type `DELETE` to confirm) permanently deletes your account and all its
   data, and signs you out.
+
+## Sync & Sessions (admins only)
+
+App-wide settings for every user:
+
+- **Sync on startup** (default off): run a [wiki sync](wiki-sync.md) 2 minutes after every
+  start of the app. Applies from the next start.
+- **Scheduled sync interval** (hours, 0 to 8760, default 24; 0 switches the schedule off): how
+  long after the last finished sync the next one runs. Applies from the next scheduled check,
+  within 15 minutes. When a save switches the schedule on, this server process checks shortly
+  (about 2 minutes later); other worker processes of a multi-process server start their check
+  at their next start, and the page says so.
+- **Session lifetime** (days, 1 to 365, default 30): a session unused for longer ends, and
+  every sign-in ends three lifetimes after it was made. Applies within a minute, to every
+  session.
+
+Each shows the value that applies and where it comes from: saved here, the default, or set by
+its environment variable. A setting whose variable is set is shown read-only with the variable
+to remove; it cannot be saved here (see [Configuration](../configuration.md)). A saved value
+that is not valid is shown as the default it counts as, with a note, until you save.
+
+One **Save** stores every field together, or nothing: a number must be whole digits within its
+range, and a refused save names every field it refused. To go back to a default, tick its **Use
+the default** box (shown for a saved value) and empty the field, or untick the switch; the
+saved value is removed. A value sent together with **Use the default** is refused.
 
 ## Backup (admins only)
 

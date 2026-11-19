@@ -15,7 +15,7 @@ The full documentation is in [`docs/`](docs/README.md).
 - **[Prime Resurgence](docs/features/prime-resurgence.md)** — Varzia's current stock, read from the wiki at each sync, with an alert for the items you watch.
 - **[Market](docs/features/market.md)** — read-only prices from [warframe.market](https://warframe.market), cached, never dropped when old, refreshed one item at a time.
 - **[Wiki sync](docs/features/wiki-sync.md)** — one-click or scheduled update of the item catalogue, recipes, drop sources, images and market listings, never touching your progress.
-- **[Settings and preferences](docs/features/settings.md)** — market cache duration, buy threshold, platinum per hour and farming hour cap; your password; clearing your progress or deleting your account.
+- **[Settings and preferences](docs/features/settings.md)** — market cache duration, buy threshold, platinum per hour and farming hour cap; your password; clearing your progress or deleting your account; for admins, sync on startup, the scheduled sync interval and the session lifetime.
 - **[Export and import](docs/features/export-import.md)** — all your data as a ZIP of CSV files that opens in a spreadsheet, and back again.
 - **[Accounts and administration](docs/features/accounts.md)** — independent progress per account, local, OpenID Connect or Azure EasyAuth sign-in, admin and user roles.
 - **[Backup](docs/backup.md)** — scheduled and on-demand copies of the database to a local folder and/or an S3-compatible bucket, each with its own retention.

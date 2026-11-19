@@ -23,7 +23,10 @@ order:
    what it accepts. (In PowerShell, `$env:NAME = ''` sets the variable to an empty value; remove
    it with `Remove-Item Env:NAME`.)
 2. **The app's stored setting**, an app-wide row in the database, when the variable is not set.
-   A stored value that is not usable counts as the default (logged once) and stays stored.
+   An admin sets it in **Settings → Sync & Sessions** (see
+   [Settings and preferences](features/settings.md#sync--sessions-admins-only)); a setting
+   pinned by its variable is shown there read-only, with the variable to remove. A stored value
+   that is not usable counts as the default (logged once) and stays stored until an admin saves.
 3. **The default** in the tables below.
 
 The sync interval and the session lifetime stored in the database apply without a restart (the

@@ -188,6 +188,13 @@ def upsert_global_setting(db, key: str, value):
         )
 
 
+def delete_global_setting(db, key: str):
+    """Remove one app-wide setting (``user_id`` NULL) without committing, so that it shares a
+    commit with the other writes of its save; a key with no row removes nothing. Both backends
+    run this statement."""
+    db.execute('DELETE FROM settings WHERE user_id IS NULL AND key = ?', (key,))
+
+
 def set_global_setting(key: str, value):
     from models.db import get_db
     db = get_db()
