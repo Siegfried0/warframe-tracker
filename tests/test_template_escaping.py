@@ -182,3 +182,23 @@ def test_every_collection_toast_draws_server_values_only_through_its_escape(admi
     assert len(calls) == 8
     assert [c for c in calls if SERVER_VALUE.search(_outside_escapes(c))] == []
     assert COLLECTION_TOAST_OPENING_BARE.findall(scripts) == []
+
+
+def test_the_resource_dot_title_escapes_the_component_name(admin_client):
+    page = _page(admin_client, '/farming/')
+    # dotTitle starts as the bare component name and is then put into title="..."
+    assert "var dotTitle  = cname;" not in page
+    assert re.search(r"var dotTitle\s*=\s*escText\(cname\)", page)
+
+
+# Toasts take HTML, so a synced name drawn into one must be escaped.
+def test_the_advisor_toast_escapes_the_location(admin_client):
+    s = _scripts(_page(admin_client, '/farming/'))
+    assert "M.toast({html: 'Advisor set to: ' + nodeLoc})" not in s
+    assert "escText(nodeLoc)" in s
+
+
+def test_the_goal_added_toasts_escape_the_item_name(admin_client):
+    s = _scripts(_page(admin_client, '/farming/'))
+    assert "M.toast({html: r.goal.item_name +" not in s
+    assert s.count("escText(r.goal.item_name)") >= 2
