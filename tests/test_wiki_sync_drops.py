@@ -191,3 +191,37 @@ def test_a_row_write_that_raises_in_the_drop_step_ends_the_sync_and_keeps_the_ol
     assert [(r.name, r.getMessage()) for r in caplog.records if r.levelno >= logging.ERROR] == [
         ('services.wiki_sync', 'Sync failed: write refused')]
     assert after == before == [('Braton', 'mission', 'Old Node', 10.0)]
+
+
+# ── What a part's drop row holds in mission_type ─────────────────────────────
+
+RHINO_CHASSIS_DROP = {'location': 'Ceres/Draco (Capture)', 'type': 'Rhino Chassis Blueprint',
+                      'chance': 0.2}
+RHINO_CHASSIS_DROP_WITHOUT_TYPE = {key: value for key, value in RHINO_CHASSIS_DROP.items()
+                                   if key != 'type'}
+
+
+@pytest.mark.parametrize('drop, mission_type', [
+    (RHINO_CHASSIS_DROP, 'Rhino Chassis Blueprint'),
+    (RHINO_CHASSIS_DROP_WITHOUT_TYPE, 'Unknown'),
+], ids=['type-present', 'type-absent'])
+def test_a_part_drop_row_holds_the_reward_name_as_its_mission_type(
+        app, monkeypatch, drop, mission_type):
+    """A part's WFCD drop row stores the drop's reward name (or 'Unknown' when the drop names
+    none) in mission_type, never a game mode, and its chance in percent. The buy-vs-farm time
+    per run therefore cannot read the game mode from this column and falls back to the game
+    mode in the location's brackets ('Capture' here); a change to what the writer stores
+    there must fail this test."""
+    files = {'Warframes.json': [{'name': 'Rhino', 'masterable': True, 'components': [
+        {'name': 'Chassis', 'drops': [drop]}]}]}
+    monkeypatch.setattr(wiki_sync_requests, '_fetch_wfcd',
+                        lambda name: copy.deepcopy(files.get(name, [])))
+    with app.app_context():
+        _seed_catalogue()
+        db = get_db()
+        written = wiki_sync._sync_wfcd_component_drops(db)
+        rows = [tuple(r) for r in db.execute(
+            'SELECT d.source_type, d.notes, d.location, d.mission_type, d.drop_chance '
+            'FROM drop_sources d JOIN items i ON i.id = d.item_id')]
+    assert written == 1
+    assert rows == [('component', 'Chassis', 'Ceres/Draco (Capture)', mission_type, 20.0)]
